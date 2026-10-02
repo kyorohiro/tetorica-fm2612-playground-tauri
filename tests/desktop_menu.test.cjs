@@ -6,13 +6,15 @@ const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../desktop/desktop-interface.js'), 'utf8');
 class Element {
   constructor() { this.attributes = {}; this.listeners = {}; }
-  addEventListener(name, fn) { this.listeners[name] = fn; }
+  addEventListener(name, fn) { (this.listeners[name] ??= []).push(fn); }
   setAttribute(name, value) { this.attributes[name] = value; }
   getAttribute(name) { return this.attributes[name]; }
   showModal() { this.open = true; }
-  close() { this.open = false; this.listeners.close(); }
+  close() { this.open = false; this.listeners.close?.forEach(fn => fn()); }
+  append() {}
+  select() {}
   focus() { this.focused = true; }
-  click() { if (!this.disabled) return this.listeners.click({target: this}); }
+  click() { if (!this.disabled) return Promise.all(this.listeners.click.map(fn => fn({target: this}))); }
 }
 const settle = () => new Promise(resolve => setImmediate(resolve));
 test('single click toggles despite delayed native state; failures recover inside existing Menu', async () => {
@@ -20,10 +22,11 @@ test('single click toggles despite delayed native state; failures recover inside
   const children = [];
   menu.querySelector = () => ({append: (...items) => children.push(...items)});
   const document = {readyState:'complete', getElementById: id => id === 'mainMenu' ? menu : null,
-    createElement: () => new Element()};
+    createElement: () => new Element(), body:{append(){}}};
   let actual = false, fail = false;
   const requests = [];
   const window = {__TAURI_INTERNALS__: {invoke: async (cmd, args) => {
+    if (cmd === 'mcp_status') return {enabled:false,url:'http://127.0.0.1:39127/mcp',token:'test'};
     if (cmd === 'window_top_get') return actual;
     requests.push(args.enabled);
     if (fail) throw Error('native failure');
@@ -32,7 +35,7 @@ test('single click toggles despite delayed native state; failures recover inside
   window.top = window;
   vm.runInNewContext(source.replace('__DESKTOP_DEV_ORIGIN__','null'), {window, document, location:new URL('tauri://localhost')});
   menu.open = true;
-  menu.listeners.toggle(); await settle();
+  menu.listeners.toggle.forEach(fn => fn()); await settle();
   await children[0].click();
   assert.equal(children[0].textContent, 'Always on Top: On');
   await children[0].click();
@@ -40,13 +43,13 @@ test('single click toggles despite delayed native state; failures recover inside
   assert.deepEqual(requests,[true,false]);
   actual = true;
   menu.open = true;
-  menu.listeners.toggle(); await settle();
+  menu.listeners.toggle.forEach(fn => fn()); await settle();
   assert.equal(children[0].getAttribute('aria-pressed'),'true');
   fail = true;
   await children[0].click();
   assert.match(children[1].textContent,/native failure/);
   assert.equal(children[0].getAttribute('aria-pressed'),'true');
   assert.equal(children[0].disabled,false);
-  assert.equal(children.length, 2);
+  assert.equal(children.length, 4);
   assert.equal(children[0].id, 'desktop-window-top');
 });

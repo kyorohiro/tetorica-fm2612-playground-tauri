@@ -3,7 +3,7 @@
   "version": "0.40.14",
   "private": true,
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "tauri dev --no-dev-server",
     "build": "tauri build",
     "import:release": "python3 scripts/import_release.py",
     "test": "python3 -m unittest discover -s tests && node --test tests/*.test.cjs",

@@ -16,7 +16,8 @@
         "title": "Tetorica Playground",
         "width": 1280,
         "height": 820,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "create": false
       }
     ],
     "security": {

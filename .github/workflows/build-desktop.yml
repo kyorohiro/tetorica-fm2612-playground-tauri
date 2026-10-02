@@ -60,6 +60,8 @@ jobs:
       - run: npm test
       - name: Download and verify pinned Playground release
         run: python scripts/fetch_release.py
+      - name: Test native MCP protocol and transport
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - name: Build desktop app
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: tauri-apps/tauri-action@v0
