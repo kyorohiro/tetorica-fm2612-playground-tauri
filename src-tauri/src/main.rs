@@ -44,6 +44,12 @@ fn window_top_set(window: tauri::WebviewWindow, enabled: bool) -> Result<bool, S
     set_window_top(&window, enabled)
 }
 
+#[tauri::command]
+fn window_reload(window: WebviewWindow) -> Result<(), String> {
+    allowed(&window)?;
+    window.reload().map_err(|e| e.to_string())
+}
+
 fn main() {
     let context = tauri::generate_context!();
     let dev_origin = if cfg!(debug_assertions) {
@@ -61,7 +67,6 @@ fn main() {
         &serde_json::to_string(&dev_origin).expect("serialize development origin"),
     );
     tauri::Builder::default()
-        .manage(std::sync::Mutex::new(mcp::Mcp::default()))
         .plugin(
             tauri::plugin::Builder::<tauri::Wry>::new("desktop-controls")
                 .js_init_script(desktop_script)
@@ -69,12 +74,17 @@ fn main() {
         )
         .invoke_handler(tauri::generate_handler![
             window_top_get,
+            window_reload,
             window_top_set,
             mcp::mcp_status,
+            mcp::mcp_regenerate_token,
             mcp::mcp_set,
             mcp::mcp_reply,
         ])
         .setup(|app| {
+            app.manage(std::sync::Mutex::new(mcp::Mcp::load(
+                &app.path().app_data_dir()?,
+            )?));
             // Extend only the pinned module response; dist and its lock stay untouched.
             tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?
                 .on_web_resource_request(|request, response| {

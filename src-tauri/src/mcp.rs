@@ -1,7 +1,8 @@
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
-    io::Read,
+    io::{Read, Write},
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc, Arc, Mutex,
@@ -17,21 +18,80 @@ type Pending = Arc<Mutex<HashMap<String, mpsc::Sender<Value>>>>;
 pub struct Mcp {
     running: Option<Arc<AtomicBool>>,
     token: String,
+    token_path: PathBuf,
+    generation: String,
     worker: Option<std::thread::JoinHandle<()>>,
     pub pending: Pending,
 }
-impl Default for Mcp {
-    fn default() -> Self {
-        Self {
+fn save_token(path: &Path, token: &str) -> std::io::Result<()> {
+    let temporary = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
+    let result = (|| {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temporary)?;
+        file.write_all(token.as_bytes())?;
+        file.sync_all()?;
+        std::fs::rename(&temporary, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+impl Mcp {
+    pub fn load(directory: &Path) -> std::io::Result<Self> {
+        std::fs::create_dir_all(directory)?;
+        let token_path = directory.join("mcp-token");
+        let token = match std::fs::read_to_string(&token_path) {
+            Ok(token) => {
+                uuid::Uuid::parse_str(&token).map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid saved MCP token")
+                })?;
+                token
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let token = uuid::Uuid::new_v4().to_string();
+                save_token(&token_path, &token)?;
+                token
+            }
+            Err(error) => return Err(error),
+        };
+        Ok(Self {
             worker: None,
             running: None,
-            token: uuid::Uuid::new_v4().to_string(),
+            token,
+            token_path,
+            generation: uuid::Uuid::new_v4().to_string(),
             pending: Arc::default(),
+        })
+    }
+    fn regenerate_token(&mut self) -> Result<(), String> {
+        if self.running.is_some() {
+            return Err("Turn MCP off before regenerating its token".into());
         }
+        let token = uuid::Uuid::new_v4().to_string();
+        save_token(&self.token_path, &token).map_err(|e| e.to_string())?;
+        self.token = token;
+        Ok(())
     }
 }
+#[tauri::command]
+pub fn mcp_regenerate_token(
+    window: WebviewWindow,
+    state: tauri::State<'_, Mutex<Mcp>>,
+) -> Result<Value, String> {
+    super::allowed(&window)?;
+    let mut state = state.lock().map_err(|e| e.to_string())?;
+    state.regenerate_token()?;
+    Ok(info(&state))
+}
 fn info(state: &Mcp) -> Value {
-    json!({"enabled":state.running.is_some(), "url":format!("http://{ADDRESS}/mcp"), "token":state.token})
+    json!({"enabled":state.running.is_some(), "url":format!("http://{ADDRESS}/mcp"), "token":state.token, "generation":state.generation})
 }
 #[tauri::command]
 pub fn mcp_status(
@@ -53,19 +113,20 @@ pub async fn mcp_set(
     if enabled && state.running.is_none() {
         let server =
             Server::http(ADDRESS).map_err(|e| format!("Cannot start MCP on {ADDRESS}: {e}"))?;
-        state.token = uuid::Uuid::new_v4().to_string();
+        state.generation = uuid::Uuid::new_v4().to_string();
         window
             .eval(format!(
                 "window.__tetoricaMcpEnabled = true; window.__tetoricaMcpGeneration = {}",
-                json!(state.token)
+                json!(state.generation)
             ))
             .map_err(|e| e.to_string())?;
         let running = Arc::new(AtomicBool::new(true));
         state.running = Some(running.clone());
         let token = state.token.clone();
+        let generation = state.generation.clone();
         let pending = state.pending.clone();
         state.worker = Some(std::thread::spawn(move || {
-            serve(server, window, pending, token, running)
+            serve(server, window, pending, token, generation, running)
         }));
     } else if !enabled {
         window
@@ -209,6 +270,7 @@ fn serve(
     window: WebviewWindow,
     pending: Pending,
     token: String,
+    generation: String,
     running: Arc<AtomicBool>,
 ) {
     while running.load(Ordering::SeqCst) {
@@ -219,7 +281,7 @@ fn serve(
             request,
             &token,
             &running,
-            |name, args| project(&window, &pending, name, args, &token),
+            |name, args| project(&window, &pending, name, args, &generation),
             |path| {
                 window
                     .app_handle()
@@ -315,6 +377,53 @@ mod tests {
     use super::*;
     fn request(method: &str, params: Value) -> Value {
         json!({"jsonrpc":"2.0","id":1,"method":method,"params":params})
+    }
+    #[test]
+    fn token_survives_restarts_and_explicit_rotation_revokes_old_token() {
+        let directory =
+            std::env::temp_dir().join(format!("tetorica-token-{}", uuid::Uuid::new_v4()));
+        let mut state = Mcp::load(&directory).unwrap();
+        let original = state.token.clone();
+        let reloaded = Mcp::load(&directory).unwrap();
+        assert_eq!(original, reloaded.token);
+        assert_ne!(state.generation, reloaded.generation);
+        state.running = Some(Arc::new(AtomicBool::new(true)));
+        assert!(state.regenerate_token().is_err());
+        assert_eq!(state.token, original);
+        state.running = None;
+        state.regenerate_token().unwrap();
+        assert_ne!(state.token, original);
+        assert_eq!(Mcp::load(&directory).unwrap().token, state.token);
+        assert!(!gate(
+            ADDRESS,
+            false,
+            &format!("Bearer {original}"),
+            &state.token
+        ));
+        assert!(gate(
+            ADDRESS,
+            false,
+            &format!("Bearer {}", state.token),
+            &state.token
+        ));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&state.token_path)
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+        // A failed save must preserve the token already in use.
+        let saved = state.token.clone();
+        state.token_path = directory.join("missing").join("mcp-token");
+        assert!(state.regenerate_token().is_err());
+        assert_eq!(state.token, saved);
+        std::fs::remove_dir_all(directory).unwrap();
     }
     #[test]
     fn missing_bridge_dispatch_has_an_explicit_ipc_reply() {
