@@ -1,6 +1,6 @@
 # Tetorica Playground — Tauri
 
-Tetorica Playground の配布ZIPを変更せずに読み込む、独立したデスクトップ版です。
+Tetorica Playground の配布ZIPを取り込み、展開した `dist/` を Git 管理するデスクトップ版です。ローカルと GitHub Actions は同じコミットの本体を組み込みます。
 既存の Menu → **Always on Top** で最前面への固定を切り替えます。起動時はOffです。
 macOSの非同期ウィンドウ更新に対応し、1クリックで表示を切り替えます。
 
@@ -10,26 +10,27 @@ Node.js 22、Rust、各OSのTauriビルド環境が必要です。
 
 ```sh
 npm ci
-python3 scripts/fetch_release.py
 npm run dev
 ```
 
 ビルドは `npm run build`、検証は `npm test` と `cargo test --locked --manifest-path src-tauri/Cargo.toml`。
-配布ZIPは `release.source.json` と `release.lock.json` で固定し、SHA256と全展開ファイルを検証します。
-ダウンロードの自動再試行はしません。
+チェックアウトに `dist/` が含まれるため、起動・ビルド時に本体ZIPをダウンロードしません。
+`release.lock.json` は取り込み元の記録と展開内容の整合性検査に使い、dev / build 前と Actions で `python3 scripts/import_release.py --check` を実行します。
+`release.source.json` と `fetch_release.py` は廃止しました。
 
-ローカルZIPを使う場合:
+上流の本体を更新する場合:
 
 ```sh
-python3 scripts/import_release.py /path/to/release.zip
+python3 scripts/import_release.py /path/to/release.zip --version VERSION
 ```
 
-上流の更新時のみ `--version VERSION` を付け、URLとロックファイルを一緒に更新してください。
+取り込み後に動作確認し、`dist/` と `release.lock.json` を同じコミットに含めてください。リリースタグもそのコミットに付けます。
+`.gitattributes` で `dist/` の改行変換を無効にし、Windowsでも同じバイト列を保持します。
 ラッパーのバージョンと上流ZIPのバージョンは別に管理します。
 
 ## 構成
 
-- `dist/`: 上流ZIPそのまま（Git管理外）
+- `dist/`: 上流ZIPそのまま（Git管理対象）
 - `desktop/desktop-interface.js`: 既存MenuへTauri専用の最前面固定項目を追加
 - `src-tauri/src/main.rs`: ローカルのメインウィンドウに限定した最前面固定コマンド
 - `assets/app-icon.png`: 上流Playgroundアイコン。`npm run icons` でデスクトップ用を生成

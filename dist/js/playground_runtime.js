@@ -1,0 +1,2108 @@
+import {createLoopAsyncTasks} from './playground_async_tasks.js';
+import {createOpnAudio} from './playground_opn_audio.js';
+import {createOpnClient} from './playground_opn.js';
+import {createSoundChipRegistry} from './playground_soundchips.js';
+import {createGameboyAudio} from './playground_gameboy_audio.js';
+import {createGameboyClient} from './playground_gameboy.js';
+import {createYm2608Audio} from './playground_ym2608_audio.js?v=loop-async-tasks-1';
+import {createYm2608Client} from './playground_ym2608.js?v=loop-async-tasks-1';
+import {createRf5c164Client} from './playground_rf5c164.js';
+import {createRf5c164Audio} from './playground_rf5c164_audio.js';
+import {samplePCM} from './native_sample.js';
+/**
+ * @file playground_runtime.js
+ * 実行環境: Browser（メインスレッド）
+ * 依存: window のイベント処理、Web Audio 対応 Synth、Worker（Worker モード時）。
+ * import とブラウザー上の実行・音声初期化は別。Node.js での実再生用ではない。
+ */
+import {createMidiRack, createMidiApi, validateBendRange, MIDI_SUPPORTED_CC} from './playground_midi.js?v=midi-held-stop-1';
+import {parseMidiFile} from './midi_file.js?v=readable-midi-1';
+import { createAudioScheduler } from "./playground_audio_scheduler.js";
+import {
+  FM_PRESETS,
+} from "./megasynth.js";
+import { createTetoricaSynth } from "./tetorica_synth.js";
+import {
+  createPitchFromMidi,
+} from "./pitch.js";
+import { createPlaygroundClock } from "./playground_clock.js?v=loop-async-tasks-1";
+import { executeWithPlaygroundGuards } from "./playground_execution.js";
+import { createPlaygroundLive } from "./playground_live.js?v=loop-async-tasks-1";
+import { createPlaygroundMusic } from "./playground_music.js";
+import { createPlaygroundNoiseApi } from "./playground_noise.js";
+import { createFmProxy } from "./playground_sync.js?v=dac-pcm-1";
+import { parseTfi } from "./tfi.js";
+import { parseVgi } from "./vgi.js";
+
+const REFERENCE_MIDI = 62;
+const REFERENCE_BLOCK = 4;
+const REFERENCE_FNUM = 553;
+const NOTE_TO_SEMITONE = {
+  C: 0,
+  "C#": 1,
+  Db: 1,
+  D: 2,
+  "D#": 3,
+  Eb: 3,
+  E: 4,
+  F: 5,
+  "F#": 6,
+  Gb: 6,
+  G: 7,
+  "G#": 8,
+  Ab: 8,
+  A: 9,
+  "A#": 10,
+  Bb: 10,
+  B: 11,
+};
+const SCALE_INTERVALS = {
+  majorPentatonic: [0, 2, 4, 7, 9],
+  minorPentatonic: [0, 3, 5, 7, 10],
+  major: [0, 2, 4, 5, 7, 9, 11],
+  minor: [0, 2, 3, 5, 7, 8, 10],
+};
+
+/**
+ * @param {{
+ *   synth?: object | null,
+ *   megaDrive?: object | null,
+ *   chip?: "ym2612" | "ym2203" | "ym2608" | "ym2610",
+ *   workletUrl?: string,
+ *   audioWorkletUrl?: string,
+ *   ym2612WasmUrl?: string,
+ *   segaPsgWasmUrl?: string,
+ *   presets?: Record<string, object>,
+ *   logicWorkerUrl?: string | null,
+ *   execution?: "main" | "worker",
+ *   dacLookaheadSeconds?: number,
+ *   guardExecution?: boolean,
+ *   onStatus?: ((message: string) => void) | null,
+ *   onRuntimeState?: ((state: string) => void) | null,
+ *   onLog?: ((line: string) => void) | null,
+ *   onReady?: ((context: { synth: object, megaDrive: object }) => void) | null,
+ *   onMegaDriveEvent?: ((event: object) => void) | null,
+ * }} [options]
+ */
+export function createPlaygroundRuntime(
+  options = {}
+) {
+  const megaDrive =
+    options.synth ??
+    options.megaDrive ??
+    createTetoricaSynth({
+      chip: options.chip,
+      workletUrl:
+        options.audioWorkletUrl ??
+        options.workletUrl ??
+        (options.chip === "ym2610"
+          ? "./ym2610b-worklet.js"
+          : "./ym2612-worklet.js"),
+      ym2612WasmUrl:
+        options.ym2612WasmUrl ??
+        "./generated/ym2612_wasm.wasm",
+      wasmUrl:
+        options.wasmUrl ??
+        (options.chip === "ym2203"
+          ? options.ym2203WasmUrl ?? "./generated/ym2203_wasm.wasm"
+          : options.chip === "ym2608"
+            ? options.ym2608WasmUrl ?? "./generated/ym2608_wasm.wasm"
+            : options.chip === "ym2610"
+              ? options.ym2610bWasmUrl ?? "./generated/ym2610b_wasm.wasm"
+            : undefined),
+      segaPsgWasmUrl:
+        options.segaPsgWasmUrl ??
+        "./generated/segapsg_wasm.wasm",
+    });
+  const presets = {
+    ...FM_PRESETS,
+    ...(options.presets ?? {}),
+  };
+  const noiseApi =
+    createPlaygroundNoiseApi(
+      megaDrive
+    );
+  const capabilities =
+    megaDrive.capabilities ?? {
+      chip: "ym2612",
+      fmChannels: 6,
+      psg: Boolean(megaDrive.psg),
+      dac: true,
+    };
+  const sourceMap =
+    new Map();
+  const runtime = {
+    bpm: 120,
+    clockStartTime: null,
+    liveLoops: new Map(),
+    liveCleanupHooks:
+      new Map(),
+    livePrepared: new Map(),
+    context: {},
+    sampleClockStartTime: null,
+    dacLookaheadSeconds: Math.max(
+      0,
+      Number(options.dacLookaheadSeconds) || 0.25
+    ),
+  };
+  const audioScheduler = createAudioScheduler({
+    now: () => megaDrive.audioContext?.currentTime ?? 0,
+    send: (entries) => synth.scheduleWrites(entries),
+  });
+  audioScheduler.setTiming({ lookaheadSeconds: runtime.dacLookaheadSeconds, schedulerIntervalMs: Math.min(10, Math.max(1, runtime.dacLookaheadSeconds * 1000)) });
+  function setTiming(options) {
+    const timing = audioScheduler.setTiming(options);
+    runtime.dacLookaheadSeconds = timing.lookaheadSeconds;
+    return timing;
+  }
+  function getTiming() { return audioScheduler.getTiming(); }
+  const preparedFxUnits =
+    new WeakSet();
+  const activeNotes =
+    new Set();
+  const guardExecution =
+    options.guardExecution !== false;
+  const defaultExecution =
+    options.execution ?? "main";
+  const defaultLogicWorkerUrl =
+    new URL(
+      "./playground_logic_worker.js?v=native-fx-1",
+      import.meta.url
+    );
+  defaultLogicWorkerUrl.searchParams.set(
+    "v",
+    "dac-pcm-1"
+  );
+  const logicWorkerUrl =
+    options.logicWorkerUrl ??
+    defaultLogicWorkerUrl.href;
+
+  const midiApis = new Set();
+  let midiRack = null;
+  let midiFilePlaying = false;
+  let midiWriteBatch = null;
+  let synth = null;
+  let prepareAudioPromise = null;
+  let currentRunToken = 0;
+  let currentLoopContext = null;
+  const keyboardHandlers = new Map();
+  let removeMegaDriveListener =
+    null;
+  let currentSourceName = null;
+  let playbackState = "stopped";
+  let logicWorker = null;
+  let workerGlobals = null;
+  const pcmDevices = new Set();
+  const soundChips = createSoundChipRegistry();
+  let sharedFm;
+  let sharedFmSynth;
+  async function openPcm(name, token = currentRunToken) {
+    if(!['ym2612', 'ym2203', 'ym2610', 'rf5c164', 'ym2608', 'gameboy'].includes(name)) throw new Error('Unsupported Playground sound chip: ' + name);
+    const createAudio = ['ym2612', 'ym2203', 'ym2610'].includes(name) ? (context, destination) => createOpnAudio(context, destination, name) : name === 'gameboy' ? createGameboyAudio : name === 'ym2608' ? createYm2608Audio : createRf5c164Audio;
+    const device = await createAudio(megaDrive.audioContext, megaDrive.audio.masterInputNode);
+    if(token !== currentRunToken){device.dispose();throw new Error('Run stopped');}
+    pcmDevices.add(device);return device;
+  }
+  async function decodePcm(source){
+    if(source instanceof Uint8Array)source=source.buffer.slice(source.byteOffset,source.byteOffset+source.byteLength);
+    if(typeof Blob !== 'undefined' && source instanceof Blob)source=await source.arrayBuffer();
+    // Reuse the existing local-file URL policy and browser decoder, then release the cache.
+    const name='__rf5c164_decode_'+(++pcmDecodeId);
+    try{return samplePCM(await megaDrive.sample.load(name,source));}
+    finally{megaDrive.sample.unload(name);}
+  }
+  let pcmDecodeId=0;
+
+  let workerCommandQueue = Promise.resolve();
+  let resolveLogicWorkerStop = null;
+  let logicWorkerStopPromise = null;
+  const workerRunRequests = [];
+  // Test doubles may not expose an audio runtime; production handles live there.
+  const fallbackAudioHandles = new Map();
+  const workerKeyboardHandlers =
+    new Map();
+
+  function setWorkerAudioHandle(id, value) {
+    if (megaDrive.audio?.setAudioHandle) {
+      return megaDrive.audio.setAudioHandle(id, value);
+    }
+    fallbackAudioHandles.get(id)?.dispose?.();
+    fallbackAudioHandles.set(id, value);
+    return value;
+  }
+
+  function getWorkerAudioHandle(id) {
+    return megaDrive.audio?.getAudioHandle?.(id) ??
+      fallbackAudioHandles.get(id);
+  }
+
+  function disposeWorkerAudioHandles(ids) {
+    if (megaDrive.audio?.disposeAudioHandles) {
+      megaDrive.audio.disposeAudioHandles(ids);
+      return;
+    }
+    for (const id of ids ?? [...fallbackAudioHandles.keys()]) {
+      fallbackAudioHandles.get(id)?.dispose?.();
+      fallbackAudioHandles.delete(id);
+    }
+  }
+
+  function emitStatus(message) {
+    options.onStatus?.(message);
+  }
+
+  function emitRuntimeState(state) {
+    options.onRuntimeState?.(state);
+  }
+
+  function emitLog(line) {
+    options.onLog?.(line);
+  }
+
+  function setPlaybackState(state) {
+    playbackState = state;
+  }
+
+  let applyingChipObserver=false;
+  function installMegaDriveListener() {
+    if (
+      removeMegaDriveListener ||
+      typeof options.onMegaDriveEvent !==
+        "function"
+    ) {
+      return;
+    }
+
+    removeMegaDriveListener =
+      megaDrive.addListener(
+        (event) => {
+          options.onMegaDriveEvent?.(event);
+          if(logicWorker && !applyingChipObserver) {
+            const core=synth?.fm??synth;
+            logicWorker.postMessage({type:"chip-state",state:core?.getState?.()});
+          }
+        }
+      );
+  }
+
+  function setMasterVolume(volume) {
+    megaDrive.setMasterVolume(
+      Number(volume)
+    );
+    return megaDrive.getMasterVolume();
+  }
+
+  function getMasterVolume() {
+    return megaDrive.getMasterVolume();
+  }
+
+  function setDacLookahead(seconds) {
+    const value = Number(seconds);
+    if (!Number.isFinite(value) || value < 0) {
+      throw new Error(
+        "DAC lookahead must be a non-negative number"
+      );
+    }
+    setTiming({ lookaheadSeconds: value, schedulerIntervalMs: Math.min(getTiming().schedulerIntervalMs, Math.max(1, value * 1000)) });
+    return value;
+  }
+
+  function getDacLookahead() {
+    return runtime.dacLookaheadSeconds;
+  }
+
+  function controlNoiseVoice(
+    voice,
+    options = {}
+  ) {
+    if (
+      !voice ||
+      typeof voice !== "object" ||
+      typeof voice.gain?.set !==
+        "function" ||
+      typeof voice.gain?.rampTo !==
+        "function" ||
+      typeof voice.pan?.set !==
+        "function" ||
+      typeof voice.pan?.rampTo !==
+        "function" ||
+      typeof voice.filter?.cutoff?.set !==
+        "function" ||
+      typeof voice.filter?.cutoff
+        ?.rampTo !== "function" ||
+      typeof voice.filter?.q?.set !==
+        "function" ||
+      typeof voice.filter?.q?.rampTo !==
+        "function"
+    ) {
+      throw new Error(
+        "control(voice, options) currently supports noise voices only"
+      );
+    }
+
+    const slide =
+      Math.max(
+        0,
+        Number(options.slide) || 0
+      );
+    const apply = (
+      controlParam,
+      value
+    ) => {
+      if (value == null) {
+        return;
+      }
+      if (slide > 0) {
+        controlParam.rampTo(
+          value,
+          slide
+        );
+        return;
+      }
+      controlParam.set(value);
+    };
+
+    apply(voice.gain, options.gain);
+    apply(voice.pan, options.pan);
+    apply(
+      voice.filter.cutoff,
+      options.cutoff
+    );
+    apply(voice.filter.q, options.q);
+  }
+
+  async function loadSample(
+    name,
+    source
+  ) {
+    await ensureReady();
+    return megaDrive.sample.load(
+      name,
+      source
+    );
+  }
+
+  async function playSample(
+    name,
+    sampleOptions = {}
+  ) {
+    await ensureReady();
+    return megaDrive.sample.play(
+      name,
+      sampleOptions
+    );
+  }
+
+  function stopSample(name) {
+    megaDrive.sample.stop(name);
+  }
+
+  function unloadSample(name) {
+    return megaDrive.sample.unload(name);
+  }
+
+  async function loadStream(
+    name,
+    url
+  ) {
+    await ensureReady();
+    return megaDrive.stream.load(
+      name,
+      url
+    );
+  }
+
+  async function playStream(
+    name,
+    streamOptions = {}
+  ) {
+    await ensureReady();
+    return megaDrive.stream.play(
+      name,
+      streamOptions
+    );
+  }
+
+  function pauseStream(name) {
+    megaDrive.stream.pause(name);
+  }
+
+  function stopStream(name) {
+    megaDrive.stream.stop(name);
+  }
+
+  function unloadStream(name) {
+    return megaDrive.stream.unload(name);
+  }
+
+  function stopAllNotes() {
+    if (!synth) {
+      return;
+    }
+
+    for (
+      let channel = 0;
+      channel < capabilities.fmChannels;
+      channel += 1
+    ) {
+      synth.noteOff(channel);
+    }
+
+    activeNotes.clear();
+  }
+
+  function stopAllAudio() {
+    soundChips.clear();
+    for(const device of pcmDevices)device.dispose();
+    pcmDevices.clear();
+    midiApis.clear();
+    midiRack?.stop();
+    midiRack = null;
+    midiFilePlaying = false;
+    audioScheduler.clear();
+    if (capabilities.dac) {
+      synth?.clearScheduledWrites?.();
+      synth?.clearDacPlayback?.();
+      synth?.write?.(0, 0x2b, 0x00);
+    }
+    stopAllNotes();
+    megaDrive.psg?.reset?.();
+    megaDrive.sample.stopAll();
+    megaDrive.stream.stop();
+    noiseApi.stopAll();
+  }
+
+  const clockApi =
+    createPlaygroundClock({
+      runtime,
+      getAudioContext: () =>
+        megaDrive.audioContext,
+      getCurrentRunToken: () =>
+        currentRunToken,
+      getCurrentLoopContext: () =>
+        currentLoopContext,
+      setCurrentLoopContext: (
+        value
+      ) => {
+        currentLoopContext = value;
+      },
+    });
+
+  function executeUserCallback(callback) {
+    return executeWithPlaygroundGuards(
+      callback,
+      window,
+      {
+        enabled: guardExecution,
+      }
+    );
+  }
+
+  const loopTasks = createLoopAsyncTasks({getLoop: () => currentLoopContext,
+    cancelWaits: loop => clockApi.cancelWaits(loop)});
+  const liveApi =
+    createPlaygroundLive({
+      runtime,
+      megaDrive,
+      preparedFxUnits,
+      currentBeat:
+        clockApi.currentBeat,
+      getCurrentLoopContext: () =>
+        currentLoopContext,
+      setCurrentLoopContext: (
+        value
+      ) => {
+        currentLoopContext = value;
+      },
+      logLine: emitLog,
+      setStatus: emitStatus,
+      executeCallback: executeUserCallback,
+      finishTasks: loop => loopTasks.finish(loop),
+      releaseTasks: loop => loopTasks.release(loop),
+      cancelWaits: state => {loopTasks.release(state);for (const api of midiApis) api.cancelOwner(state.name);clockApi.cancelWaits(state);},
+    });
+
+  function psgTone(
+    channel,
+    period,
+    attenuation = 0
+  ) {
+    const normalizedChannel =
+      Number(channel);
+    const normalizedPeriod =
+      Number(period);
+    const normalizedAttenuation =
+      Number(attenuation);
+
+    if (
+      !Number.isInteger(
+        normalizedChannel
+      ) ||
+      normalizedChannel < 0 ||
+      normalizedChannel > 2
+    ) {
+      throw new Error(
+        "psgTone channel must be 0..2"
+      );
+    }
+    if (
+      !Number.isInteger(
+        normalizedPeriod
+      ) ||
+      normalizedPeriod < 0 ||
+      normalizedPeriod > 0x3ff
+    ) {
+      throw new Error(
+        "psgTone period must be an integer in range 0..1023"
+      );
+    }
+    if (
+      !Number.isInteger(
+        normalizedAttenuation
+      ) ||
+      normalizedAttenuation < 0 ||
+      normalizedAttenuation > 15
+    ) {
+      throw new Error(
+        "psgTone attenuation must be 0..15"
+      );
+    }
+    if (!capabilities.psg || !megaDrive.psg) {
+      throw new Error(
+        "Mega Drive PSG is only available when ?chip=ym2612"
+      );
+    }
+
+    const latchBase =
+      0x80 |
+      (normalizedChannel << 5);
+    megaDrive.psg.write(
+      latchBase |
+        (normalizedPeriod & 0x0f)
+    );
+    megaDrive.psg.write(
+      (normalizedPeriod >> 4) &
+        0x3f
+    );
+    megaDrive.psg.write(
+      0x90 |
+        (normalizedChannel << 5) |
+        normalizedAttenuation
+    );
+  }
+
+  function psgNoise(
+    mode,
+    attenuation = 0
+  ) {
+    const normalizedMode =
+      Number(mode);
+    const normalizedAttenuation =
+      Number(attenuation);
+
+    if (
+      !Number.isInteger(
+        normalizedMode
+      ) ||
+      normalizedMode < 0 ||
+      normalizedMode > 7
+    ) {
+      throw new Error(
+        "psgNoise mode must be 0..7"
+      );
+    }
+    if (
+      !Number.isInteger(
+        normalizedAttenuation
+      ) ||
+      normalizedAttenuation < 0 ||
+      normalizedAttenuation > 15
+    ) {
+      throw new Error(
+        "psgNoise attenuation must be 0..15"
+      );
+    }
+    if (!capabilities.psg || !megaDrive.psg) {
+      throw new Error(
+        "Mega Drive PSG is only available when ?chip=ym2612"
+      );
+    }
+
+    megaDrive.psg.write(
+      0xe0 | normalizedMode
+    );
+    megaDrive.psg.write(
+      0xf0 | normalizedAttenuation
+    );
+  }
+
+  function requireDac() {
+    if (!capabilities.dac) {
+      throw new Error(
+        "YM2612 DAC is only available when ?chip=ym2612"
+      );
+    }
+  }
+
+  function createFxApi() {
+    if (megaDrive.audio?.createFXApi) {
+      return megaDrive.audio.createFXApi({
+        getBeatSeconds: () =>
+          clockApi.beatsToSeconds(1),
+      });
+    }
+
+    // Defer this error so non-FX scripts work with lightweight test doubles.
+    return new Proxy({}, {
+      get() {
+        return () => {
+          throw new Error("FX requires TetoricaAudioRuntime");
+        };
+      },
+    });
+  }
+
+  async function ensureReady() {
+    if (prepareAudioPromise) {
+      await prepareAudioPromise;
+      return synth;
+    }
+
+    if (synth) {
+      await megaDrive.resume();
+      emitRuntimeState(
+        "Audio ready"
+      );
+      return synth;
+    }
+
+    emitStatus(
+      "Loading Mega Drive audio..."
+    );
+    emitRuntimeState(
+      "Preparing..."
+    );
+
+    prepareAudioPromise =
+      (async () => {
+        await megaDrive.start();
+        await megaDrive.audio?.prepareNativeFX?.();
+        if (megaDrive.audio?.nativeFX) {
+          megaDrive.audio.nativeFX.onError = (message) => {
+            options.onLog?.(`[FX] ${message}`);
+            emitStatus(`FX error: ${message.split('\n')[0]} (see Console)`);
+          };
+        }
+        synth = megaDrive.fm;
+        installMegaDriveListener();
+        synth.setPreset(
+          0,
+          presets["one-op-basic"]
+        );
+        emitRuntimeState(
+          "Audio ready"
+        );
+        emitStatus("Audio ready.");
+        options.onReady?.({
+          synth,
+          megaDrive,
+        });
+      })();
+
+    try {
+      await prepareAudioPromise;
+    } finally {
+      prepareAudioPromise = null;
+    }
+
+    return synth;
+  }
+
+  async function initialize() {
+    await ensureReady();
+  }
+
+  function registerKeyboardHandler(
+    eventType,
+    name,
+    fn,
+    evaluationState
+  ) {
+    if (
+      typeof name !== "string" ||
+      name.length === 0
+    ) {
+      throw new Error(
+        "Keyboard handler name must be a non-empty string"
+      );
+    }
+
+    if (typeof fn !== "function") {
+      throw new Error(
+        "Keyboard handler callback must be a function"
+      );
+    }
+
+    evaluationState.keyboardDefinitions.set(
+      `${eventType}:${name}`,
+      { eventType, name, fn }
+    );
+  }
+
+  function clearKeyboardHandlers() {
+    for (const handler of keyboardHandlers.values()) {
+      window.removeEventListener(
+        handler.eventType,
+        handler.listener
+      );
+    }
+    keyboardHandlers.clear();
+    for (const handler of workerKeyboardHandlers.values()) {
+      window.removeEventListener(
+        handler.eventType,
+        handler.listener
+      );
+    }
+    workerKeyboardHandlers.clear();
+  }
+
+  function stopLogicWorker() {
+    if (!logicWorker) {
+      return Promise.resolve();
+    }
+    if (logicWorkerStopPromise) return logicWorkerStopPromise;
+    const worker = logicWorker;
+    let timer;
+    let finish;
+    const stopped = new Promise((resolve) => {
+      finish = () => {
+        clearTimeout(timer);
+        if (resolveLogicWorkerStop === finish) {
+          resolveLogicWorkerStop = null;
+          logicWorkerStopPromise = null;
+        }
+        resolve();
+      };
+    });
+    logicWorkerStopPromise = stopped;
+    resolveLogicWorkerStop = finish;
+    timer = setTimeout(finish, 100);
+    worker.postMessage({ type: "stop" });
+    return stopped;
+  }
+
+  function terminateLogicWorker() {
+    const error = new DOMException("Playground Worker was terminated", "AbortError");
+    while (workerRunRequests.length > 0) workerRunRequests.shift().reject(error);
+    resolveLogicWorkerStop?.();
+    megaDrive.audio?.nativeFX?.stop();
+    megaDrive.node?.port.postMessage({type:"detach-chip-port"});
+    logicWorker?.terminate();
+    logicWorker = null;
+    megaDrive.audio?.nativeFX?.useMain();
+    workerGlobals = null;
+    workerCommandQueue = Promise.resolve();
+    resolveLogicWorkerStop = null;
+    disposeWorkerAudioHandles();
+  }
+
+  function serializeKeyboardEvent(event) {
+    return {
+      type: event.type,
+      key: event.key,
+      code: event.code,
+      repeat: event.repeat,
+      altKey: event.altKey,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      shiftKey: event.shiftKey,
+    };
+  }
+
+  function registerWorkerKeyboardHandler(
+    id,
+    eventType
+  ) {
+    const listener = (event) => {
+      logicWorker?.postMessage({
+        type: "keyboard",
+        id,
+        event: serializeKeyboardEvent(event),
+      });
+    };
+    workerKeyboardHandlers.set(id, {
+      eventType,
+      listener,
+    });
+    window.addEventListener(eventType, listener);
+  }
+
+  async function invokeWorkerCommand(
+    command,
+    args
+  ) {
+    const globals = workerGlobals;
+    if (!globals) {
+      throw new Error("Playground Worker is not running");
+    }
+
+    if(command==='pcm.create')return (await openPcm(args[0])).port;
+    if(command==='pcm.decode')return decodePcm(args[0]);
+    if (command === "midi.file") return globals.midi.playFile(...args);
+    if (command === "midi.invoke") {
+      const [method,values]=args;
+      if (!["enableSoundChip","setVoice","noteOn","noteOff","pitchBend","setPitchBendRange","cc","release"].includes(method)) throw new Error("Unsupported MIDI method");
+      if(midiFilePlaying)throw new Error('Manual MIDI operations are unavailable during MIDI file playback');
+      const rack=getMidiRack();
+      if(method==='release')return rack.noteOff(values[0],values[1],values[2],undefined,values[3],values[4]);
+      return rack[method](...values);
+    }
+    if (command === "fx.create") {
+      const [id, method, options] = args;
+      const factory = globals.fx[method];
+      if (typeof factory !== "function") throw new Error(`Unsupported FX: ${method}`);
+      setWorkerAudioHandle(id, factory(options));
+      return;
+    }
+    if (command === "fx.setChain") {
+      return globals.fx.setChain(args[0].map((id) => getWorkerAudioHandle(id)));
+    }
+    if (command === "fx.compose") {
+      const [id, method, handleIds] = args;
+      const factory = globals.fx[method];
+      if (typeof factory !== "function") throw new Error(`Unsupported FX composition: ${method}`);
+      setWorkerAudioHandle(id, factory(...handleIds.map((handleId) => getWorkerAudioHandle(handleId))));
+      return;
+    }
+    if (command === "fx.clear") return globals.fx.clear();
+    if (command === "fx.detach") return megaDrive.clearFXChain();
+    if (command === "audio.stopAll") return stopAllAudio();
+    if (command === "audio.disposeHandles") {
+      disposeWorkerAudioHandles(args[0]);
+      return;
+    }
+    if (command === "noise.create") {
+      const [id, options] = args;
+      setWorkerAudioHandle(id, globals.noise.create(options));
+      return;
+    }
+    if (command === "noise.stopAll") return globals.noise.stopAll();
+    if (command === "noise.control") {
+      return globals.control(getWorkerAudioHandle(args[0]), args[1]);
+    }
+    if (command === "audio.call" || command === "audio.get") {
+      const [id, path] = args;
+      let target = getWorkerAudioHandle(id);
+      for (const segment of path) target = target?.[segment];
+      if (!target) throw new Error(`Unknown audio handle: ${id}`);
+      if (command === "audio.get") return target.get();
+      const [, , method, methodArgs] = args;
+      return target[method](...methodArgs);
+    }
+
+    if (command.startsWith("fm.dac.")) {
+      const method = command.slice(7);
+      if (!['setSample', 'playFromSample', 'play', 'stop', 'removeSample'].includes(method) || !globals.fm.dac) {
+        throw new Error(`Unsupported DAC method: ${method}`);
+      }
+      return globals.fm.dac[method](...args);
+    }
+    if (command.startsWith("fm.")) {
+      const method = command.slice(3);
+      if (typeof globals.fm[method] !== "function") {
+        throw new Error(`Unsupported fm method: ${method}`);
+      }
+      return globals.fm[method](...args);
+    }
+    if (command.startsWith("psg.")) {
+      const method = command.slice(4);
+      if (typeof globals.psg[method] !== "function") {
+        throw new Error(`Unsupported psg method: ${method}`);
+      }
+      return globals.psg[method](...args);
+    }
+    if(command==='sample.decode'){
+      const buffer=await globals.sample.load(...args);
+      return samplePCM(buffer);
+    }
+    if(command==='sample.pcm'){
+      const buffer=megaDrive.sample.get(args[0]);
+      if(!buffer)throw new Error(`Unknown sample: ${args[0]}`);
+      return samplePCM(buffer);
+    }
+    if (command.startsWith("sample.")) {
+      const method = command.slice(7);
+      if (typeof globals.sample[method] !== "function") {
+        throw new Error(`Unsupported sample method: ${method}`);
+      }
+      const value = await globals.sample[method](...args);
+      if (method === "isLoaded" || method === "list") {
+        return value;
+      }
+      // AudioBuffer and voice objects contain AudioNodes and cannot cross the
+      // Worker boundary. Worker callers use these operations for their side
+      // effects, so resolve after the main-thread operation completes.
+      return undefined;
+    }
+    if (command.startsWith("stream.")) {
+      const method = command.slice(7);
+      if (typeof globals.stream[method] !== "function") {
+        throw new Error(`Unsupported stream method: ${method}`);
+      }
+      const value = await globals.stream[method](...args);
+      if (method === "isLoaded" || method === "list") {
+        return value;
+      }
+      return undefined;
+    }
+    if (command.startsWith("dac.")) {
+      const method = command.slice(4);
+      if (typeof globals.dac[method] !== "function") {
+        throw new Error(`Unsupported dac method: ${method}`);
+      }
+      return globals.dac[method](...args);
+    }
+
+    switch (command) {
+      case "write":
+      case "play":
+      case "psgTone":
+      case "psgNoise":
+      case "setMasterVolume":
+      case "getMasterVolume":
+      case "setTiming":
+      case "getTiming":
+      case "setDacLookahead":
+      case "getDacLookahead":
+      case "hzToBlockFnum":
+      case "noteToBlockFnum":
+      case "noteLerp":
+      case "scheduleWritesSamples":
+        return globals[command](...args);
+      case "stopAll":
+        return globals.stopAll();
+      default:
+        throw new Error(`Unsupported Worker command: ${command}`);
+    }
+  }
+
+  function handleWorkerMessage(event) {
+    const message = event.data ?? {};
+    if (message.type === "command" || message.type === "request") {
+      if (message.command === "keyboard.register") {
+        registerWorkerKeyboardHandler(
+          message.args[0],
+          message.args[1]
+        );
+        return;
+      }
+      if (message.command === "log" || message.command === "warn" || message.command === "error") {
+        const prefix = message.command === "log" ? "" : `[${message.command}] `;
+        emitLog(`${prefix}${formatLogArgs(message.args)}`);
+        return;
+      }
+      const worker = logicWorker;
+      const respond = (value, error) => {
+        if (logicWorker !== worker) return;
+        if (message.type === "request") {
+          worker.postMessage(error
+            ? { type: "response", id: message.id, error: error?.message ?? String(error) }
+            : { type: "response", id: message.id, value }, !error && message.command === "pcm.create" ? [value] : []);
+        } else if (error) emitLog(error?.stack ?? String(error));
+      };
+      workerCommandQueue = workerCommandQueue
+        .catch(() => undefined)
+        .then(() => {
+          if (logicWorker !== worker) return;
+          const result = invokeWorkerCommand(message.command, message.args ?? []);
+          if (message.command === "play" || message.command === "midi.file") {
+            // Start notes in FIFO order, but their durations must not block other
+            // loops, register writes or Stop. Reply only when this note completes.
+            void result.then(value => respond(value), error => respond(undefined, error));
+            return;
+          }
+          return result.then(value => respond(value), error => respond(undefined, error));
+        });
+    }
+  }
+
+  function installLogicWorkerHandlers(worker) {
+    worker.onmessage = (event) => {
+      if (logicWorker !== worker) return;
+      const message = event.data ?? {};
+      if (message.type === "chip-observer") {
+        // Notification only: sound has already gone Worker -> AudioWorklet.
+        // Keep UI/recording state, but never send a second copy to the chip.
+        const core=synth?.fm??synth;
+        const transport=core?.transport;
+        try {
+          applyingChipObserver=true;
+          if(core) core.transport={write(port,register,value){},reset(){}};
+          const {method,args}=message.event;
+          if(typeof synth?.[method]==="function" && !method.startsWith("_")) synth[method](...args);
+        } catch(error){emitLog(`Observer: ${error.message}`);}
+        finally {if(core)core.transport=transport;applyingChipObserver=false;}
+        return;
+      }
+      if (message.type === "complete") {
+        const request = workerRunRequests.shift();
+        request?.resolve();
+        if (!request || request.runToken !== currentRunToken) return;
+        const loopCount = message.loopCount ?? 0;
+        const keyboardHandlerCount = message.keyboardHandlerCount ?? 0;
+        emitStatus(
+          loopCount > 0
+            ? `Running ${loopCount} live loop(s) in Worker.`
+            : keyboardHandlerCount > 0
+              ? `Running ${keyboardHandlerCount} keyboard handler(s) in Worker.`
+              : "Done."
+        );
+        if (loopCount === 0 && keyboardHandlerCount === 0) {
+          setPlaybackState("stopped");
+        }
+        emitRuntimeState("Audio ready");
+        return;
+      }
+      if (message.type === "execution-error") {
+        const error = new Error(message.message);
+        error.stack = message.stack ?? error.stack;
+        workerRunRequests.shift()?.reject(error);
+        return;
+      }
+      if (message.type === "stopped") {
+        const finish = resolveLogicWorkerStop;
+        void workerCommandQueue.then(() => finish?.(), () => finish?.());
+        return;
+      }
+      if (message.type === "log") {
+        emitLog(message.message);
+        return;
+      }
+      handleWorkerMessage(event);
+    };
+    worker.onerror = (event) => {
+      if (logicWorker !== worker) return;
+      const location = event.filename
+        ? ` (${event.filename}:${event.lineno ?? 0}:${event.colno ?? 0})`
+        : "";
+      const error = new Error(
+        `${event.message || "Playground Worker failed"}${location}`
+      );
+      emitLog(error.message);
+      while (workerRunRequests.length > 0) {
+        workerRunRequests.shift().reject(error);
+      }
+    };
+  }
+
+  function commitKeyboardHandlers(definitions) {
+    clearKeyboardHandlers();
+
+    for (const [id, definition] of definitions) {
+      const listener = (event) => {
+        void executeUserCallback(
+          () => definition.fn(event)
+        ).catch((error) => {
+          emitLog(
+            `[keyboard:${definition.name}] ${error?.stack ?? String(error)}`
+          );
+          emitStatus("Keyboard handler error");
+        });
+      };
+      keyboardHandlers.set(
+        id,
+        {
+          eventType: definition.eventType,
+          listener,
+        }
+      );
+      window.addEventListener(
+        definition.eventType,
+        listener
+      );
+    }
+  }
+
+  function getMidiRack() {
+    if (synth?.dac?.enabled) throw new Error('Disable DAC before using MIDI FM playback');
+    if (capabilities.chip !== "ym2612") throw new Error("MIDI outputs currently require YM2612 mode");
+    return midiRack ??= createMidiRack({preset: Object.values(presets)[0],
+      write: entry => entry.time === undefined ? synth.write(entry.port,entry.register,entry.value) : midiWriteBatch ? midiWriteBatch.push(entry) : audioScheduler.enqueue([entry]),
+      writePsg: entry => entry.time === undefined ? megaDrive.psg.write(entry.value) : (midiWriteBatch ? midiWriteBatch.push({...entry,type:"psg-write"}) : audioScheduler.enqueue([{...entry,type:"psg-write"}])),
+    });
+  }
+
+  async function playMidiFile(data, routes, runToken) {
+    if (options.midiFileSupported === false) throw new Error("MIDI file playback requires the ymfm engine");
+    if (midiFilePlaying) throw new Error("A MIDI file is already playing");
+    const song = parseMidiFile(data), rack = getMidiRack();
+    const mapping = new Map();
+    const targets = new Set();
+    for (const route of routes) {
+      if (!song.parts.some(p=>p.key===route.part)) throw new Error("Unknown MIDI part");
+      if (!["tetorica-ym2612","tetorica-sega-psg"].includes(route.destination) || !Number.isInteger(route.channel) || route.channel<0 || route.channel>15) throw new Error("Invalid MIDI route");
+      validateBendRange(route.bendRange ?? 2);
+      const key=JSON.stringify([route.destination,route.channel]);
+      if (targets.has(key) || mapping.has(route.part)) throw new Error("Assign each imported part to a separate output / MIDI channel");
+      targets.add(key);mapping.set(route.part,route);
+      if (route.destination === 'tetorica-ym2612') {
+        const patch=presets[route.preset];if(!patch)throw new Error(`Unknown preset: ${route.preset}`);
+        rack.setVoice(route.channel,patch);
+      }
+    }
+    rack.stop(); // Begin each file with clean pedal/controller state.
+    for(const route of routes) {
+      rack.pitchBend(route.destination,route.channel,0);
+      rack.setPitchBendRange(route.destination,route.channel,route.bendRange ?? 2);
+    }
+    midiFilePlaying = true;
+    for (const warning of song.warnings) emitLog(warning);
+    const origin=megaDrive.audioContext.currentTime+runtime.dacLookaheadSeconds;
+    let cursor=0;
+    try {
+      while(cursor<song.events.length) {
+        if(runToken!==currentRunToken)throw new DOMException('Run stopped','AbortError');
+        const horizon=megaDrive.audioContext.currentTime+runtime.dacLookaheadSeconds;
+        let count=0;
+        midiWriteBatch=[];
+        while(cursor<song.events.length && origin+song.events[cursor].seconds<=horizon && count++<4096) {
+          const event=song.events[cursor++],route=mapping.get(event.part);
+          if(event.type!=='channel')continue;
+          const time=origin+event.seconds;
+          if(event.kind===14 || event.kind===11&&MIDI_SUPPORTED_CC.includes(event.a)) {
+            const raw=event.a+(event.b<<7),value=(raw-8192)/(raw<8192?8192:8191);
+            // Channel controls can be in a different SMF track from the notes.
+            for(const part of song.parts)if(part.port===event.port&&part.device===event.device&&part.channel===event.channel) {
+              const target=mapping.get(part.key);
+              if(target) {
+                if(event.kind===14)rack.pitchBend(target.destination,target.channel,value,time);
+                else rack.cc(target.destination,target.channel,event.a,event.b,time);
+              }
+            }
+            continue;
+          }
+          if(!route)continue;
+          if(event.kind===9&&event.b>0)rack.noteOn(route.destination,route.channel,event.a,event.b,time);
+          else if(event.kind===8||event.kind===9)rack.noteOff(route.destination,route.channel,event.a,time);
+        }
+        audioScheduler.enqueue(midiWriteBatch);midiWriteBatch=null;
+        await clockApi.sleep(.01,runToken);
+      }
+      rack.stop(origin+song.seconds);
+      await clockApi.sleep(Math.max(0,origin+song.seconds-megaDrive.audioContext.currentTime),runToken);
+    } finally {midiWriteBatch=null;if(runToken===currentRunToken)midiFilePlaying=false;}
+  }
+
+  function createExecutionGlobals(
+    runToken
+  ) {
+    const evaluationState = {
+      loopDefinitions: new Map(),
+      cleanupDefinitions: [],
+      cleanupCallIndex: 0,
+      keyboardDefinitions: new Map(),
+      cleanupScope:
+        currentSourceName ??
+        "__anonymous__",
+    };
+    const fx = createFxApi();
+    if (sharedFmSynth !== synth) { sharedFm = createFmProxy(synth); sharedFmSynth = synth; }
+    const fm = sharedFm;
+    const psg = megaDrive.psg;
+    const musicApi =
+      createPlaygroundMusic({
+        noteToSemitone:
+          NOTE_TO_SEMITONE,
+        scaleIntervals:
+          SCALE_INTERVALS,
+        createPitchFromMidi,
+        pitchReference: {
+          referenceMidi:
+            REFERENCE_MIDI,
+          referenceBlock:
+            REFERENCE_BLOCK,
+          referenceFnum:
+            REFERENCE_FNUM,
+        },
+        synth: () => synth,
+        presets,
+        activeNotes,
+        sleep: (seconds) =>
+          clockApi.sleep(
+            seconds,
+            runToken
+          ),
+        getCurrentLoopContext: () =>
+          currentLoopContext,
+      });
+    const sampleApi = {
+      load: loadSample,
+      play: playSample,
+      stop: stopSample,
+      stopAll: () =>
+        megaDrive.sample.stopAll(),
+      unload: unloadSample,
+      isLoaded: (name) =>
+        megaDrive.sample.isLoaded(name),
+      get: (name) =>
+        megaDrive.sample.get(name),
+      list: () =>
+        megaDrive.sample.list(),
+    };
+    const streamApi = {
+      load: loadStream,
+      play: playStream,
+      pause: pauseStream,
+      stop: stopStream,
+      unload: unloadStream,
+      isLoaded: (name) =>
+        megaDrive.stream.isLoaded(name),
+      get: (name) =>
+        megaDrive.stream.get(name),
+      list: () =>
+        megaDrive.stream.list(),
+    };
+    const dacApi = {
+      load: async (name, data) => {
+        requireDac();
+        const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+        if (bytes.byteLength % 5 !== 0) throw new Error("Invalid DAC data length");
+        fm.loadDacBank(name, bytes);
+      },
+      loadBase64: async (name, encoded) => {
+        requireDac();
+        fm.loadDacBank(
+          name,
+          decodeDacBase64Bytes(encoded)
+        );
+      },
+      playStream: (name, { atSamples = 0 } = {}) => {
+        requireDac();
+        const origin = runtime.sampleClockStartTime ??
+          (megaDrive.audioContext.currentTime +
+            runtime.dacLookaheadSeconds);
+        runtime.sampleClockStartTime = origin;
+        fm.playDacBank(
+          name,
+          origin + Math.max(0, Number(atSamples) || 0) / 44100
+        );
+      },
+      schedule: (start, entries) => {
+        requireDac();
+        return scheduleWritesSamples(fm, start, entries.map(([offset, value]) => [offset, 0, 0x2a, value]));
+      },
+      scheduleBase64: (start, encoded) => {
+        requireDac();
+        return scheduleDacBase64(fm, start, encoded);
+      },
+    };
+    const livePrepareApi = {
+      fm,
+      fx,
+      psg,
+      sample: sampleApi,
+      stream: streamApi,
+      dac: dacApi,
+      noise: noiseApi,
+      control: controlNoiseVoice,
+      context: runtime.context,
+      log: (...args) => {
+        emitLog(
+          formatLogArgs(args)
+        );
+      },
+    };
+    const playgroundConsole = {
+      log: (...args) => {
+        emitLog(
+          formatLogArgs(args)
+        );
+      },
+      warn: (...args) => {
+        emitLog(
+          `[warn] ${formatLogArgs(args)}`
+        );
+      },
+      error: (...args) => {
+        emitLog(
+          `[error] ${formatLogArgs(args)}`
+        );
+      },
+    };
+    const midi = createMidiApi((method,args) => {
+      if(runToken!==currentRunToken)throw new DOMException("Run stopped","AbortError");
+      if (method === 'playFile') return playMidiFile(...args,runToken);
+      if (midiFilePlaying) throw new Error('Manual MIDI operations are unavailable during MIDI file playback');
+      const rack=getMidiRack();
+      if(method==='release')return rack.noteOff(args[0],args[1],args[2],undefined,args[3],args[4]);
+      return rack[method](...args);
+    }, {now:clockApi.nowSeconds,sleep:seconds=>clockApi.sleep(seconds,runToken),bpm:()=>runtime.bpm,owner:()=>currentLoopContext?.name??null,
+      check:()=>{if(runToken!==currentRunToken)throw new DOMException('Run stopped','AbortError');}});
+    midiApis.add(midi);
+    const pg = {
+      trackAsync: promise => loopTasks.track(promise),
+      useSoundChip: async (name, options) => {
+        const check = () => { if (runToken !== currentRunToken) throw new DOMException('Run stopped', 'AbortError'); };
+        check();
+        const chip = await soundChips.use(name, options, chipName => {
+          check();
+          if (['ym2612', 'ym2203', 'ym2610'].includes(chipName) && capabilities.chip === chipName) return fm;
+          return pg.createSoundChip(chipName);
+        }, {evictOnDispose: !(['ym2612', 'ym2203', 'ym2610'].includes(name) && capabilities.chip === name)});
+        check();
+        return chip;
+      },
+      createSoundChip: async name => {
+        const device=await openPcm(name,runToken);
+        const client=['ym2612', 'ym2203', 'ym2610'].includes(name) ? createOpnClient(name, device.port) : name === 'gameboy' ? createGameboyClient(device.port) : name === 'ym2608' ? createYm2608Client(device.port) : createRf5c164Client(device.port,decodePcm);
+        const dispose=device.dispose;
+        device.dispose=()=>{client.dispose();dispose();};
+        return client;
+      },
+      midi,
+      fm,
+      dac: dacApi,
+      fx,
+      psg,
+      context: runtime.context,
+      sample: sampleApi,
+      stream: streamApi,
+      noise: noiseApi,
+      control: controlNoiseVoice,
+      psgTone,
+      psgNoise,
+      setMasterVolume,
+      getMasterVolume,
+      setTiming,
+      getTiming,
+      setDacLookahead,
+      getDacLookahead,
+      CH1: 0,
+      CH2: 1,
+      CH3: 2,
+      ...(capabilities.fmChannels >= 4 ? { CH4: 3 } : {}),
+      ...(capabilities.fmChannels >= 5 ? { CH5: 4 } : {}),
+      ...(capabilities.fmChannels >= 6 ? { CH6: 5 } : {}),
+      ...(capabilities.chip === "ym2612" ? { CH7: 6, CH8: 7, CH9: 8, CH10: 9, CH11: 10, CH12: 11, CH13: 12, CH14: 13, CH15: 14, CH16: 15 } : {}),
+      PSG1: 0,
+      PSG2: 1,
+      PSG3: 2,
+      OP1: 0,
+      OP2: 1,
+      OP3: 2,
+      OP4: 3,
+      presets,
+      FM_PRESETS: presets,
+      tfiToPreset: parseTfi,
+      vgiToPreset: parseVgi,
+      livePrepare: (name, fn) =>
+        liveApi.livePrepare(
+          name,
+          fn,
+          livePrepareApi
+        ),
+      play: (note, playOptions) =>
+        musicApi.play(
+          note,
+          playOptions
+        ),
+      write: (...args) =>
+        writeYm2612(
+          fm,
+          ...args
+        ),
+      beginSampleSchedule: () =>
+        beginSampleSchedule(),
+      scheduleWritesSamples: (start, entries) =>
+        scheduleWritesSamples(fm, start, entries),
+      sleep: (seconds) =>
+        clockApi.sleep(
+          seconds,
+          runToken
+        ),
+      sleepSamples: (
+        samples,
+        sampleRate = 44100
+      ) =>
+        sleepSamples(
+          samples,
+          sampleRate,
+          runToken
+        ),
+      beat: clockApi.beat,
+      nextBeat:
+        clockApi.nextBeat,
+      setBpm: (value) => { const result = clockApi.setBpm(value); megaDrive.audio?.nativeFX?.controller.syncTempo(); return result; },
+      tween:
+        clockApi.tween,
+      liveFx: (name, options) => fx.liveFx(name, options),
+      liveLoop: (name, fn) =>
+        liveApi.liveLoop(
+          name,
+          fn,
+          evaluationState
+        ),
+      liveCleanup: (
+        names,
+        fn
+      ) =>
+        liveApi.liveCleanup(
+          names,
+          fn,
+          evaluationState
+        ),
+      onKeyboardPressKey: (name, fn) =>
+        registerKeyboardHandler(
+          "keydown",
+          name,
+          fn,
+          evaluationState
+        ),
+      onKeyboardReleaseKey: (name, fn) =>
+        registerKeyboardHandler(
+          "keyup",
+          name,
+          fn,
+          evaluationState
+        ),
+      stopLoop:
+        liveApi.stopLoop,
+      stopAllLoops:
+        liveApi.stopAllLoops,
+      stopAll: stopAllAudio,
+      choose:
+        musicApi.choose,
+      cycle:
+        musicApi.cycle,
+      rand: musicApi.rand,
+      rrange:
+        musicApi.rrange,
+      randInt:
+        musicApi.randInt,
+      lerp: musicApi.lerp,
+      scale:
+        musicApi.scale,
+      chord:
+        musicApi.chord,
+      hzToBlockFnum: musicApi.hzToBlockFnum,
+      noteToBlockFnum:
+        musicApi.noteToBlockFnum,
+      noteLerp:
+        musicApi.noteLerp,
+      log: (...args) => {
+        emitLog(
+          formatLogArgs(args)
+        );
+      },
+    };
+
+    return {
+      evaluationState,
+      globals: {
+        console:
+          playgroundConsole,
+        pg,
+        createSoundChip: pg.createSoundChip,
+        useSoundChip: pg.useSoundChip,
+        midi,
+        fm,
+        dac: pg.dac,
+        fx,
+        psg,
+        sample: pg.sample,
+        stream: pg.stream,
+        noise: pg.noise,
+        control: pg.control,
+        psgTone,
+        psgNoise,
+        setMasterVolume:
+          pg.setMasterVolume,
+        getMasterVolume:
+          pg.getMasterVolume,
+        setTiming,
+        getTiming,
+        setDacLookahead:
+          pg.setDacLookahead,
+        getDacLookahead:
+          pg.getDacLookahead,
+        livePrepare: (name, fn) =>
+          pg.livePrepare(name, fn),
+        play: (note, playOptions) =>
+          pg.play(
+            note,
+            playOptions
+          ),
+        write: (...args) =>
+          pg.write(...args),
+        beginSampleSchedule: () =>
+          pg.beginSampleSchedule(),
+        scheduleWritesSamples: (start, entries) =>
+          pg.scheduleWritesSamples(start, entries),
+        sleep: (seconds) =>
+          pg.sleep(seconds),
+        sleepSamples: (
+          samples,
+          sampleRate
+        ) =>
+          pg.sleepSamples(
+            samples,
+            sampleRate
+          ),
+        beat: pg.beat,
+        nextBeat: pg.nextBeat,
+        setBpm: pg.setBpm,
+        tween: pg.tween,
+        context:
+          pg.context,
+        liveFx: pg.liveFx,
+        liveLoop: (name, fn) =>
+          pg.liveLoop(name, fn),
+        liveCleanup: (
+          names,
+          fn
+        ) =>
+          pg.liveCleanup(
+            names,
+            fn
+          ),
+        onKeyboardPressKey: (name, fn) =>
+          pg.onKeyboardPressKey(name, fn),
+        onKeyboardReleaseKey: (name, fn) =>
+          pg.onKeyboardReleaseKey(name, fn),
+        stopLoop:
+          pg.stopLoop,
+        stopAllLoops:
+          pg.stopAllLoops,
+        stopAll:
+          pg.stopAll,
+        choose: pg.choose,
+        cycle: pg.cycle,
+        rand: pg.rand,
+        rrange: pg.rrange,
+        randInt: pg.randInt,
+        lerp: pg.lerp,
+        scale: pg.scale,
+        chord: pg.chord,
+        hzToBlockFnum: pg.hzToBlockFnum,
+        noteToBlockFnum:
+          pg.noteToBlockFnum,
+        noteLerp:
+          pg.noteLerp,
+        CH1: pg.CH1,
+        CH2: pg.CH2,
+        CH3: pg.CH3,
+        ...(capabilities.fmChannels >= 4 ? { CH4: pg.CH4 } : {}),
+        ...(capabilities.fmChannels >= 5 ? { CH5: pg.CH5 } : {}),
+        ...(capabilities.fmChannels >= 6 ? { CH6: pg.CH6 } : {}),
+        ...(capabilities.chip === "ym2612" ? { CH7: 6, CH8: 7, CH9: 8, CH10: 9, CH11: 10, CH12: 11, CH13: 12, CH14: 13, CH15: 14, CH16: 15 } : {}),
+        PSG1: pg.PSG1,
+        PSG2: pg.PSG2,
+        PSG3: pg.PSG3,
+        OP1: pg.OP1,
+        OP2: pg.OP2,
+        OP3: pg.OP3,
+        OP4: pg.OP4,
+        FM_PRESETS: presets,
+        tfiToPreset: pg.tfiToPreset,
+        vgiToPreset: pg.vgiToPreset,
+        presets: pg.presets,
+        sample: pg.sample,
+        stream: pg.stream,
+        control: pg.control,
+        log: pg.log,
+      },
+    };
+  }
+
+  function writeYm2612(
+    fm,
+    ...args
+  ) {
+    if (args.length === 2) {
+      fm.write(
+        0,
+        Number(args[0]),
+        Number(args[1])
+      );
+      return;
+    }
+    if (args.length === 3) {
+      fm.write(
+        Number(args[0]),
+        Number(args[1]),
+        Number(args[2])
+      );
+      return;
+    }
+    throw new Error(
+      "write(register, value) or write(port, register, value) is required"
+    );
+  }
+
+  function beginSampleSchedule() {
+    if (runtime.sampleClockStartTime === null) {
+      runtime.sampleClockStartTime =
+        megaDrive.audioContext.currentTime +
+        runtime.dacLookaheadSeconds;
+    }
+    return Math.round(
+      (currentLoopContext?.sampleCursorSeconds ?? 0) * 44100
+    );
+  }
+
+  function scheduleWritesSamples(fm, startSamples, entries) {
+    const start = Math.max(0, Number(startSamples) || 0);
+    const origin = runtime.sampleClockStartTime ??
+      (megaDrive.audioContext.currentTime +
+        runtime.dacLookaheadSeconds);
+    runtime.sampleClockStartTime = origin;
+    audioScheduler.enqueue(entries.map(([offset, port, register, value]) => {
+      const time = origin + (start + Number(offset)) / 44100;
+      if (port === 'psg') {
+        if (!Number.isInteger(register) || register < 0 || register > 255) throw new Error('Invalid PSG byte');
+        return {time, type: 'psg-write', value: register};
+      }
+      return {time, port: Number(port), register: Number(register), value: Number(value)};
+    }));
+  }
+
+  function scheduleDacBase64(fm, startSamples, encoded) {
+    scheduleWritesSamples(fm, startSamples, decodeDacBase64(encoded));
+  }
+
+  function decodeDacBase64(encoded) {
+    const binary = atob(encoded);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    const view = new DataView(bytes.buffer);
+    const entries = [];
+    for (let offset = 0; offset < bytes.length; offset += 5) {
+      entries.push([view.getUint32(offset, true), 0, 0x2a, bytes[offset + 4]]);
+    }
+    return entries;
+  }
+
+  function decodeDacBase64Bytes(encoded) {
+    const binary = atob(encoded);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  }
+
+
+  function sleepSamples(
+    samples,
+    sampleRate = 44100,
+    runToken
+  ) {
+    const validSamples = Math.max(
+      0,
+      Number(samples) || 0
+    );
+    const validRate = Math.max(
+      1,
+      Number(sampleRate) || 44100
+    );
+    return clockApi.sleepSamples(
+      validSamples,
+      validRate,
+      runToken
+    );
+  }
+
+  async function playSourceInWorker(sourceCode) {
+    if (typeof Worker !== "function") {
+      throw new Error(
+        "Worker execution is not available in this environment"
+      );
+    }
+
+    currentRunToken += 1;
+    const runToken = currentRunToken;
+    if (logicWorkerStopPromise) await logicWorkerStopPromise;
+    if (runToken !== currentRunToken) return;
+    await ensureReady();
+    if (runToken !== currentRunToken) return;
+    clearKeyboardHandlers();
+    liveApi.stopAllLoops();
+    if (!logicWorker) {
+      liveApi.clearRunFxChain();
+      liveApi.clearPrepared();
+    }
+    setPlaybackState("running");
+    emitStatus("Starting Playground Worker...");
+    emitRuntimeState("Running");
+
+    const { globals } =
+      createExecutionGlobals(runToken);
+    workerGlobals = globals;
+    const isNewWorker = !logicWorker;
+    const worker = logicWorker ?? new Worker(logicWorkerUrl, {
+      type: "module",
+    });
+    logicWorker = worker;
+    if (isNewWorker) {
+      installLogicWorkerHandlers(worker);
+      if(megaDrive.node?.port && typeof MessageChannel==="function") {
+        const channel=new MessageChannel();
+        megaDrive.node.port.postMessage({type:"attach-chip-port",port:channel.port1},[channel.port1]);
+        const core=synth?.fm??synth;
+        worker.postMessage({type:"chip-port",port:channel.port2,state:core?.getState?.()},[channel.port2]);
+      }
+      const port = megaDrive.audio?.nativeFX?.workerPort();
+      if (port) worker.postMessage({type: "native-fx", port}, [port]);
+    }
+
+    await new Promise((resolve, reject) => {
+      workerRunRequests.push({ resolve, reject, runToken });
+      worker.postMessage({
+        type: "run",
+        sourceCode,
+        presets,
+        scaleIntervals: SCALE_INTERVALS,
+        capabilities,
+        timing: getTiming(),
+      });
+    });
+  }
+
+  async function playSource(
+    sourceCode,
+    playOptions = {}
+  ) {
+    const execution =
+      playOptions.execution ??
+      defaultExecution;
+    if (execution === "worker") {
+      const pending = playSourceInWorker(sourceCode);
+      const runToken = currentRunToken;
+      try {
+        return await pending;
+      } catch (error) {
+        if (error.name === "AbortError" || runToken !== currentRunToken) throw error;
+        setPlaybackState("stopped");
+        emitStatus(`Error: ${error.message}`);
+        emitRuntimeState("Error");
+        emitLog(error?.stack ?? String(error));
+        throw error;
+      }
+    }
+    if (execution !== "main") {
+      throw new Error(
+        `Unknown execution mode: ${execution}`
+      );
+    }
+    currentRunToken += 1;
+    const runToken = currentRunToken;
+    await stopLogicWorker();
+    if (runToken !== currentRunToken) return;
+    if (logicWorker) {
+      loopTasks.clear();
+      clockApi.cancelWaits();
+      terminateLogicWorker();
+    }
+
+    await ensureReady();
+    if (runToken !== currentRunToken) return;
+    clearKeyboardHandlers();
+    liveApi.clearRunFxChain();
+    setPlaybackState("running");
+    emitStatus("Running...");
+    emitRuntimeState("Running");
+
+    const {
+      evaluationState,
+      globals,
+    } =
+      createExecutionGlobals(
+        runToken
+      );
+    const AsyncFunction =
+      Object.getPrototypeOf(
+        async function () {}
+      ).constructor;
+    try {
+      const userFunction = new AsyncFunction(
+        ...Object.keys(globals),
+        `"use strict";\n{\n${sourceCode}\n}`
+      );
+      await executeWithPlaygroundGuards(
+        () =>
+          userFunction(
+            ...Object.values(
+              globals
+            )
+          ),
+        window,
+        {
+          enabled: guardExecution,
+        }
+      );
+
+      if (runToken !== currentRunToken) return;
+      liveApi.commitLiveLoops(
+        evaluationState.loopDefinitions
+      );
+      liveApi.commitLiveCleanups(
+        evaluationState.cleanupDefinitions,
+        evaluationState.cleanupScope
+      );
+      commitKeyboardHandlers(
+        evaluationState.keyboardDefinitions
+      );
+
+      if (runToken === currentRunToken) {
+        const loopCount =
+          evaluationState.loopDefinitions.size;
+        const keyboardHandlerCount =
+          evaluationState.keyboardDefinitions.size;
+        emitStatus(
+          loopCount > 0
+            ? `Running ${loopCount} live loop(s).`
+            : keyboardHandlerCount > 0
+              ? `Running ${keyboardHandlerCount} keyboard handler(s).`
+              : "Done."
+        );
+        if (
+          loopCount === 0 &&
+          keyboardHandlerCount === 0
+        ) {
+          setPlaybackState(
+            "stopped"
+          );
+        }
+        emitRuntimeState(
+          "Audio ready"
+        );
+      }
+    } catch (error) {
+      if (runToken !== currentRunToken) {
+        if (error?.message === "Run stopped") return;
+        throw error;
+      }
+      setPlaybackState("stopped");
+      if (
+        error instanceof Error &&
+        error.message ===
+          "Run stopped"
+      ) {
+        setPlaybackState(
+          "stopped"
+        );
+        emitStatus("Stopped.");
+        emitRuntimeState(
+          "Audio ready"
+        );
+        return;
+      }
+
+      emitStatus(
+        `Error: ${error.message}`
+      );
+      emitRuntimeState("Error");
+      emitLog(
+        error?.stack ??
+          String(error)
+      );
+      throw error;
+    }
+  }
+
+  function put(name, sourceCode) {
+    if (
+      typeof name !== "string" ||
+      name.length === 0
+    ) {
+      throw new Error(
+        "put(name, sourceCode) requires a non-empty name"
+      );
+    }
+
+    sourceMap.set(
+      name,
+      String(sourceCode ?? "")
+    );
+  }
+
+  function load(name, sourceCode) {
+    put(name, sourceCode);
+  }
+
+  function get(name) {
+    return sourceMap.get(name) ?? null;
+  }
+
+  async function play(
+    name,
+    playOptions = {}
+  ) {
+    const sourceCode =
+      sourceMap.get(name);
+
+    if (sourceCode === undefined) {
+      throw new Error(
+        `Unknown source: ${name}`
+      );
+    }
+
+    currentSourceName = name;
+    await playSource(sourceCode, playOptions);
+  }
+
+  function stop() {
+    currentRunToken += 1;
+    loopTasks.clear();
+    clockApi.cancelWaits();
+    runtime.sampleClockStartTime = null;
+    const workerMode = Boolean(logicWorker);
+    if (workerMode) void stopLogicWorker();
+    clearKeyboardHandlers();
+    // Worker mode stops through its FIFO audio.stopAll/fx.detach commands.
+    if (!workerMode) {
+      liveApi.stopAllLoops();
+      stopAllAudio();
+      liveApi.flushLiveCleanups(
+        new Set()
+      );
+      liveApi.clearRunFxChain();
+      liveApi.clearPrepared();
+      megaDrive.audio?.nativeFX?.controller.dispose();
+      runtime.context = {};
+      megaDrive.stopRecordingPlayback?.();
+    }
+    setPlaybackState("stopped");
+    emitStatus("Stopped.");
+    emitRuntimeState(
+      "Audio ready"
+    );
+  }
+
+  function clear() {
+    stop();
+    sourceMap.clear();
+    currentSourceName = null;
+  }
+
+  async function finalize() {
+    stop();
+    terminateLogicWorker();
+    // Termination can discard the Worker stop command; release MIDI tails before closing the synth.
+    stopAllAudio();
+    sourceMap.clear();
+    currentSourceName = null;
+    synth = null;
+    removeMegaDriveListener?.();
+    removeMegaDriveListener =
+      null;
+    await megaDrive.close();
+    emitStatus("Finalized.");
+    emitRuntimeState("Audio idle");
+  }
+
+  function getState() {
+    let audio = "idle";
+
+    if (prepareAudioPromise) {
+      audio = "preparing";
+    } else if (megaDrive.state === "error") {
+      audio = "error";
+    } else if (
+      megaDrive.state === "ready" &&
+      synth
+    ) {
+      audio = "ready";
+    } else if (
+      megaDrive.state === "starting"
+    ) {
+      audio = "preparing";
+    }
+
+    return {
+      chip: capabilities.chip,
+      capabilities,
+      audio,
+      playback: playbackState,
+      currentSourceName,
+      loadedSourceNames:
+        Array.from(
+          sourceMap.keys()
+        ),
+    };
+  }
+
+  return {
+    logicWorkerUrl,
+    initialize,
+    ensureReady,
+    load,
+    put,
+    get,
+    play,
+    playSource,
+    stop,
+    clear,
+    finalize,
+    getState,
+    setMasterVolume,
+    getMasterVolume,
+    setTiming,
+    getTiming,
+    get presets() {
+      return presets;
+    },
+    get megaDrive() {
+      return megaDrive;
+    },
+    get capabilities() {
+      return capabilities;
+    },
+    get fm() {
+      return synth;
+    },
+    get psg() {
+      return megaDrive.psg;
+    },
+    get sample() {
+      return megaDrive.sample;
+    },
+    get stream() {
+      return megaDrive.stream;
+    },
+    get noise() {
+      return noiseApi;
+    },
+    get context() {
+      return runtime.context;
+    },
+  };
+}
+
+/**
+ * @param {Parameters<typeof createPlaygroundRuntime>[0]} [options]
+ */
+export function Playground(
+  options = {}
+) {
+  return createPlaygroundRuntime(
+    options
+  );
+}
+
+function formatLogArgs(args) {
+  return args
+    .map((value) =>
+      typeof value === "string"
+        ? value
+        : safeStringify(value)
+    )
+    .join(" ");
+}
+
+function safeStringify(value) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}

@@ -1,0 +1,1901 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="describedby" href="./llms.txt" type="text/markdown">
+    <title>Tetorica FM2612 Playground</title>
+    <meta name="description" content="Live-code chiptune music in JavaScript. Import VGM files, browse extracted TFI instruments, edit FM operators, and audition sounds in the browser.">
+    <meta property="og:title" content="Tetorica FM2612 Playground">
+    <meta property="og:description" content="Live-code chiptune music in JavaScript. Import VGM files, browse extracted TFI instruments, edit FM operators, and audition sounds in the browser.">
+    <meta property="og:type" content="website">
+    <link rel="icon" href="./favicon.ico" sizes="any">
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f1f2ef;
+        --panel: #fffefa;
+        --ink: #252b2e;
+        --accent: #119aa7;
+        --accent-dark: #087680;
+        --accent-warm: #eb5d2d;
+        --line: #c4c6bd;
+        --code: #1d2529;
+        --code-ink: #dce6e3;
+        --pill-bg: #334248;
+        --pill-border: #6a7d7d;
+        --pill-ink: #f7f3e8;
+        --pill-muted: #c7d5d2;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
+        font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+      }
+
+      main {
+        max-width: 1220px;
+        margin: 0 auto;
+        display: flex;
+        height: 100vh;
+        height: 100dvh;
+        min-height: 0;
+        padding: 70px 20px 42px;
+      }
+
+      main > .panel {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(55, 64, 61, 0.12);
+      }
+
+      .app-bar {
+        position: fixed;
+        z-index: 50;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 54px;
+        padding: 7px 14px;
+        border-bottom: 1px solid var(--line);
+        background: #ffffff;
+        box-shadow: 0 1px 6px rgba(55, 64, 61, 0.1);
+      }
+
+      .app-bar .toolbar-menu-panel {
+        right: auto;
+        left: 0;
+      }
+
+      .app-bar-leading {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        gap: 10px;
+      }
+
+      .app-bar-brand {
+        min-width: 0;
+      }
+
+      .app-bar-brand h1 {
+        font-size: 1rem;
+        letter-spacing: -0.03em;
+        white-space: nowrap;
+      }
+
+      .app-bar-brand .subtext {
+        overflow: hidden;
+        max-width: 680px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 0;
+        box-shadow: none;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 0;
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+        line-height: 1.08;
+        letter-spacing: -0.04em;
+      }
+
+      h1 {
+        font-size: clamp(1rem, 2.2vw, 1.35rem);
+        letter-spacing: -0.02em;
+      }
+
+      h2 {
+        font-size: 0.92rem;
+        margin-bottom: 8px;
+      }
+
+      .section-heading {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+
+      .shortcut-hint {
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: rgba(31, 27, 22, 0.62);
+      }
+
+      p {
+        margin: 0;
+        line-height: 1.5;
+      }
+
+      .subtext {
+        max-width: 760px;
+        color: rgba(31, 27, 22, 0.8);
+        font-size: 0.72rem;
+        line-height: 1.35;
+      }
+
+      .link-button,
+      button,
+      select {
+        font: inherit;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        min-height: 50px;
+        margin-bottom: 0;
+        padding: 7px 12px;
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        background: #ffffff;
+      }
+
+      .topbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .toolbar-menu {
+        position: relative;
+      }
+
+      .toolbar-menu > summary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 34px;
+        padding: 6px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(7, 99, 108, 0.4);
+        color: white;
+        background: linear-gradient(180deg, #17abb9, var(--accent-dark));
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 1px 2px rgba(6, 83, 91, 0.22);
+        font-weight: 700;
+        cursor: pointer;
+        list-style: none;
+      }
+
+      .toolbar-menu > summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .toolbar-menu-panel {
+        position: absolute;
+        z-index: 20;
+        top: calc(100% + 6px);
+        right: 0;
+        display: grid;
+        min-width: 184px;
+        padding: 6px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        box-shadow: 0 10px 22px rgba(55, 64, 61, 0.18);
+      }
+
+      .toolbar-menu-panel button,
+      .toolbar-menu-panel .link-button {
+        width: 100%;
+        border: 0;
+        border-radius: 9px;
+        color: var(--ink);
+        background: transparent;
+        text-align: left;
+        font-weight: 700;
+      }
+
+      .toolbar-menu-panel button:hover,
+      .toolbar-menu-panel .link-button:hover {
+        background: rgba(17, 154, 167, 0.12);
+      }
+
+      .toolbar-menu-panel .toolbar-menu {
+        position: static;
+      }
+
+      .toolbar-menu-panel .toolbar-menu > summary {
+        display: block;
+        min-height: 0;
+        padding: 6px 8px;
+        border: 0;
+        border-radius: 9px;
+        color: var(--ink);
+        background: transparent;
+        text-align: left;
+      }
+
+      .toolbar-menu-panel .toolbar-menu[open] > summary {
+        background: rgba(17, 154, 167, 0.12);
+      }
+
+      .toolbar-menu-panel .toolbar-menu-panel {
+        position: static;
+        min-width: 0;
+        padding: 4px 0 0;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      .vgm-import-options[hidden] { display: none; }
+      .vgm-import-options {
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+        margin: 0;
+        padding: 6px;
+        border: 0;
+      }
+
+      #vgmImportDialog {
+        width: min(420px, calc(100vw - 32px));
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        color: var(--ink);
+        background: var(--panel);
+      }
+
+      #vgmImportDialog::backdrop {
+        background: rgba(0, 0, 0, 0.4);
+      }
+
+      #vgmImportFilename {
+        margin: 10px 0 16px;
+        overflow-wrap: anywhere;
+      }
+
+      .vgm-import-options legend {
+        padding: 0;
+        color: rgba(31, 27, 22, 0.68);
+        font-size: 0.76rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .vgm-import-mode {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        overflow: hidden;
+        border: 1px solid rgba(126, 56, 28, 0.2);
+        border-radius: 10px;
+      }
+
+      .vgm-import-mode label {
+        padding: 6px 8px;
+        color: var(--ink);
+        cursor: pointer;
+        font-size: 0.82rem;
+        font-weight: 700;
+        text-align: center;
+      }
+
+      .vgm-import-mode input {
+        position: absolute;
+        opacity: 0;
+      }
+
+      .vgm-import-mode label:has(input:checked) {
+        color: white;
+        background: var(--accent-dark);
+      }
+
+      .vgm-import-actions {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 6px;
+      }
+
+      .vgm-import-actions button {
+        border: 1px solid rgba(126, 56, 28, 0.18);
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--ink);
+        text-align: center;
+      }
+
+      .vgm-import-actions #convertVgmButton {
+        color: white;
+        background: linear-gradient(180deg, #f57948, var(--accent-warm));
+      }
+
+      .vgm-import-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--ink);
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+
+      .toolbar-menu--main {
+        margin-left: auto;
+      }
+
+      .expand-button {
+        width: 32px;
+        min-width: 32px;
+        margin-left: auto;
+        padding: 4px;
+      }
+
+      .expand-button svg {
+        display: block;
+        width: 16px;
+        height: 16px;
+        margin: auto;
+        fill: none;
+        stroke: currentColor;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 2;
+      }
+
+      .expand-button .collapse-icon {
+        display: none;
+      }
+
+      body.mode-expanded .app-bar {
+        display: none;
+      }
+
+      body.mode-expanded main {
+        max-width: none;
+        padding: 0;
+      }
+
+      body.mode-expanded main > .panel {
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      body.mode-expanded .toolbar .toolbar-menu-panel {
+        right: auto;
+        left: 0;
+      }
+
+      body.mode-expanded .status-bar {
+        position: static;
+        z-index: 10;
+        flex: 0 0 auto;
+        order: initial;
+        border-top: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      body.mode-expanded .expand-button .expand-icon {
+        display: none;
+      }
+
+      body.mode-expanded .expand-button .collapse-icon {
+        display: block;
+      }
+
+      .volume-control {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 2px 6px;
+        border-radius: 0;
+        border: 0;
+        background: transparent;
+        color: var(--ink);
+        font-size: 0.84rem;
+        font-weight: 700;
+      }
+
+      .volume-control input[type="range"] {
+        width: 110px;
+      }
+
+      .volume-readout {
+        min-width: 3.4em;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+
+      button,
+      .link-button,
+      select {
+        min-height: 28px;
+        padding: 4px 9px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+      }
+
+      button,
+      .link-button {
+        appearance: none;
+        color: white;
+        background: linear-gradient(180deg, #18acba, var(--accent-dark));
+        font-weight: 700;
+        cursor: pointer;
+        text-decoration: none;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 2px 0 rgba(6, 83, 91, 0.3);
+      }
+
+      #stopButton {
+        border-color: rgba(143, 58, 31, 0.58);
+        background: linear-gradient(180deg, #f67b4a, var(--accent-warm));
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 2px 0 rgba(143, 58, 31, 0.3);
+      }
+
+      button:disabled {
+        cursor: wait;
+        opacity: 0.72;
+      }
+
+      select {
+        background: rgba(255, 255, 255, 0.88);
+        color: var(--ink);
+      }
+
+      .status {
+        min-width: 0;
+        font-size: 0.74rem;
+        font-weight: 700;
+        color: rgba(31, 27, 22, 0.78);
+      }
+
+      #codePanel {
+        position: relative;
+      }
+
+      .run-overlay {
+        display: none;
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        gap: 8px;
+        z-index: 5;
+      }
+
+      .run-overlay button {
+        min-height: 30px;
+        padding: 4px 14px;
+        font-size: 0.85rem;
+      }
+
+      body.mode-simple .topbar,
+      body.mode-simple .toolbar,
+      body.mode-simple .status,
+      body.mode-simple .tabbar,
+      body.mode-simple #consolePanel,
+      body.mode-simple #helpersPanel,
+      body.mode-simple #operatorPanel {
+        display: none;
+      }
+
+      body.mode-simple .app-bar {
+        display: none;
+      }
+
+      body.mode-simple .status-bar {
+        display: none;
+      }
+
+      body.mode-simple .run-overlay {
+        display: flex;
+      }
+
+      .card {
+        padding: 0;
+        border-radius: 0;
+        border: 0;
+        background: var(--panel);
+      }
+
+      textarea,
+      .editor-host,
+      pre,
+      code {
+        font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+      }
+
+      textarea,
+      .editor-host {
+        width: 100%;
+        min-height: 320px;
+        border-radius: 0 0 14px 14px;
+        border: 0;
+        background: var(--code);
+        color: var(--code-ink);
+      }
+
+      textarea {
+        resize: vertical;
+        padding: 14px;
+        font-size: 0.88rem;
+        line-height: 1.5;
+      }
+
+      .editor-host {
+        overflow: visible;
+      }
+
+      .playground-monaco-overflow {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 0;
+        height: 0;
+        overflow: visible;
+        z-index: 10000;
+      }
+
+      .playground-monaco-overflow .monaco-hover,
+      .playground-monaco-overflow .suggest-widget {
+        background-color: #252526;
+        color: #cccccc;
+        border: 1px solid #454545;
+      }
+
+      .editor-host[data-ready="false"] {
+        display: none;
+      }
+
+      .editor-note {
+        margin-top: 8px;
+        font-size: 0.78rem;
+        color: rgba(31, 27, 22, 0.78);
+      }
+
+      pre {
+        margin: 0;
+        min-height: 188px;
+        padding: 14px;
+        border-radius: 16px;
+        background: var(--code);
+        color: var(--code-ink);
+        font-size: 0.82rem;
+        line-height: 1.45;
+        overflow-x: auto;
+        white-space: pre-wrap;
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      li {
+        margin-bottom: 6px;
+        line-height: 1.5;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(110, 122, 146, 0.3);
+        background: rgba(255, 255, 255, 0.45);
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: rgba(31, 27, 22, 0.8);
+      }
+
+      .helper-list code {
+        color: #7e381c;
+        background: rgba(255, 255, 255, 0.5);
+        padding: 1px 5px;
+        border-radius: 999px;
+      }
+
+      .engine-badge {
+        display: inline-block;
+        margin-left: 10px;
+        padding: 2px 10px;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        vertical-align: middle;
+        color: white;
+        background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+      }
+
+      .tabbar {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        margin: 0;
+        padding: 6px 12px 0;
+        border-bottom: 1px solid var(--line);
+        background: #f5f5f1;
+      }
+
+      #workPanels {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        min-height: 0;
+      }
+
+      .tab-panel:not([hidden]) {
+        flex: 1;
+        min-height: 0;
+      }
+
+      #fxMonitorPanel { overflow: auto; padding: 12px; }
+
+      #codePanel:not([hidden]) {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .code-workspace {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+      }
+
+      .file-explorer {
+        flex: 0 0 190px;
+        overflow: auto;
+        padding: 10px;
+        background: #202329;
+        color: #dbe2e8;
+      }
+
+      .file-explorer-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        margin-bottom: 8px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+
+      .file-explorer-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+
+      .file-explorer-actions button {
+        min-width: 24px;
+        min-height: 24px;
+        padding: 0 5px;
+      }
+
+      .file-tree { list-style: none; margin: 0; padding: 0; }
+      .file-tree-root { padding: 6px 8px; margin-bottom: 4px; border-bottom: 1px solid rgba(87, 188, 198, 0.35); font-size: 0.75rem; }
+      .file-drop-target { outline: 1px solid #57bcc6; background: rgba(87, 188, 198, 0.2); }
+      .file-tree [draggable="true"] { cursor: grab; }
+      .file-tree .file-tree { padding-left: 12px; }
+      .file-tree summary {
+        cursor: pointer;
+        padding: 5px 0;
+        font: 0.78rem/1.35 "SFMono-Regular", Menlo, Consolas, monospace;
+        overflow-wrap: anywhere;
+      }
+      .file-tree summary:hover { background: rgba(87, 188, 198, 0.24); }
+
+      .tfi-file-editor { flex: 1; min-width: 0; overflow: auto; padding: 12px 12px 220px; }
+      .tfi-file-editor[hidden], .tfi-file-keyboard[hidden],
+      #codePanel[data-file-kind="tfi"] #editorHost,
+      #codePanel[data-file-kind="tfi"] #editor { display: none; }
+      .tfi-file-editor .preset-row { display: none; }
+      .tfi-file-keyboard {
+        position: fixed; right: max(16px, env(safe-area-inset-right));
+        bottom: max(64px, env(safe-area-inset-bottom)); z-index: 20;
+        max-width: calc(100vw - 32px); max-height: calc(100dvh - 96px); overflow: auto;
+        padding: 16px; border: 2px solid var(--accent); border-radius: 16px;
+        background: var(--panel); box-shadow: 0 8px 30px #12363b40;
+      }
+      .tfi-file-keyboard > :not(.playground-keyboard-tools),
+      .tfi-file-keyboard [id$="playgroundKeyboardStrings"] { display: none; }
+      .tfi-file-keyboard .playground-keyboard-tools { flex-direction: column; align-items: flex-start; margin: 0; }
+
+      .file-entry {
+        display: block;
+        width: 100%;
+        padding: 5px 6px;
+        border: 0;
+        border-radius: 4px;
+        color: inherit;
+        background: transparent;
+        text-align: left;
+        overflow-wrap: anywhere;
+        font: 0.78rem/1.35 "SFMono-Regular", Menlo, Consolas, monospace;
+      }
+
+      .file-entry:hover,
+      .file-entry[aria-current="true"] {
+        background: rgba(87, 188, 198, 0.24);
+      }
+
+      .code-workspace .editor-host,
+      .code-workspace textarea {
+        min-width: 0;
+        border-radius: 0;
+      }
+
+      #codePanel textarea,
+      #codePanel .editor-host[data-ready="true"] {
+        flex: 1;
+        min-height: 0;
+      }
+
+      #codePanel textarea {
+        overflow: auto;
+      }
+
+      #codePanel .editor-host[data-ready="true"] {
+        overflow: hidden;
+      }
+
+      #helpersPanel,
+      #operatorPanel,
+      #consolePanel {
+        overflow: auto;
+      }
+
+      .tab-button {
+        min-height: 36px;
+        padding: 6px 16px;
+        border: 1px solid transparent;
+        border-bottom: 0;
+        border-radius: 10px 10px 0 0;
+        background: rgba(255, 255, 255, 0.3);
+        color: var(--ink);
+        font-weight: 700;
+      }
+
+      .tab-button[aria-selected="true"] {
+        color: var(--ink);
+        background: var(--panel);
+        border-color: var(--line);
+        box-shadow: inset 0 3px 0 var(--accent);
+      }
+
+      #codePanel .section-heading {
+        display: none;
+      }
+
+      #consolePanel pre {
+        min-height: 100%;
+        border-radius: 0;
+      }
+
+      .status-bar {
+        position: fixed;
+        z-index: 50;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        align-items: center;
+        min-height: 28px;
+        gap: 10px;
+        padding: 2px 10px;
+        border-top: 2px solid var(--accent);
+        background: #ffffff;
+        color: var(--ink);
+      }
+
+      .status-bar .pill,
+      .status-bar .status,
+      .status-bar .volume-control {
+        color: var(--ink);
+      }
+
+      .status-bar .pill {
+        min-height: 20px;
+        padding: 1px 5px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+      }
+
+      .status-bar .status {
+        color: rgba(37, 43, 46, 0.74);
+      }
+
+      .status-bar .volume-control {
+        margin-left: auto;
+      }
+
+      .status-bar .volume-control input[type="range"] {
+        width: 92px;
+      }
+
+      .tab-panel[hidden] {
+        display: none;
+      }
+
+      #keyboardPanel:not([hidden]) {
+        overflow: auto;
+        flex: 1;
+        min-height: 0;
+        border-top: 1px solid var(--line);
+      }
+
+      /* Keep audition controls within reach without splitting the Operator editor. */
+      #operatorPanel:not([hidden]) ~ #keyboardPanel {
+        position: fixed;
+        right: max(16px, env(safe-area-inset-right));
+        bottom: max(64px, env(safe-area-inset-bottom));
+        z-index: 20;
+        width: max-content;
+        max-width: calc(100vw - 32px);
+        max-height: calc(100dvh - 96px);
+        padding: 16px;
+        border: 2px solid var(--accent);
+        border-radius: 16px;
+        background: var(--panel);
+        box-shadow: 0 8px 30px #12363b40;
+      }
+
+      #operatorPanel:not([hidden]) ~ #keyboardPanel #operatorKeyboardRoot > :not(.playground-keyboard-tools):not(.playground-keyboard-channel-tools),
+      #operatorPanel:not([hidden]) ~ #keyboardPanel .playground-keyboard-preset,
+      #operatorPanel:not([hidden]) ~ #keyboardPanel #playgroundKeyboardStrings {
+        display: none;
+      }
+
+      #operatorPanel:not([hidden]) ~ #keyboardPanel .playground-keyboard-tools {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+        margin: 0;
+      }
+
+      #operatorPanel:not([hidden]) ~ #keyboardPanel .playground-keyboard-tools > div {
+        flex-wrap: wrap;
+      }
+
+      #operatorPanel:not([hidden]) {
+        padding-bottom: 260px;
+        scroll-padding-bottom: 260px;
+      }
+
+      .operator-tab-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+
+      .playground-keyboard-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+
+      .playground-keyboard-toolbar > div {
+        display: flex;
+        gap: 5px;
+      }
+
+      .playground-keyboard-tools {
+        margin-bottom: 10px;
+      }
+
+      .playground-keyboard {
+        display: grid;
+        gap: 5px;
+        max-width: 960px;
+      }
+
+      .playground-keyboard .key-row {
+        display: grid;
+        grid-template-columns: repeat(10, minmax(42px, 1fr));
+        gap: 4px;
+      }
+
+      .playground-keyboard .key {
+        min-height: 54px;
+        padding: 5px;
+        border: 1px solid rgba(70, 83, 106, 0.38);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--ink);
+        cursor: pointer;
+      }
+
+      .playground-keyboard .key strong,
+      .playground-keyboard .key span,
+      .playground-keyboard .key small {
+        display: block;
+      }
+
+      .playground-keyboard .key small {
+        font-size: 9px;
+        opacity: 0.68;
+      }
+
+      .playground-keyboard .key.is-active {
+        background: #f2c94c;
+        border-color: #8a6813;
+      }
+
+      .operator-stack {
+        display: grid;
+        gap: 7px;
+      }
+
+      .special-monitor {
+        display: grid;
+        gap: 6px;
+        margin-top: 8px;
+        padding: 8px;
+        border-radius: 14px;
+        border: 1px solid rgba(110, 122, 146, 0.28);
+        background: rgba(255, 255, 255, 0.38);
+      }
+
+      .special-monitor-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: nowrap;
+      }
+
+      .special-monitor-title {
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: rgba(31, 27, 22, 0.72);
+      }
+
+      .special-control-strip {
+        display: grid;
+        grid-template-columns: repeat(9, minmax(0, 1fr));
+        gap: 4px;
+      }
+
+      [id$="operatorTabSpecialControls"] .param-control {
+        min-width: 0;
+        width: 100%;
+        padding: 2px 4px;
+      }
+
+      @media (max-width: 720px) {
+        .special-control-strip {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+
+      .operator-header-row {
+        display: grid;
+        grid-template-columns: 32px minmax(0, 1fr);
+        gap: 6px;
+        align-items: end;
+      }
+
+      .operator-header-spacer {
+        min-width: 0;
+      }
+
+      .operator-corner-label {
+        display: flex;
+        align-items: end;
+        justify-content: center;
+        font-size: 0.48rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: rgba(31, 27, 22, 0.64);
+        text-align: center;
+        line-height: 1;
+      }
+
+      .operator-header-strip {
+        display: grid;
+        gap: 4px;
+      }
+
+      .operator-header-cell {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        font-size: 0.48rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        color: rgba(31, 27, 22, 0.64);
+        text-transform: uppercase;
+        overflow: hidden;
+      }
+
+      .operator-header-cell span {
+        display: block;
+        min-width: 0;
+        width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .preset-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 4px;
+      }
+
+      .preset-row label {
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .preset-row select {
+        min-width: 140px;
+        max-width: 220px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.9);
+        color: var(--ink);
+        font: inherit;
+        font-size: 0.78rem;
+        line-height: 1.2;
+      }
+
+      .operator-row {
+        display: grid;
+        grid-template-columns: 32px minmax(0, 1fr);
+        gap: 6px;
+        align-items: center;
+      }
+
+      .operator-name {
+        line-height: 0.95;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        min-width: 0;
+        text-align: center;
+      }
+
+      .op-color-1 {
+        color: #f2c078;
+        font-weight: 800;
+      }
+
+      .op-color-2 {
+        color: #ff93bc;
+        font-weight: 800;
+      }
+
+      .op-color-3 {
+        color: #9dff9b;
+        font-weight: 800;
+      }
+
+      .op-color-4 {
+        color: #89b7ff;
+        font-weight: 800;
+      }
+
+      .operator-name.op-color-1,
+      .operator-name.op-color-2,
+      .operator-name.op-color-3,
+      .operator-name.op-color-4 {
+        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.18);
+      }
+
+      .param-strip {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        padding-bottom: 2px;
+      }
+
+      [id$="operatorTabOperatorControls"] .param-strip {
+        display: grid;
+        gap: 4px;
+        overflow: visible;
+      }
+
+      .common-control-cell {
+        display: grid;
+        gap: 3px;
+        align-items: start;
+      }
+
+      [id$="operatorTabCommonControls"] .param-control {
+        min-width: 0;
+        width: 100%;
+        padding: 2px 4px;
+      }
+
+      [id$="operatorTabCommonControls"] .param-control.no-label {
+        grid-template-columns: 12px minmax(0, 1fr) 12px;
+        justify-items: center;
+        gap: 2px;
+        padding: 2px 4px;
+      }
+
+      [id$="operatorTabCommonControls"] .param-control.is-boolean.no-label {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 2px 3px;
+      }
+
+      .common-control-label {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        font-size: 0.48rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        color: rgba(31, 27, 22, 0.64);
+        text-transform: uppercase;
+        overflow: hidden;
+      }
+
+      .common-control-label span {
+        display: block;
+        min-width: 0;
+        width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .param-control {
+        display: grid;
+        grid-template-columns: auto auto auto auto;
+        align-items: center;
+        gap: 4px;
+        flex: 0 0 auto;
+        min-width: 82px;
+        padding: 2px 5px 2px 7px;
+        border-radius: 999px;
+        border: 1.5px solid var(--pill-border);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0) 45%),
+          var(--pill-bg);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.08),
+          0 1px 5px rgba(30, 24, 18, 0.14);
+      }
+
+      .param-control.no-label {
+        grid-template-columns: 16px minmax(0, 1fr) 16px;
+        justify-items: center;
+        gap: 4px;
+        padding: 2px 6px;
+        min-height: 32px;
+      }
+
+      .param-control.is-boolean.no-label {
+        grid-template-columns: minmax(0, 1fr);
+        justify-items: stretch;
+        padding: 2px 4px;
+      }
+
+      [id$="operatorTabOperatorControls"] .param-control {
+        min-width: 0;
+        width: 100%;
+      }
+
+      [id$="operatorTabOperatorControls"] .param-control.no-label {
+        grid-template-columns: 12px minmax(0, 1fr) 12px;
+        justify-items: center;
+        gap: 2px;
+        padding: 2px 4px;
+        min-height: 28px;
+      }
+
+      [id$="operatorTabOperatorControls"] .param-control.is-boolean.no-label {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 2px 3px;
+      }
+
+      .param-control.param-category-pitch {
+        border-color: rgba(132, 169, 228, 0.72);
+        background:
+          linear-gradient(180deg, rgba(235, 244, 255, 0.92), rgba(214, 229, 255, 0.92) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.5),
+          0 1px 5px rgba(30, 24, 18, 0.14);
+      }
+
+      .param-control.param-category-level {
+        border-color: rgba(196, 173, 118, 0.76);
+        background:
+          linear-gradient(180deg, rgba(255, 247, 225, 0.94), rgba(242, 227, 179, 0.94) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.5),
+          0 1px 5px rgba(30, 24, 18, 0.14);
+      }
+
+      .param-control.param-category-envelope {
+        border-color: rgba(225, 158, 124, 0.78);
+        background:
+          linear-gradient(180deg, rgba(255, 240, 232, 0.94), rgba(248, 210, 191, 0.94) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.5),
+          0 1px 5px rgba(30, 24, 18, 0.14);
+      }
+
+      .param-control.param-category-modulation {
+        border-color: rgba(124, 190, 141, 0.76);
+        background:
+          linear-gradient(180deg, rgba(235, 251, 239, 0.94), rgba(201, 235, 210, 0.94) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.5),
+          0 1px 5px rgba(30, 24, 18, 0.14);
+      }
+
+      .param-control.param-category-routing {
+        border-color: rgba(177, 166, 148, 0.7);
+        background:
+          linear-gradient(180deg, rgba(246, 244, 239, 0.94), rgba(225, 220, 210, 0.94) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.5),
+          0 1px 5px rgba(30, 24, 18, 0.14);
+      }
+
+      .param-control.param-category-pitch .param-button,
+      .param-control.param-category-pitch .param-value,
+      .param-control.param-category-level .param-button,
+      .param-control.param-category-level .param-value,
+      .param-control.param-category-envelope .param-button,
+      .param-control.param-category-envelope .param-value,
+      .param-control.param-category-modulation .param-button,
+      .param-control.param-category-modulation .param-value,
+      .param-control.param-category-routing .param-button,
+      .param-control.param-category-routing .param-value {
+        color: #2a2433;
+      }
+
+      .param-label-category-pitch {
+        color: #6d8fcb;
+      }
+
+      .param-label-category-level {
+        color: #9a8250;
+      }
+
+      .param-label-category-envelope {
+        color: #b76e4e;
+      }
+
+      .param-label-category-modulation {
+        color: #5f9771;
+      }
+
+      .param-label-category-routing {
+        color: #7a6e5c;
+      }
+
+      .param-label {
+        min-width: 14px;
+        font-size: 0.48rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-align: left;
+        color: var(--pill-muted);
+      }
+
+      .param-button,
+      .param-value {
+        font: inherit;
+      }
+
+      .param-button {
+        width: 16px;
+        height: 16px;
+        padding: 0;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--pill-ink);
+        cursor: pointer;
+        font-size: 0.92rem;
+        line-height: 1;
+      }
+
+      .param-button:hover {
+        color: white;
+      }
+
+      .param-value {
+        min-width: 20px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        text-align: center;
+        color: var(--pill-ink);
+        font-size: 0.6rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        user-select: none;
+        cursor: ew-resize;
+      }
+
+      .param-control.is-boolean .param-value {
+        min-width: 0;
+        padding: 1px 0;
+        border-radius: 999px;
+        cursor: pointer;
+      }
+
+      .param-control.is-boolean .param-value.is-on {
+        background: rgba(255, 255, 255, 0.32);
+      }
+
+      .param-value.is-dragging {
+        color: #ffe3b6;
+      }
+
+      .algo-inline {
+        font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+        margin: 0 0 4px;
+        font-size: 0.68rem;
+        line-height: 1.22;
+      }
+
+      @media (max-width: 960px) {
+        textarea,
+        .editor-host {
+          min-height: 320px;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .app-bar-brand .subtext {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="app-bar" aria-label="Playground navigation">
+      <div class="app-bar-leading">
+        <details class="toolbar-menu" id="mainMenu">
+          <summary aria-label="Playground menu">Menu</summary>
+          <div class="toolbar-menu-panel">
+            <button id="importMidiButton" type="button">Import MIDI</button>
+            <button id="importVgmButton" type="button">Import VGM / S98</button>
+            <dialog id="vgmImportDialog" aria-labelledby="vgmImportTitle" aria-describedby="vgmImportFilename">
+                <h2 id="vgmImportTitle">Import VGM / S98</h2>
+                <p id="vgmImportDetected"></p>
+                <p id="vgmImportNotice" class="subtext" role="status"></p>
+                <p id="vgmImportFilename"></p>
+                <label for="vgmImportTarget">Output file</label>
+                <input id="vgmImportTarget" type="text" value="/index.js" required
+                  aria-describedby="vgmImportTargetHint"
+                  style="width: 100%; margin: 6px 0; padding: 8px; font: inherit;">
+                <p id="vgmImportTargetHint" class="subtext">Project JavaScript path. Existing file contents will be replaced.</p>
+                <fieldset id="ym2608TargetOptions" class="vgm-import-options" hidden disabled>
+                  <legend>YM2608 conversion target</legend>
+                  <select id="ym2608TargetInput">
+                    <option value="ym2608">YM2608 — FM + SSG + rhythm + ADPCM-B</option>
+                    <option value="ym2612">YM2612 — FM only (translate)</option>
+                  </select>
+                  <div id="ym2608TimingOptions"><label><input type="radio" name="ym2608ImportMode" value="write" checked> Write</label><label><input type="radio" name="ym2608ImportMode" value="schedule"> Schedule</label><label><input type="radio" name="ym2608ImportMode" value="high"> High</label><p class="subtext">One shared liveLoop repeats the entire stream. Uses the bundled rhythm ROM.</p></div>
+                </fieldset>
+                <fieldset id="ym2203TargetOptions" class="vgm-import-options" hidden disabled>
+                  <legend>YM2203 conversion target</legend>
+                  <select id="ym2203TargetInput">
+                    <option value="ym2203">YM2203 — FM + SSG</option>
+                    <option value="ym2612">YM2612 — FM only (translate)</option>
+                  </select>
+                  <div id="ym2203TimingOptions">
+                    <label><input type="radio" name="ym2203ImportMode" value="write" checked> Write</label>
+                    <label><input type="radio" name="ym2203ImportMode" value="schedule"> Schedule</label>
+                    <label><input type="radio" name="ym2203ImportMode" value="high"> High</label>
+                    <p class="subtext">FM + SSG share one liveLoop. The entire stream repeats; original VGM loop points are not used.</p>
+                  </div>
+                </fieldset>
+                <fieldset id="opnImportOptions" class="vgm-import-options">
+                  <legend>Output timing</legend>
+                  <div class="vgm-import-mode">
+                    <label>
+                      <input type="radio" name="vgmImportMode" value="schedule">
+                      Schedule
+                    </label>
+                    <label>
+                      <input type="radio" name="vgmImportMode" value="write" checked>
+                      Write
+                    </label>
+                    <label title="Readable YM2612 frequency and key operations; other writes are preserved">
+                      <input type="radio" name="vgmImportMode" value="high">
+                      High
+                    </label>
+                  </div>
+                  <label class="vgm-import-toggle">
+                    <input id="noteishVgmInput" type="checkbox" autocomplete="off" disabled>
+                    Note-ish (High / FM): nearest note names for pitch comparison
+                  </label>
+                  <label>
+                    <input id="includeDacInput" type="checkbox" checked>
+                    Include DAC
+                  </label>
+                  <label>
+                    <input id="includeRf5c164Input" type="checkbox">
+                    Include RF5C164 (liveLoop; Schedule uses Write for RF5C164)
+                  </label>
+                  <label>
+                    <input id="includePsgInput" type="checkbox" checked>
+                    Include PSG (YM2612 / Genesis)
+                  </label>
+                  <label class="vgm-import-toggle">
+                    <input id="splitVgmChannelsInput" type="checkbox" checked>
+                    Split by channel
+                  </label>
+                  <label class="vgm-import-toggle" id="dacBase64Label">
+                    <input id="dacBase64Input" type="checkbox" checked>
+                    DAC data file
+                  </label>
+                </fieldset>
+                <fieldset id="gameboyImportOptions" class="vgm-import-options" hidden disabled>
+                  <legend>Game Boy conversion</legend>
+                  <div class="vgm-import-mode">
+                    <label><input type="radio" name="gameboyImportMode" value="raw" checked>Raw register writes</label>
+                    <label><input type="radio" name="gameboyImportMode" value="readable">Registers with explanations</label>
+                    <label><input type="radio" name="gameboyImportMode" value="high">High-level API + raw fallback</label>
+                  </div>
+                  <p class="subtext">Explanations show sample times, duty, envelope, sweep, written pitch, noise and wave RAM. High-level mode uses named APIs where register writes remain identical; other operations stay raw. No extra triggers or wave stops are inserted. Vibrato is not inferred.</p>
+                </fieldset>
+                <div class="vgm-import-actions">
+                  <button id="cancelVgmImportButton" type="button">Cancel</button>
+                  <button id="convertVgmButton" type="button">Convert</button>
+                </div>
+            </dialog>
+            <button id="importCassetteButton" type="button">Import Cassette</button>
+            <button id="exportCassetteButton" type="button">Export Cassette</button>
+            <button id="exportTfiButton" type="button">Export TFI ZIP (CH1-CH6)</button>
+            <button id="exportVgiButton" type="button">Export VGI ZIP (CH1-CH6)</button>
+            <button id="resetOfflineCacheButton" data-reset-offline-cache type="button">Reset Offline Cache and Reload</button>
+            <dialog id="cassetteExportDialog">
+              <form method="dialog" class="vgm-import-dialog-form">
+                <h2>Export Cassette</h2>
+                <p id="cassetteLicenseInherited" class="subtext"></p>
+                <label for="cassetteWorkTypeSelect">Work type</label>
+                <select id="cassetteWorkTypeSelect">
+                  <option value="NONE" selected>None</option>
+                  <option value="ORIGINAL">Original</option>
+                  <option value="TRANSCRIPTION">Transcription / Cover</option>
+                </select>
+                <small class="subtext">Transcription / Cover identifies an existing work; it does not grant rights to the original.</small>
+                <label for="cassetteLicenseSelect">License for author's contribution</label>
+                <select id="cassetteLicenseSelect" title="License for this Cassette">
+                  <option value="NONE" selected>None</option>
+                  <option value="PRIVATE">Private Only</option>
+                  <option value="CC0-1.0">CC0</option>
+                  <option value="CC-BY-4.0">CC BY 4.0</option>
+                  <option value="CUSTOM">Custom (*)</option>
+                </select>
+                <small class="subtext">None: unspecified · Private: reuse not granted · CC0: free reuse · CC BY: attribution required</small>
+                <label for="cassetteLicenseCustomName">Custom license / credit</label>
+                <input id="cassetteLicenseCustomName" type="text" placeholder="e.g. CC BY-NC 4.0 or personal terms">
+                <div class="vgm-import-actions">
+                  <button id="cancelCassetteExportButton" value="cancel" type="submit">Cancel</button>
+                  <button id="confirmCassetteExportButton" value="default" type="submit">Export</button>
+                </div>
+              </form>
+            </dialog>
+          </div>
+        </details>
+        <span id="mainMenuHome" hidden></span>
+        <div class="app-bar-brand">
+          <h1 id="pageTitle">Tetorica FM2612 Playground</h1>
+          <p class="subtext">
+            Write a few lines of JavaScript, run them in the browser, then
+            drop down to raw YM2612 control when you want to.
+          </p>
+        </div>
+      </div>
+      
+    </nav>
+    <main>
+      <section class="panel">
+        <div class="toolbar">
+          <button id="runButton" type="button">Run</button>
+          <button id="stopButton" type="button">Stop</button>
+          <label class="checkbox-label">
+            <input id="workerExecution" type="checkbox">
+            Run in Worker
+          </label>
+          <label class="run-file-label" for="runFileSelect">Run file</label>
+          <select id="runFileSelect" aria-label="Run file">
+            <option value="single">Single Note</option>
+            <option value="midi-fixed-channels">MIDI fixed CH liveLoop + CC / Bend</option>
+            <option value="midi-auto-chord">MIDI auto chord liveLoop + CC / Bend</option>
+            <option value="midi-fm-psg">MIDI FM + PSG (YM2612)</option>
+            <option value="8-bit-arcade-sweep">8-bit Arcade Sweep</option>
+            <option value="fx-loop-minor">FX Loop Minor</option>
+            <option value="fx-loop-major">FX Loop Major</option>
+            <option value="guitar-fx-chain">Guitar FX Chain</option>
+            <option value="ambient-choir-sample">Ambient Choir Sample</option>
+            <option value="noise-ocean">Noise Ocean</option>
+            <option value="wind-noise">Wind Noise</option>
+            <option value="just-intonation-chorus">Just Intonation Chorus</option>
+            <option value="slicer-sweep">Slicer Sweep</option>
+            <option value="fx-motion">FX Motion</option>
+            <option value="parallel-fx">Parallel FX</option>
+            <option value="sonic-pi-sample-choir">Sonic Pi Sample Choir</option>
+            <option value="fm-api-beep">FM API Beep</option>
+            <option value="pg-context-init">pg.context Init</option>
+            <option value="fm-low-level-note">FM Low-Level Note</option>
+            <option value="raw-write-beep">Raw Write Beep</option>
+            <option value="channel3-special-mode">Channel 3 Special Mode</option>
+            <option value="dac-byte-stream">DAC Byte Stream</option>
+            <option value="psg-scale">PSG Scale</option>
+            <option value="psg-ocean">PSG Ocean</option>
+          </select>
+          <button
+            id="expandButton"
+            class="expand-button"
+            type="button"
+            aria-label="Expand editor"
+            aria-pressed="false"
+            title="Expand editor"
+          >
+            <svg class="expand-icon" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M7 3H3v4M13 3h4v4M17 13v4h-4M7 17H3v-4" />
+            </svg>
+            <svg class="collapse-icon" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M3 7h4V3M17 7h-4V3M13 17v-4h4M7 17v-4H3" />
+            </svg>
+          </button>
+        </div>
+
+        <section class="card" id="workPanels">
+          <div class="tabbar" role="tablist" aria-label="Playground panels">
+            <button
+              id="codeTab"
+              class="tab-button"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="codePanel"
+            >
+              Code
+            </button>
+            <button id="fxMonitorTab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="fxMonitorPanel">FX Monitor</button>
+            <button
+              id="consoleTab"
+              class="tab-button"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="consolePanel"
+            >
+              Console
+            </button>
+            <button
+              id="operatorTabButton"
+              class="tab-button"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="operatorPanel"
+            >
+              Operator
+            </button>
+            <button id="keyboardTab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="keyboardPanel">
+              Keyboard
+            </button>
+            <button
+              id="helpersTab"
+              class="tab-button"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="helpersPanel"
+            >
+              Helper
+            </button>
+          </div>
+
+          <section id="codePanel" class="tab-panel" role="tabpanel" aria-labelledby="codeTab">
+            <div class="run-overlay" id="runOverlay"></div>
+            <div class="section-heading">
+              <h2>Code</h2>
+              <span class="shortcut-hint">Ctrl/Cmd+Shift+Space/I · Ctrl/Cmd+Space/I</span>
+            </div>
+            <div class="code-workspace">
+              <aside id="fileExplorer" class="file-explorer" aria-label="Project files">
+                <div class="file-explorer-header">
+                  <span>FILES</span>
+                  <span class="file-explorer-actions">
+                    <button id="newFileButton" type="button" title="New file">+</button>
+                    <button id="importFileButton" type="button" title="Import file">I</button>
+                    <button id="copyFileButton" type="button" title="Copy selected file to another path">Copy</button>
+                    <button id="renameFileButton" type="button" title="Rename / Move" aria-label="Rename / Move">R</button>
+                    <button id="deleteFileButton" type="button" title="Delete file">-</button>
+                  </span>
+                </div>
+                <div id="fileExplorerList"></div>
+              </aside>
+              <section id="tfiFileEditor" class="tfi-file-editor" aria-label="TFI editor" hidden>
+                <p id="tfiFileTitle" class="subtext"></p>
+                <div id="tfiFileOperator"></div>
+                <p class="subtext">Changes are saved to this virtual TFI file automatically. Pan, LFO, AMS/PMS, AM and CH3 settings are for audition only; TFI does not store them.</p>
+              </section>
+              <div id="editorHost" class="editor-host" data-ready="false"></div>
+              <textarea id="editor" spellcheck="false"></textarea>
+            </div>
+          </section>
+
+          <section id="fxMonitorPanel" class="tab-panel" role="tabpanel" aria-labelledby="fxMonitorTab" hidden>
+            <h2>FX Monitor</h2>
+            <label>liveFx <select id="fxMonitorTarget" aria-label="Observed liveFx"></select></label>
+            <label>Channel <select id="fxMonitorChannel"><option value="0">Left</option><option value="1">Right</option></select></label>
+            <p id="fxMonitorStatus" role="status">Run code containing liveFx to begin.</p>
+            <p>Blue: input · Orange: output. Fixed scales; 2048-sample Hann FFT. Observation stops when this tab or page is hidden.</p>
+            <h3>Waveform</h3>
+            <canvas id="fxMonitorWave" width="900" height="220" style="width:100%;max-width:900px" aria-label="Input and output waveform"></canvas>
+            <h3>Spectrum</h3>
+            <canvas id="fxMonitorFFT" width="900" height="220" style="width:100%;max-width:900px" aria-label="Input and output frequency spectrum"></canvas>
+          </section>
+          <section id="consolePanel" class="tab-panel" role="tabpanel" aria-labelledby="consoleTab" hidden>
+            <pre id="consoleOutput"></pre>
+          </section>
+
+          <section id="helpersPanel" class="tab-panel" role="tabpanel" aria-labelledby="helpersTab" hidden>
+            <p class="subtext" style="margin-bottom: 14px;">
+              Generating Playground code with an AI?
+              <a href="https://kyorohiro.github.io/hello_ymfm_wasm/for-ai.html" target="_blank" rel="noopener">Open For AI documentation</a> for type definitions and working examples.
+            </p>
+            <h2>pg</h2>
+            <ul class="helper-list">
+              <li><code>pg</code> is the main playground helper namespace</li>
+              <li><code>pg.play("C4", { channel: CH1, duration: 0.2 })</code> plays one note</li>
+              <li><code>pg.sleep(0.25)</code> waits in seconds</li>
+              <li><code>sleepSamples(735)</code> waits in VGM-style 44.1kHz sample units</li>
+              <li><code>pg.liveLoop("bass", async () =&gt; {})</code> keeps a named loop alive</li>
+              <li><code>pg.setBpm(120)</code>, <code>await pg.beat(1)</code>, <code>await pg.nextBeat()</code>, <code>await pg.tween(1, (t) =&gt; {})</code></li>
+              <li><code>pg.setMasterVolume(1.5)</code>, <code>pg.getMasterVolume()</code></li>
+              <li><code>await pg.livePrepare("main-fx", async ({ fx }) =&gt; ...)</code> reuses prepared live state across runs</li>
+              <li><code>pg.scale("Eb2", "majorPentatonic", 2)</code>, <code>pg.chord("B2", "minor")</code></li>
+              <li><code>pg.noteToBlockFnum("C4")</code>, <code>pg.noteLerp("B2", "E3", 0.5)</code>, <code>pg.lerp(0, 100, 0.5)</code></li>
+              <li><code>pg.choose(array)</code>, <code>pg.cycle(array)</code>, <code>pg.cycle("bass", array)</code></li>
+              <li><code>pg.rand()</code>, <code>pg.rrange(0.2, 0.8)</code>, <code>pg.randInt(0, 7)</code></li>
+              <li><code>pg.stopLoop(name)</code>, <code>pg.stopAllLoops()</code>, <code>pg.stopAll()</code></li>
+            </ul>
+
+            <h2 style="margin-top: 14px;">midi (YM2612 mode)</h2>
+            <ul class="helper-list">
+              <li><code>midi.output("tetorica-ym2612", { channel: CH1 })</code> creates an FM part; <code>"tetorica-sega-psg"</code> uses the three PSG tone voices (not noise). These are internal outputs, not external Web MIDI ports.</li>
+              <li><code>channel</code> is a MIDI part: numeric <code>0..15</code> or <code>CH1..CH16</code>. Omitted channel defaults to CH1. By default the engine shares six FM voices or three PSG tone voices automatically; a MIDI channel does not pin a physical voice.</li>
+              <li><code>await midi.enableSoundChip("tetorica-ym2612", { roundRobin: false })</code> selects fixed FM voices: CH1..CH6 map to physical CH1..CH6, one note each; CH7..CH16 do not sound. <code>roundRobin: true</code> restores automatic allocation. Changing mode stops FM notes. Specify the mode at the start of your script; this option is YM2612-only.</li>
+              <li><code>await lead.setVoice(FM_PRESETS["two-op-bell"])</code> selects an FM voice; <code>await lead.loadVoice("./lead.tfi")</code> loads TFI or VGI from FILES. With channel omitted, <code>setVoice()</code> applies to all MIDI channels.</li>
+              <li><code>await lead.noteOn("C4", { velocity: 100 })</code> and <code>await lead.noteOff("C4")</code> start and release a note. Notes also accept MIDI numbers <code>0..127</code>.</li>
+              <li><code>await lead.play("C4", { velocity: 100, duration: 1 })</code> plays for one beat at the current BPM. Use <code>Promise.all([...])</code> for chords.</li>
+              <li><code>await lead.pitchBend(0.25)</code> bends the part (<code>-1..1</code>, center <code>0</code>); <code>await lead.setPitchBendRange(2)</code> sets the range in semitones (default ±2). Bend affects notes belonging to that MIDI part.</li>
+              <li><code>await lead.cc(number, value)</code> sends a MIDI controller, values <code>0..127</code>: <code>7</code> volume, <code>10</code> pan (FM left/center/right; PSG ignores pan), <code>11</code> expression, <code>64</code> sustain (64 or higher = down), <code>120</code> all sound off, <code>121</code> reset controllers, <code>123</code> all notes off.</li>
+              <li>Import MIDI generates editable JavaScript using these APIs. The example list includes <strong>MIDI fixed CH liveLoop + CC / Bend</strong> and <strong>MIDI auto chord liveLoop + CC / Bend</strong>.</li>
+            </ul>
+
+
+            <h2 style="margin-top: 14px;">Live coding</h2>
+            <ul class="helper-list">
+              <li>Top-level <code>await</code> is available; press <code>Run</code> again to replace named loops</li>
+              <li><code>context</code> (also <code>pg.context</code>) keeps values between runs until <code>Stop</code></li>
+              <li><code>livePrepare("name", setup)</code> creates a resource once and reuses it on later runs</li>
+              <li><code>liveCleanup(["bass", "drums"], cleanup)</code> runs cleanup after those loops disappear</li>
+              <li><code>onKeyboardPressKey("play-c", event =&gt; ...)</code> and <code>onKeyboardReleaseKey(...)</code> register replaceable keyboard handlers</li>
+            </ul>
+
+            <h2 style="margin-top: 14px;">Files, imports, and console</h2>
+            <ul class="helper-list">
+              <li>Use the <code>FILES</code> buttons to create, import, rename, and delete project files</li>
+              <li><code>await file("./notes.txt")</code>, <code>await file("./data.json", { type: "json" })</code>, <code>await file("./sound.wav", { type: "arrayBuffer" })</code> read project files relative to the running file</li>
+              <li><code>const { bass } = await import("./lib/bass.js")</code> dynamically imports a project JavaScript module</li>
+              <li>Imported modules may use <code>export</code> and nested relative <code>import()</code>; use dynamic <code>import()</code> instead of a top-level static <code>import</code></li>
+              <li><code>liveFx(name, {context, process(input, output, state, context), resetState?})</code> registers JavaScript FX after native FX. Same-name Apply preserves state; Stop removes it. Input/output are arrays of channel Float32Arrays. The synchronous process runs in AudioWorklet: use context instead of captured variables, and avoid unbounded loops. Exceptions/non-finite output bypass that effect.</li>
+              <li><code>fx.updateContext(name, patch)</code> sends a context update; <code>fx.removeLiveFx(name)</code> removes it. Commands are queued, not sample-timestamped. See <code>examples/livefx/live-fx-distortion.js</code>.</li>
+              <li><code>log(value)</code>, <code>console.log(value)</code>, <code>console.warn(value)</code>, and <code>console.error(value)</code> write to the Console tab</li>
+              <li><code>tfiToPreset(await file("./bass.tfi", { type: "arrayBuffer" }))</code> converts a 42-byte TFI file for <code>fm.setPreset()</code></li>
+              <li><code>vgiToPreset(await file("./bass.vgi", { type: "arrayBuffer" }))</code> converts a 43-byte VGI file for <code>fm.setPreset()</code> (binary files require <code>type: "arrayBuffer"</code>)</li>
+            </ul>
+
+            <h3>RF5C164 PCM</h3>
+<p><code>const fm = await useSoundChip("ym2612")</code> returns the existing FM API. <code>"ym2203"</code> and <code>"ym2610"</code> return the existing FM API when selected, otherwise create and reuse an independent chip. YM2612 follows the same rule. Global play() and write() still target the default chip. <code>useSoundChip("rf5c164")</code> reuses an additional chip until Stop; <code>"ym2608"</code> and <code>"gameboy"</code> are also supported. Concurrent requests share initialization; options other than an empty object are not supported.</p>
+<p><code>createSoundChip(name)</code> creates a fresh independent chip: ym2612, ym2203, ym2610, ym2608, rf5c164 or gameboy. Control it through the returned object; global play() still plays the default chip. Stop disposes additional chips.</p>
+<p><code>await createSoundChip("rf5c164")</code> creates an additional PCM chip routed through master FX. Physical channels are CH1..CH8. See examples/chip-saw/rf5c164-sine.js.</p>
+<p><code>await pcm.loadMemory(bytes, address)</code> accepts raw RF5C164 BIN bytes (Uint8Array or ArrayBuffer). <code>await pcm.loadSample(source, {address, loopStart})</code> decodes WAV/FLAC and returns start, loopStart and step for setChannel. Decoder format support depends on the browser. Files must fit 64 KiB after conversion; no automatic resampling. Source may be a local URL, Blob or encoded file bytes. FILES data must first be read into bytes.</p>
+<p><code>setChannel(ch, {start, loopStart, step, volume, pan: {left, right}})</code>, <code>setPitch(ch, step)</code>, <code>keyOn(ch)</code> and <code>keyOff(ch)</code> return promises. Start is 256-byte aligned; volume is 0..255 and pan values 0..15. keyOn retriggers. reset retains RAM; dispose releases the chip. Stop releases all added chips.</p>
+<h2 style="margin-top: 14px;">dac (YM2612 mode)</h2>
+            <ul class="helper-list">
+              <li>DAC plays unsigned 8-bit PCM through physical CH6, replacing its FM output while enabled. Values are <code>0..255</code>; <code>128</code> is the neutral level.</li>
+              <li><code>fm.setPan(CH6, true, true)</code> routes CH6 to both speakers. <code>fm.setDacEnabled(true)</code> enables DAC; <code>fm.writeDac(128)</code> writes one value; <code>fm.setDacEnabled(false)</code> restores FM output.</li>
+              <li><code>const start = beginSampleSchedule()</code> gets the current loop cycle start in 44,100 Hz sample units. <code>dac.schedule(start, entries)</code> queues <code>[offsetSamples, value]</code> pairs relative to that start. Use <code>/** @type {Array&lt;[number, number]&gt;} */</code> for an initially empty entries array.</li>
+              <li>Offsets use <code>44,100 units = 1 second</code>, regardless of the audio device sample rate. One DAC value every 4 units gives an 11,025 Hz PCM stream. Use audio-clock scheduling rather than <code>setInterval()</code> for steady playback.</li>
+              <li><code>scheduleWritesSamples(start, entries)</code> queues <code>[offsetSamples, port, register, value]</code> writes. Use it to time DAC enable/disable along with PCM. <code>await sleepSamples(length)</code> waits in the same 44,100 Hz units.</li>
+              <li><code>await dac.load(name, data)</code> loads packed records from a <code>Uint8Array</code> or <code>ArrayBuffer</code>: each 5-byte record contains a little-endian uint32 sample offset followed by one uint8 DAC value. This is not a WAV file or a raw PCM byte array.</li>
+              <li><code>dac.playStream(name, { atSamples: start })</code> schedules a loaded bank relative to the run's sample-clock origin; it does not wait for playback to finish. Enable DAC and set CH6 pan separately.</li>
+              <li><code>await dac.loadBase64(name, encoded)</code> loads the same packed format from Base64; <code>dac.scheduleBase64(start, encoded)</code> schedules packed records directly.</li>
+              <li>Open <code>examples/dac/dac-byte-stream.js</code> in FILES for the 440 Hz sine-wave example. For ordinary decoded audio playback, use <code>sample</code> below.</li>
+            </ul>
+
+            <h2 style="margin-top: 14px;">sample and noise</h2>
+            <ul class="helper-list">
+              <li><code>await sample.load("sonic-pi/ambi-choir")</code> loads a built-in sample</li>
+              <li><code>await sample.loadFile("/samples/hit.wav")</code> loads audio from the project</li>
+              <li><code>await sample.play("name", { gain: 0.8, playbackRate: 0.5, pan: -0.5, loop: true, fadeIn: 0.1 })</code></li>
+              <li><code>sample.stop("name")</code>, <code>sample.stopAll()</code>, <code>sample.list()</code></li>
+              <li><code>noise.create({ type: "pink", gain: 0.1, pan: 0 })</code> creates a controllable noise voice; types are <code>white</code>, <code>pink</code>, <code>brown</code>, <code>gray</code>, and <code>clip</code></li>
+              <li><code>control(voice, { gain: 0.2, cutoff: 1800, q: 0.8, slide: 1 })</code> changes a noise voice smoothly</li>
+              <li><code>voice.stop()</code> stops one voice; <code>noise.stopAll()</code> stops every noise voice</li>
+            </ul>
+
+            <h2 style="margin-top: 14px;">stream</h2>
+            <ul class="helper-list">
+              <li><code>await stream.load("bgm", "./bgm.mp3")</code> prepares a browser media stream from a same-origin URL; suitable for long audio such as background music. Use an actual served URL, not a FILES virtual path.</li>
+              <li><code>await stream.play("bgm", { gain: 0.5, loop: true })</code> waits for playback to start, not for the track to finish.</li>
+              <li>Sample reverse playback: <code>await sample.play("name", { playbackRate: -1 })</code>. Use -0.5 for half-speed reverse; zero is invalid. For reverse playback, offset counts seconds from the end. Loop bounds remain relative to the original file start.</li>
+              <li>Playback options include <code>playbackRate</code>, <code>offset</code> (seconds), <code>pan</code>, and <code>fadeIn</code> (seconds).</li>
+              <li><code>stream.pause("bgm")</code> pauses; <code>stream.play("bgm")</code> resumes without an explicit offset. <code>stream.stop("bgm")</code> stops and rewinds.</li>
+              <li><code>stream.unload("bgm")</code> releases the entry; <code>stream.list()</code> and <code>stream.isLoaded("bgm")</code> inspect loaded entries.</li>
+              <li>Output passes through the master FX by default. Playback controls remain on the main thread, including in Worker mode. This API is separate from <code>dac.playStream()</code>.</li>
+            </ul>
+
+            <h2 style="margin-top: 14px;">fm</h2>
+            <ul class="helper-list">
+              <li><code>fm</code> is the raw <code>YM2612Synth</code> layer</li>
+              <li><code>await play("C4")</code> plays one note</li>
+              <li><code>pg.fm</code> points to the same YM2612 layer</li>
+              <li>Channels are <code>CH1</code> through <code>CH6</code>; logical operators are <code>OP1</code> through <code>OP4</code></li>
+              <li><code>fm.setPreset(CH1, pg.presets["one-op-basic"])</code> applies one preset</li>
+              <li><code>fm.setOperators(CH1, [[OP1, { tl: 20 }], [OP3, { tl: 24 }]])</code> applies partial settings in array order (YM2612). Repeated operators are allowed. Fields within each entry follow <code>setOperator()</code>'s register order.</li>
+              <li><code>fm.setOperator(CH1, OP1, { multi: 1, tl: 20, ar: 24, d1r: 8, d2r: 4, sl: 6, rr: 8 })</code></li>
+              <li>Operator ranges: <code>multi 0..15</code>, <code>tl 0..127</code> (lower is louder), <code>ar/d1r/d2r 0..31</code>, <code>sl/rr 0..15</code></li>
+              <li><code>fm.setAlgo(CH1, 7, 0)</code> sets algorithm and feedback (<code>0..7</code>)</li>
+              <li><code>fm.setPan(CH1, true, true, 0, 0)</code> sets left, right, AMS (<code>0..3</code>), and PMS (<code>0..7</code>)</li>
+              <li><code>fm.setFrequency(CH1, 4, 553)</code>, <code>fm.keyOn(CH1)</code>, <code>fm.keyOff(CH1)</code> expose the YM2612 note trigger flow</li>
+              <li><code>write(register, value)</code> sends one YM2612 register write on port 0</li>
+              <li><code>write(port, register, value)</code> sends one YM2612 register write with an explicit port</li>
+              <li><code>fm.write(port, register, value)</code> sends one YM2612 register write</li>
+              <li><code>fm.writeAddress(port, register)</code>, <code>fm.writeData(value)</code> follow the YM2612 address/data flow</li>
+              <li><code>fm.read(offset)</code>, <code>fm.readStatus()</code>, <code>fm.getIrq()</code> expose low-level chip state where available</li>
+            </ul>
+
+            <h2 style="margin-top: 14px;">psg</h2>
+            <ul class="helper-list">
+              <li><code>psg</code> is the raw Sega PSG (SN76489-compatible) layer, mixed into the same output as <code>fm</code></li>
+              <li><code>pg.psg</code> points to the same PSG layer</li>
+              <li><code>pg.psgTone(channel, period, attenuation)</code> writes one PSG tone note helper for channel <code>0..2</code></li>
+              <li><code>pg.psgNoise(mode, attenuation)</code> writes one PSG noise helper using raw mode <code>0..7</code></li>
+              <li><code>psg.tone(PSG1, { note: "C4", volume: 0.5 })</code>; channels are <code>PSG1</code>, <code>PSG2</code>, and <code>PSG3</code></li>
+              <li><code>psg.noise({ type: "white", rate: "medium", volume: 0.25 })</code>; rates are <code>low</code>, <code>medium</code>, <code>high</code>, and <code>tone3</code></li>
+              <li><code>psg.off(PSG1)</code> and <code>psg.noiseOff()</code> silence tone and noise channels</li>
+              <li><code>psg.write(value)</code> sends one raw PSG register byte (tone/noise/attenuation, same format as <code>docs/demos/psg.html</code>)</li>
+              <li><code>psg.reset()</code> resets only PSG</li>
+              <li><code>psg.resetAll()</code> resets both PSG and YM2612</li>
+            </ul>
+
+            <h2 style="margin-top: 14px;">fx</h2>
+            <ul class="helper-list">
+              <li><code>fx</code> is the master FX helper layer</li>
+              <li><code>pg.fx</code> points to the same FX helper layer</li>
+              <li><code>fx.gain(...)</code>, <code>fx.eq(...)</code>, <code>fx.filter(...)</code>, <code>fx.delay(...)</code>, <code>fx.distortion(...)</code>, <code>fx.compressor(...)</code>, <code>fx.gate(...)</code></li>
+              <li><code>fx.bitcrusher(...)</code>, <code>fx.wobble(...)</code>, <code>fx.flanger(...)</code>, <code>fx.chorus(...)</code>, <code>fx.reverb(...)</code>, <code>fx.slicer(...)</code></li>
+              <li>FX run in native C/WASM. Each type supports up to 8 instances; the routing graph supports up to 32 nodes. Modulation rate / phase is in beats. EQ uses fixed 200 Hz / 1 kHz / 4 kHz bands.</li>
+              <li><code>fx.setChain([filter, delay])</code> replaces the master FX chain</li>
+              <li><code>fx.setChain([fx.parallel(fx.branch(filter), fx.branch(delay, reverb))])</code> creates parallel branches</li>
+              <li><code>fx.clear()</code> detaches the current master FX chain and clears its audio history</li>
+              <li><code>eq.bass.set(...)</code>, <code>eq.mid.rampTo(...)</code>, <code>eq.treble.set(...)</code></li>
+              <li><code>filter.cutoff.set(...)</code>, <code>filter.cutoff.rampTo(...)</code></li>
+            </ul>
+
+            <h2 style="margin-top: 14px;">Note</h2>
+            <p class="subtext">
+              Names passed to <code>liveLoop()</code>, <code>livePrepare()</code>, and
+              keyboard handlers identify replaceable live state. Reuse the same
+              name when editing a part, and use different names for independent parts.
+            </p>
+            <p class="subtext">
+              Shared Playground URLs may include JavaScript source via <code>?src=</code>.
+              That source is loaded into the editor and waits for an explicit
+              <code>Run</code>. During execution, common network APIs are disabled.
+              This is a small safety guard, not a full security sandbox.
+            </p>
+            <ul class="helper-list" style="margin-top: 10px;">
+              <li>Choose examples from the <code>examples/</code> folders in FILES, then press Run.</li>
+              <li><code>?src=...</code> loads base64-encoded JavaScript source into the editor</li>
+              <li><code>?cassette=...</code> loads a small Base64URL-encoded cassette zip</li>
+              <li><code>?tfi=...&amp;tfi-id=bass</code> loads one URL TFI preset with id <code>bass</code></li>
+              <li><code>?tfi=...,...</code> with <code>?tfi-id=a,b</code> loads multiple URL TFI presets</li>
+              <li><code>?vgi=...&amp;vgi-id=bass</code> loads one URL VGI preset with id <code>bass</code></li>
+            </ul>
+          </section>
+
+          <section id="operatorPanel" class="tab-panel" role="tabpanel" aria-labelledby="operatorTabButton" hidden>
+            <div id="operatorTabRoot"></div>
+          </section>
+          <section id="keyboardPanel" class="tab-panel" role="tabpanel" aria-labelledby="keyboardTab" hidden>
+            <div id="operatorKeyboardRoot"></div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <section id="tfiFileKeyboard" class="tfi-file-keyboard" aria-label="TFI audition controls" hidden></section>
+
+    <footer class="status-bar">
+      <span id="runtimeState" class="pill">Audio idle</span>
+      <span class="status" id="status">Ready.</span>
+      <label class="volume-control" for="masterVolumeRange">
+        <span>Vol</span>
+        <input id="masterVolumeRange" type="range" min="0" max="380" value="100" step="1">
+        <span id="masterVolumeValue" class="volume-readout">100%</span>
+      </label>
+    </footer>
+
+    <script type="module" src="./playground.js?v=dac-pcm-1"></script>
+  </body>
+</html>

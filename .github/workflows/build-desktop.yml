@@ -58,8 +58,8 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xdg-utils
       - run: npm ci
       - run: npm test
-      - name: Download and verify pinned Playground release
-        run: python scripts/fetch_release.py
+      - name: Verify committed Playground assets
+        run: python scripts/import_release.py --check
       - name: Test native MCP protocol and transport
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - name: Build desktop app
