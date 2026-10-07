@@ -1,3 +1,5 @@
+32X PWM: MAME-derived FIFO/timer core, BSD-3-Clause. See licenses/mame-32x-pwm/.
+
 Game Boy DMG APU: MAME adaptation, BSD-3-Clause. See licenses/mame-gameboy/.
 
 RF5C164: MAME adaptation, BSD-3-Clause.
