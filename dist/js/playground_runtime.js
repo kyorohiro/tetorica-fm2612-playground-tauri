@@ -1,3 +1,7 @@
+import {createYm2151Audio} from './playground_ym2151_audio.js';
+import {createYm2151Client} from './playground_ym2151.js';
+import {createSegaPsgAudio} from './playground_segapsg_audio.js';
+import {createSegaPsgClient} from './playground_segapsg.js';
 import {createLoopAsyncTasks} from './playground_async_tasks.js';
 import {createOpnAudio} from './playground_opn_audio.js';
 import {createOpnClient} from './playground_opn.js';
@@ -15,7 +19,7 @@ import {samplePCM} from './native_sample.js';
  * 依存: window のイベント処理、Web Audio 対応 Synth、Worker（Worker モード時）。
  * import とブラウザー上の実行・音声初期化は別。Node.js での実再生用ではない。
  */
-import {createMidiRack, createMidiApi, validateBendRange, MIDI_SUPPORTED_CC} from './playground_midi.js?v=midi-held-stop-1';
+import {createMidiRack, createMidiApi, validateBendRange, MIDI_SUPPORTED_CC} from './playground_midi.js?v=play-units-1';
 import {parseMidiFile} from './midi_file.js?v=readable-midi-1';
 import { createAudioScheduler } from "./playground_audio_scheduler.js";
 import {
@@ -28,7 +32,7 @@ import {
 import { createPlaygroundClock } from "./playground_clock.js?v=loop-async-tasks-1";
 import { executeWithPlaygroundGuards } from "./playground_execution.js";
 import { createPlaygroundLive } from "./playground_live.js?v=loop-async-tasks-1";
-import { createPlaygroundMusic } from "./playground_music.js";
+import { createPlaygroundMusic } from "./playground_music.js?v=play-units-1";
 import { createPlaygroundNoiseApi } from "./playground_noise.js";
 import { createFmProxy } from "./playground_sync.js?v=dac-pcm-1";
 import { parseTfi } from "./tfi.js";
@@ -171,7 +175,7 @@ export function createPlaygroundRuntime(
     );
   defaultLogicWorkerUrl.searchParams.set(
     "v",
-    "dac-pcm-1"
+    "play-units-1"
   );
   const logicWorkerUrl =
     options.logicWorkerUrl ??
@@ -197,8 +201,8 @@ export function createPlaygroundRuntime(
   let sharedFm;
   let sharedFmSynth;
   async function openPcm(name, token = currentRunToken) {
-    if(!['ym2612', 'ym2203', 'ym2610', 'rf5c164', 'ym2608', 'gameboy'].includes(name)) throw new Error('Unsupported Playground sound chip: ' + name);
-    const createAudio = ['ym2612', 'ym2203', 'ym2610'].includes(name) ? (context, destination) => createOpnAudio(context, destination, name) : name === 'gameboy' ? createGameboyAudio : name === 'ym2608' ? createYm2608Audio : createRf5c164Audio;
+    if(!['ym2612', 'ym2203', 'ym2610', 'rf5c164', 'ym2608', 'gameboy', 'segapsg', 'ym2151'].includes(name)) throw new Error('Unsupported Playground sound chip: ' + name);
+    const createAudio = ['ym2612', 'ym2203', 'ym2610'].includes(name) ? (context, destination) => createOpnAudio(context, destination, name) : name === 'ym2151' ? createYm2151Audio : name === 'segapsg' ? createSegaPsgAudio : name === 'gameboy' ? createGameboyAudio : name === 'ym2608' ? createYm2608Audio : createRf5c164Audio;
     const device = await createAudio(megaDrive.audioContext, megaDrive.audio.masterInputNode);
     if(token !== currentRunToken){device.dispose();throw new Error('Run stopped');}
     pcmDevices.add(device);return device;
@@ -1227,6 +1231,7 @@ export function createPlaygroundRuntime(
         synth: () => synth,
         presets,
         activeNotes,
+        getBpm: () => runtime.bpm,
         sleep: (seconds) =>
           clockApi.sleep(
             seconds,
@@ -1354,7 +1359,7 @@ export function createPlaygroundRuntime(
       },
       createSoundChip: async name => {
         const device=await openPcm(name,runToken);
-        const client=['ym2612', 'ym2203', 'ym2610'].includes(name) ? createOpnClient(name, device.port) : name === 'gameboy' ? createGameboyClient(device.port) : name === 'ym2608' ? createYm2608Client(device.port) : createRf5c164Client(device.port,decodePcm);
+        const client=['ym2612', 'ym2203', 'ym2610'].includes(name) ? createOpnClient(name, device.port) : name === 'ym2151' ? createYm2151Client(device.port) : name === 'segapsg' ? createSegaPsgClient(device.port) : name === 'gameboy' ? createGameboyClient(device.port) : name === 'ym2608' ? createYm2608Client(device.port) : createRf5c164Client(device.port,decodePcm);
         const dispose=device.dispose;
         device.dispose=()=>{client.dispose();dispose();};
         return client;

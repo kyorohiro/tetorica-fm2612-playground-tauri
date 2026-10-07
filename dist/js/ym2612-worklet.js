@@ -32,11 +32,15 @@ class YM2612Processor extends AudioWorkletProcessor {
 
     this.ym2612 = null;
     this.psg = null;
+    this.initializing = false;
     this.resampleRemainder = 0;
     this.lastLeft = 0;
     this.lastRight = 0;
+    this.idleLeft = 0;
+    this.idleRight = 0;
     this.pendingCommands = [];
     this.scheduledCommands = [];
+    this.scheduledHead = 0;
     this.dacBanks = new Map();
     this.dacStreams = [];
     this.pcmDac = new YM2612DacPlayer(sampleRate, (p, r, v) => this.ym2612.writeRegister(r, v, p));
@@ -72,6 +76,7 @@ class YM2612Processor extends AudioWorkletProcessor {
   }
 
   async init(wasmBinary, psgWasmBinary) {
+    this.initializing = true;
     try {
       this.ym2612 = await createYm2612(
         ym2612ModuleFactory,
@@ -114,11 +119,20 @@ class YM2612Processor extends AudioWorkletProcessor {
       this.ym2612.reserveStereoFrames(capacity);
       this.psg?.reserveStereoFrames(capacity);
 
+      // ymfm models the YM2612 DAC ladder's nonzero idle level. Keep that
+      // behavior in the raw chip API, but center browser output on silence:
+      // connecting/disconnecting a constant DC level otherwise makes a click.
+      const idle = this.ym2612.generateStereoView(1);
+      this.idleLeft = idle.left[0];
+      this.idleRight = idle.right[0];
+      this.ym2612.reset();
+
       for (const command of this.pendingCommands) {
         this.applyCommand(command);
       }
 
       this.pendingCommands.length = 0;
+      this.initializing = false;
 
       this.port.postMessage({
         type: "ready",
@@ -136,14 +150,25 @@ class YM2612Processor extends AudioWorkletProcessor {
   applyCommand(command, reply = message => this.port.postMessage(message)) {
     if (receiveDacCommand(this.pcmDac, command, currentFrame, reply)) return;
     if (command.type === "schedule-writes") {
+      // Compact only when new work arrives, not once per audio event.
+      if (this.scheduledHead) {
+        this.scheduledCommands = this.scheduledCommands.slice(this.scheduledHead);
+        this.scheduledHead = 0;
+      }
+      let lastTime = this.scheduledCommands.at(-1)?.time ?? -Infinity;
+      let ordered = true;
       for (const entry of command.entries ?? []) {
+        if (entry.time < lastTime) ordered = false;
+        lastTime = entry.time;
         this.scheduledCommands.push(entry);
       }
-      this.scheduledCommands.sort((a, b) => a.time - b.time);
+      // Stable sort retains submission order for writes at the same time.
+      if (!ordered) this.scheduledCommands.sort((a, b) => a.time - b.time);
       return;
     }
     if (command.type === "clear-scheduled-writes") {
       this.scheduledCommands.length = 0;
+      this.scheduledHead = 0;
       return;
     }
     if (command.type === "load-dac-bank") {
@@ -238,7 +263,7 @@ class YM2612Processor extends AudioWorkletProcessor {
     const leftOut = output[0];
     const rightOut = output[1];
 
-    if (!this.ym2612) {
+    if (!this.ym2612 || this.initializing) {
       leftOut.fill(0);
       rightOut.fill(0);
       return true;
@@ -247,7 +272,7 @@ class YM2612Processor extends AudioWorkletProcessor {
     let offset = 0;
     const endFrame = currentFrame + leftOut.length;
     while (true) {
-      const scheduled = this.scheduledCommands[0];
+      const scheduled = this.scheduledCommands[this.scheduledHead];
       const scheduledFrame = scheduled
         ? Math.round(scheduled.time * sampleRate)
         : Infinity;
@@ -258,7 +283,11 @@ class YM2612Processor extends AudioWorkletProcessor {
       this.renderFrames(leftOut, rightOut, offset, eventOffset - offset);
       offset = eventOffset;
       if (scheduledFrame === frame) {
-        this.scheduledCommands.shift();
+        this.scheduledCommands[this.scheduledHead++] = null;
+        if (this.scheduledHead === this.scheduledCommands.length) {
+          this.scheduledCommands.length = 0;
+          this.scheduledHead = 0;
+        }
         this.pcmDac.observeWrite(scheduled.port, scheduled.register, scheduled.value);
         if (scheduled.type === "psg-write") this.psg?.write(scheduled.value);
         else this.ym2612.writeRegister(
@@ -348,8 +377,10 @@ class YM2612Processor extends AudioWorkletProcessor {
       if (count > 0) {
         let left = 0, right = 0;
         for (let j = 0; j < count; j++, sourceOffset++) {
-          left += psg ? clampSample(pcm.left[sourceOffset] * YM_GAIN + psg.left[sourceOffset] * PSG_GAIN) : pcm.left[sourceOffset];
-          right += psg ? clampSample(pcm.right[sourceOffset] * YM_GAIN + psg.right[sourceOffset] * PSG_GAIN) : pcm.right[sourceOffset];
+          const fmLeft = pcm.left[sourceOffset] - this.idleLeft;
+          const fmRight = pcm.right[sourceOffset] - this.idleRight;
+          left += psg ? clampSample(fmLeft * YM_GAIN + psg.left[sourceOffset] * PSG_GAIN) : fmLeft;
+          right += psg ? clampSample(fmRight * YM_GAIN + psg.right[sourceOffset] * PSG_GAIN) : fmRight;
         }
         this.lastLeft = left / count;
         this.lastRight = right / count;

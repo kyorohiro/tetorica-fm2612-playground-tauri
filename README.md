@@ -21,12 +21,13 @@ npm run dev
 上流の本体を更新する場合:
 
 ```sh
-python3 scripts/import_release.py /path/to/release.zip --version VERSION
+npm run import:release -- ./xxx.zip
 ```
 
+ZIP の置き場所・ファイル名は自由です。version 指定は不要で、ZIP と展開ファイルの SHA-256 を記録します。
 取り込み後に動作確認し、`dist/` と `release.lock.json` を同じコミットに含めてください。リリースタグもそのコミットに付けます。
 `.gitattributes` で `dist/` の改行変換を無効にし、Windowsでも同じバイト列を保持します。
-ラッパーのバージョンと上流ZIPのバージョンは別に管理します。
+Tauri アプリのバージョンは、この ZIP の取り込みでは変更しません。
 
 ## 構成
 

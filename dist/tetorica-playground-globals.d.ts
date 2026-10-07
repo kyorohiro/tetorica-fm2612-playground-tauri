@@ -125,7 +125,11 @@ declare const OP4: 3;
 type PlaygroundPlayOptions = {
   /** YM2612 channel 0..5. */
   channel?: YM2612Channel;
-  /** Note duration in seconds. */
+  /** Beats at BPM when play starts. Mutually exclusive with seconds/duration. */
+  beats?: number;
+  /** Fixed seconds. Mutually exclusive with beats/duration. */
+  seconds?: number;
+  /** Legacy duration in seconds (default 0.2). */
   duration?: number;
   /** Optional preset applied before playing the note. */
   preset?: YM2612Preset;
@@ -955,8 +959,8 @@ interface PlaygroundMidiOutput {
   pitchBend(value: number): Promise<void>;
   /** Symmetric range in semitones, 0..96; default 2. Retunes held notes. */
   setPitchBendRange(semitones: number): Promise<void>;
-  /** Duration is in beats at setBpm(), unlike the existing global FM play(). */
-  play(note: string | number, options?: {velocity?: number; duration?: number}): Promise<void>;
+  /** Choose beats or seconds. Legacy duration remains beats (default 1); do not combine length options. */
+  play(note: string | number, options?: {velocity?: number; duration?: number; beats?: number; seconds?: number}): Promise<void>;
   noteOn(note: string | number, options?: {velocity?: number}): Promise<number>;
   noteOff(note: string | number): Promise<void> | void;
   /** YM2612 only; affects subsequent notes, not held voices. */
@@ -1111,6 +1115,10 @@ type PlaygroundYm2608 = {setClock(clock: number): Promise<void>; resetRegisters(
     reset(): void;
   };
   adpcm: {
+    /** PCM/WAV -> mono ADPCM-B -> memory. Selects range/rate but does not key on. */
+    loadSample(source: {channels: ArrayLike<number>[]; sampleRate: number} | AudioBuffer | string | URL | Uint8Array | ArrayBuffer | Blob,
+      options?: {address?: number; sampleRate?: number; signal?: AbortSignal; decodeAudio?: (bytes: ArrayBuffer) => Promise<AudioBuffer | {channels: ArrayLike<number>[]; sampleRate: number}>}):
+      Promise<{start: number; end: number; frames: number; paddedFrames: number; sampleRate: number; deltaN: number; duration: number}>;
     loadMemory(bytes: Uint8Array | ArrayBuffer, address?: number): Promise<void>;
     setSample(range: {start: number; end: number}): void;
     setVolume(volume: number): void;
@@ -1144,6 +1152,8 @@ type PlaygroundSoundChipMap = {
   rf5c164: PlaygroundRf5c164;
   ym2608: PlaygroundYm2608;
   gameboy: PlaygroundGameboy;
+  segapsg: PlaygroundSegaPsg;
+  ym2151: PlaygroundYm2151;
 };
 type PlaygroundUseSoundChipOptions = { [key: string]: never };
 declare function useSoundChip<Name extends keyof PlaygroundSoundChipMap>(name: Name, options?: PlaygroundUseSoundChipOptions): Promise<PlaygroundSoundChipMap[Name]>;
@@ -1156,8 +1166,8 @@ type PlaygroundCreatedYm2203 = PlaygroundCreatedOPN<0 | 1 | 2> & {ssg: Playgroun
 declare function createSoundChip(name: 'ym2203'): Promise<PlaygroundCreatedYm2203>;
 type PlaygroundCreatedYm2610 = PlaygroundCreatedOPN<0 | 1 | 2 | 3> & {
   ssg: PlaygroundYm2608['ssg'];
-  adpcm: PlaygroundYm2608['adpcm'];
-  adpcmB: PlaygroundYm2608['adpcm'];
+  adpcm: Omit<PlaygroundYm2608['adpcm'], 'loadSample'>;
+  adpcmB: Omit<PlaygroundYm2608['adpcm'], 'loadSample'>;
   adpcmA: {
     loadMemory(bytes: Uint8Array | ArrayBuffer, address?: number): Promise<void>;
     setSample(ch: number, range: {start: number; end: number}): void;
@@ -1169,3 +1179,29 @@ type PlaygroundCreatedYm2610 = PlaygroundCreatedOPN<0 | 1 | 2 | 3> & {
   };
 };
 declare function createSoundChip(name: 'ym2610'): Promise<PlaygroundCreatedYm2610>;
+
+/** Independent Sega PSG; resetAll only resets this chip. */
+type PlaygroundSegaPsg = Omit<PSGApi, 'resetAll'> & {
+  /** Reset only this independent Sega PSG. */
+  resetAll(): void;
+  dispose(): void;
+};
+declare function createSoundChip(name: 'segapsg'): Promise<PlaygroundSegaPsg>;
+
+/** OPM channels 0..7; operators in register order M1, C1, M2, C2 (0..3). */
+interface PlaygroundYm2151 {
+  writeRegister(register: number, value: number): void;
+  reset(): void;
+  setOperator(ch: 0|1|2|3|4|5|6|7, operator: 0|1|2|3, options: {dt1?: number; mul?: number; tl?: number; ks?: number; ar?: number; am?: 0|1; d1r?: number; dt2?: number; d2r?: number; d1l?: number; rr?: number}): void;
+  setAlgo(ch: 0|1|2|3|4|5|6|7, algorithm: number, feedback?: number): void;
+  setPan(ch: 0|1|2|3|4|5|6|7, left: boolean, right: boolean): void;
+  /** C#0..C8 or MIDI integer 13..108, at the default clock. */
+  setNote(ch: 0|1|2|3|4|5|6|7, note: string|number): number;
+  setPitch(ch: 0|1|2|3|4|5|6|7, keyCode: number, keyFraction?: number): void;
+  keyOn(ch: 0|1|2|3|4|5|6|7, mask?: number): void;
+  keyOff(ch: 0|1|2|3|4|5|6|7): void;
+  /** Noise replaces CH8's last operator; frequency 0..31. */
+  setNoise(enabled: boolean, frequency?: number): void;
+  dispose(): void;
+}
+declare function createSoundChip(name: 'ym2151'): Promise<PlaygroundYm2151>;

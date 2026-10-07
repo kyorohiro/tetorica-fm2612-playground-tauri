@@ -1,3 +1,6 @@
+import {createYm2151Client} from './playground_ym2151.js';
+import {createSegaPsgClient} from './playground_segapsg.js';
+import {resolvePlaySeconds} from './playground_duration.js';
 import {createLoopAsyncTasks} from './playground_async_tasks.js';
 import {createOpnClient} from './playground_opn.js';
 import {createSoundChipRegistry} from './playground_soundchips.js';
@@ -14,7 +17,7 @@ import {createNativeSampleController} from './native_sample.js';
 import {createNativeNoiseController, controlNativeNoise} from './native_noise.js';
 import {createWorkerDac} from './playground_worker_dac.js';
 import {createWorkerChip} from './playground_worker_chip.js?v=dac-pcm-1';
-import {createMidiApi, createMidiRack} from './playground_midi.js?v=midi-held-stop-1';
+import {createMidiApi, createMidiRack} from './playground_midi.js?v=play-units-1';
 import { hzToBlockFnum } from "./pitch.js";
 import { createDeadlineScheduler } from "./playground_clock.js?v=loop-async-tasks-1";
 
@@ -584,7 +587,7 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
       if(run.stopped)throw new Error('Run stopped');
       const token=run.token;
       const port=await request('pcm.create',[name]);
-      const pcm=['ym2612', 'ym2203', 'ym2610'].includes(name) ? createOpnClient(name, port) : name === 'gameboy' ? createGameboyClient(port) : name === 'ym2608' ? createYm2608Client(port) : createRf5c164Client(port,source=>request('pcm.decode',[source]));
+      const pcm=['ym2612', 'ym2203', 'ym2610'].includes(name) ? createOpnClient(name, port) : name === 'ym2151' ? createYm2151Client(port) : name === 'segapsg' ? createSegaPsgClient(port) : name === 'gameboy' ? createGameboyClient(port) : name === 'ym2608' ? createYm2608Client(port) : createRf5c164Client(port,source=>request('pcm.decode',[source]));
       if(run.stopped || token!==run.token){pcm.dispose();throw new Error('Run stopped');}
       pcmClients.add(pcm);return pcm;
     },
@@ -605,11 +608,15 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
     OP1: 0, OP2: 1, OP3: 2, OP4: 3,
     write: (...args) => chip ? chip.write(...args) : postCommand("write", args),
     play: chip ? async (note,options={})=>{
+      const seconds=resolvePlaySeconds(options,clock.getBpm());
       const channel=options.channel??0, owner={};
       if(options.preset){const preset=presets[options.preset];if(!preset)throw new Error('Unknown preset');fm.setPreset(channel,preset);}
       const pitch=noteToBlockFnum(note);fm.noteOn(channel,pitch.block,pitch.fnum);localNoteOwners.set(channel,owner);
-      try{await clock.sleep(options.duration??.2);}finally{if(localNoteOwners.get(channel)===owner){fm.noteOff(channel);localNoteOwners.delete(channel);}}
-    } : (...args) => request("play", args, run.currentLoop),
+      try{await clock.sleep(seconds);}finally{if(localNoteOwners.get(channel)===owner){fm.noteOff(channel);localNoteOwners.delete(channel);}}
+    } : (note, options={}) => {
+      const seconds=resolvePlaySeconds(options,clock.getBpm());
+      return request("play", [note, {channel:options.channel, preset:options.preset, seconds}], run.currentLoop);
+    },
     psgTone: chip?.psg ? (channel,period,attenuation=0)=>psg.tone(channel,{period,attenuation}) : capabilities.psg ? (...args)=>postCommand("psgTone",args) : unavailable("Mega Drive PSG"),
     psgNoise: chip?.psg ? (mode,attenuation=0)=>{if(!Number.isInteger(mode)||mode<0||mode>7||!Number.isInteger(attenuation)||attenuation<0||attenuation>15)throw new Error("Invalid PSG noise values");psg.write(0xe0|mode);psg.write(0xf0|attenuation);} : capabilities.psg ? (...args)=>postCommand("psgNoise",args) : unavailable("Mega Drive PSG"),
     setMasterVolume: (...args) => request("setMasterVolume", args, run.currentLoop),

@@ -1,3 +1,4 @@
+import {installFileExplorerResize} from './playground_file_resize.js';
 import {exportYm2608FullVgm} from './ym2608_vgm_import.js?v=loop-async-tasks-1';
 import {prepareVgmImport, exportGameboyVgm, exportRf5c164Vgm, addVgmSoundChipSetup, exportYm2203FullVgm} from './playground_vgm_import.js?v=loop-async-tasks-1';
 import {installPlaygroundPageLifecycle} from "./playground_page_lifecycle.js";
@@ -22,7 +23,7 @@ import {
   createPlaygroundOperatorTab,
 } from "./playground_operator_tab.js";
 import { createPlaygroundOperatorKeyboard } from "./playground_operator_keyboard.js";
-import { DEFAULT_CODE, EXAMPLES, EXAMPLE_FILES } from "./playground_examples.js?v=dac-pcm-1";
+import { DEFAULT_CODE, EXAMPLES, EXAMPLE_FILES } from "./playground_examples.js?v=play-units-1";
 import { initializePlaygroundMonaco } from "./playground_monaco.js?v=presets-16-1";
 import {
   decodeBase64Bytes,
@@ -52,7 +53,7 @@ import { exportYm2608VgmToPlaygroundJavaScript } from "./js/ym2608vgm.js";
 import { exportYm2610BVgmToPlaygroundJavaScript } from "./js/ym2610bvgm.js";
 import {
   createPlaygroundRuntime,
-} from "./js/playground_runtime.js?v=dac-pcm-1";
+} from "./js/playground_runtime.js?v=play-units-1";
 import { createVgmPresetFiles } from "./playground_vgm_presets.js";
 import { createTfiFileEditor, tfiToEditorPreset } from "./playground_tfi_editor.js";
 import { renderFileTree } from "./playground_file_tree.js";
@@ -114,6 +115,7 @@ const exportCassetteButton = document.getElementById("exportCassetteButton");
 const exportTfiButton = document.getElementById("exportTfiButton");
 const exportVgiButton = document.getElementById("exportVgiButton");
 const fileExplorer = document.getElementById("fileExplorer");
+installFileExplorerResize(fileExplorer, document.getElementById("fileExplorerDivider"));
 const cassetteExportDialog = document.getElementById("cassetteExportDialog");
 const cassetteLicenseSelect = document.getElementById("cassetteLicenseSelect");
 const cassetteWorkTypeSelect = document.getElementById("cassetteWorkTypeSelect");
@@ -223,8 +225,8 @@ const selectedWorkletChip =
 const synthOptions = {
   chip: selectedChip,
   workletUrl: useNukedEngine
-    ? "./js/ym2612-worklet-nuked.js?v=dac-pcm-1"
-    : `./js/${selectedWorkletChip}-worklet.js?v=dac-pcm-1`,
+    ? "./js/ym2612-worklet-nuked.js?v=perf-queue-1"
+    : `./js/${selectedWorkletChip}-worklet.js?v=perf-queue-1`,
   ym2612WasmUrl: useNukedEngine
     ? "./generated/nuked_opn2_wasm.wasm"
     : "./generated/ym2612_wasm.wasm",

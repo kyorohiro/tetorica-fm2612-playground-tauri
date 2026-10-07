@@ -188,6 +188,7 @@ export class YM2612DirectTransport {
    * @param {{
    *   writeRegister(register: number, value: number, port?: number): void,
    *   sampleRate?: () => number,
+   *   generateStereoView?: (frames: number) => {left: Float32Array, right: Float32Array},
    *   generateStereo?: (frames: number) => {left: Float32Array, right: Float32Array},
    *   reset?: () => void,
    *   read?: (offset: number) => number,
@@ -235,12 +236,17 @@ export class YM2612DirectTransport {
   generateStereo(frames) {
     if (!Number.isSafeInteger(frames) || frames < 0) throw new RangeError('frames must be a nonnegative integer');
     const left = new Float32Array(frames), right = new Float32Array(frames);
+    const generate = (this.chip.generateStereoView ?? this.chip.generateStereo).bind(this.chip);
     let offset = 0;
     while (offset < frames) {
       this.dacPlayer?.advance(this.frame);
       const count = Math.min(frames - offset, (this.dacPlayer?.nextFrame() ?? Infinity) - this.frame);
-      const pcm = this.chip.generateStereo(count);
-      left.set(pcm.left, offset); right.set(pcm.right, offset);
+      const pcm = generate(count);
+      // Borrowed views may cover reserved capacity, not just this segment.
+      for (let i = 0; i < count; i++) {
+        left[offset + i] = pcm.left[i];
+        right[offset + i] = pcm.right[i];
+      }
       this.frame += count; offset += count;
     }
     return {left, right};
@@ -273,6 +279,8 @@ export class YM2612WorkletTransport {
    * @param {AudioWorkletNode} node
    */
   constructor(node) {
+    this.endpoint = node?.execution === 'worklet' ? node : null;
+    if (!node?.port && node?.postMessage) node = {port: node};
     this.node = node;
     this.irqAsserted = false;
     this.dacRequests = new Map();
@@ -300,6 +308,14 @@ export class YM2612WorkletTransport {
     }
   }
 
+  start() {
+    if (!this.endpoint) return Promise.reject(new Error('start() requires a createSoundChip worklet endpoint'));
+    return this.endpoint.start();
+  }
+  stop() {return this.endpoint?.stop() ?? Promise.resolve();}
+  async close() {this.dispose(); await this.endpoint?.dispose();}
+  flush() {return this.endpoint?.request('barrier') ?? Promise.resolve();}
+
   dacCommand(command) {
     if (this.disposed) return Promise.reject(new Error('DAC transport disposed'));
     if (typeof this.node.port.addEventListener !== 'function') return Promise.reject(new Error('DAC transport requires MessagePort events'));
@@ -314,6 +330,7 @@ export class YM2612WorkletTransport {
 
   /** Call before disconnecting/closing the node to reject unfinished registrations. */
   dispose() {
+    if (this.disposed) return;
     this.node.port.postMessage({type: 'clear-dac-playback'});
     this.disposed = true;
     for (const request of this.dacRequests.values()) request.reject(new Error('DAC transport disposed'));

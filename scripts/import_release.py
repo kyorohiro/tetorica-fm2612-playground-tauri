@@ -49,38 +49,42 @@ def check(root):
     return lock
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('zip', nargs='?', type=Path)
-    parser.add_argument('--version', help='Required when intentionally selecting a new release')
-    parser.add_argument('--check', action='store_true')
-    args = parser.parse_args()
-    if args.check:
-        lock = check(ROOT)
-        print(f"Verified Playground {lock['version']}: {len(lock['files'])} files")
-        return
-    if not args.zip:
-        parser.error('provide a local release ZIP')
-    sha = digest(args.zip.read_bytes())
-    previous = ROOT / 'release.lock.json'
-    if not args.version:
-        lock = json.loads(previous.read_text())
-        if sha != lock['sha256']:
-            raise ValueError('ZIP checksum differs from pinned release; use --version to select a new release')
-        version = lock['version']
-    else:
-        version = args.version
-    with tempfile.TemporaryDirectory(prefix='.import-', dir=ROOT) as temporary:
+def import_release(root, archive):
+    if not archive.is_file():
+        raise FileNotFoundError(f'Playground release ZIP not found: {archive}')
+    sha = digest(archive.read_bytes())
+    previous = root / 'release.lock.json'
+    old_lock = json.loads(previous.read_text()) if previous.exists() else {}
+    version = old_lock.get('version') if old_lock.get('sha256') == sha else f'sha256-{sha[:12]}'
+    with tempfile.TemporaryDirectory(prefix='.import-', dir=root) as temporary:
         staging = Path(temporary) / 'dist'
         staging.mkdir()
-        hashes = unpack(args.zip, staging)
-        lock = {'version': version, 'archive': args.zip.name, 'sha256': sha, 'files': hashes}
-        destination = ROOT / 'dist'
+        hashes = unpack(archive, staging)
+        lock = {'version': version, 'archive': archive.name, 'sha256': sha, 'files': hashes}
+        destination = root / 'dist'
         if destination.exists():
             destination.rename(Path(temporary) / 'previous-dist')
         staging.rename(destination)
         previous.write_text(json.dumps(lock, indent=2, sort_keys=True) + '\n')
     print(f'Imported {version}: {len(hashes)} files, SHA256 {sha}')
+    return lock
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('zip', nargs='?', type=Path, help='Path to the Playground release ZIP')
+    parser.add_argument('--check', action='store_true')
+    args = parser.parse_args()
+    if not args.check and args.zip is None:
+        parser.error('provide the ZIP path: npm run import:release -- ./xxx.zip')
+    try:
+        if args.check:
+            lock = check(ROOT)
+            print(f"Verified Playground {lock['version']}: {len(lock['files'])} files")
+        else:
+            import_release(ROOT, args.zip)
+    except (OSError, ValueError, zipfile.BadZipFile) as error:
+        parser.error(str(error))
 
 
 if __name__ == '__main__':

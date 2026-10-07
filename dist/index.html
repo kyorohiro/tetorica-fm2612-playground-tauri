@@ -691,12 +691,26 @@
       }
 
       .file-explorer {
-        flex: 0 0 190px;
+        flex: 0 0 var(--file-explorer-width, 210px);
+        box-sizing: border-box;
+        min-width: 0;
         overflow: auto;
         padding: 10px;
         background: #202329;
         color: #dbe2e8;
       }
+
+      .file-explorer-divider {
+        flex: 0 0 6px;
+        cursor: col-resize;
+        touch-action: none;
+        background: #303740;
+      }
+      .file-explorer-divider:hover,
+      .file-explorer-divider:focus-visible,
+      .code-workspace.is-resizing .file-explorer-divider { background: var(--accent); }
+      .code-workspace.is-resizing,
+      .code-workspace.is-resizing * { cursor: col-resize !important; user-select: none !important; }
 
       .file-explorer-header {
         display: flex;
@@ -1680,6 +1694,9 @@
                 </div>
                 <div id="fileExplorerList"></div>
               </aside>
+              <div id="fileExplorerDivider" class="file-explorer-divider" role="separator" tabindex="0"
+                aria-label="File explorer width" aria-orientation="vertical" aria-controls="fileExplorer"
+                title="Drag to resize · Double-click to reset · Arrow keys to adjust"></div>
               <section id="tfiFileEditor" class="tfi-file-editor" aria-label="TFI editor" hidden>
                 <p id="tfiFileTitle" class="subtext"></p>
                 <div id="tfiFileOperator"></div>
@@ -1757,19 +1774,60 @@
               <li><code>const { bass } = await import("./lib/bass.js")</code> dynamically imports a project JavaScript module</li>
               <li>Imported modules may use <code>export</code> and nested relative <code>import()</code>; use dynamic <code>import()</code> instead of a top-level static <code>import</code></li>
               <li><code>liveFx(name, {context, process(input, output, state, context), resetState?})</code> registers JavaScript FX after native FX. Same-name Apply preserves state; Stop removes it. Input/output are arrays of channel Float32Arrays. The synchronous process runs in AudioWorklet: use context instead of captured variables, and avoid unbounded loops. Exceptions/non-finite output bypass that effect.</li>
-              <li><code>fx.updateContext(name, patch)</code> sends a context update; <code>fx.removeLiveFx(name)</code> removes it. Commands are queued, not sample-timestamped. See <code>examples/livefx/live-fx-distortion.js</code>.</li>
+              <li><code>fx.updateContext(name, patch)</code> sends a context update; <code>fx.removeLiveFx(name)</code> removes it. Commands are queued, not sample-timestamped. See <code>examples/basic/livefx/live-fx-distortion.js</code>.</li>
               <li><code>log(value)</code>, <code>console.log(value)</code>, <code>console.warn(value)</code>, and <code>console.error(value)</code> write to the Console tab</li>
               <li><code>tfiToPreset(await file("./bass.tfi", { type: "arrayBuffer" }))</code> converts a 42-byte TFI file for <code>fm.setPreset()</code></li>
               <li><code>vgiToPreset(await file("./bass.vgi", { type: "arrayBuffer" }))</code> converts a 43-byte VGI file for <code>fm.setPreset()</code> (binary files require <code>type: "arrayBuffer"</code>)</li>
             </ul>
 
-            <h3>RF5C164 PCM</h3>
-<p><code>const fm = await useSoundChip("ym2612")</code> returns the existing FM API. <code>"ym2203"</code> and <code>"ym2610"</code> return the existing FM API when selected, otherwise create and reuse an independent chip. YM2612 follows the same rule. Global play() and write() still target the default chip. <code>useSoundChip("rf5c164")</code> reuses an additional chip until Stop; <code>"ym2608"</code> and <code>"gameboy"</code> are also supported. Concurrent requests share initialization; options other than an empty object are not supported.</p>
-<p><code>createSoundChip(name)</code> creates a fresh independent chip: ym2612, ym2203, ym2610, ym2608, rf5c164 or gameboy. Control it through the returned object; global play() still plays the default chip. Stop disposes additional chips.</p>
-<p><code>await createSoundChip("rf5c164")</code> creates an additional PCM chip routed through master FX. Physical channels are CH1..CH8. See examples/chip-saw/rf5c164-sine.js.</p>
-<p><code>await pcm.loadMemory(bytes, address)</code> accepts raw RF5C164 BIN bytes (Uint8Array or ArrayBuffer). <code>await pcm.loadSample(source, {address, loopStart})</code> decodes WAV/FLAC and returns start, loopStart and step for setChannel. Decoder format support depends on the browser. Files must fit 64 KiB after conversion; no automatic resampling. Source may be a local URL, Blob or encoded file bytes. FILES data must first be read into bytes.</p>
-<p><code>setChannel(ch, {start, loopStart, step, volume, pan: {left, right}})</code>, <code>setPitch(ch, step)</code>, <code>keyOn(ch)</code> and <code>keyOff(ch)</code> return promises. Start is 256-byte aligned; volume is 0..255 and pan values 0..15. keyOn retriggers. reset retains RAM; dispose releases the chip. Stop releases all added chips.</p>
-<h2 style="margin-top: 14px;">dac (YM2612 mode)</h2>
+            <h2 style="margin-top: 14px;">Sound chips</h2>
+            <ul class="helper-list">
+              <li><code>const chip = await useSoundChip(name)</code> reuses a chip until Stop. For YM2612, YM2203, and YM2610, it returns the default chip when selected; otherwise it creates an independent chip.</li>
+              <li><code>const chip = await createSoundChip(name)</code> creates a fresh independent chip routed through master FX.</li>
+              <li>Supported names: <code>ym2612</code>, <code>ym2203</code>, <code>ym2610</code>, <code>ym2608</code>, <code>rf5c164</code>, <code>gameboy</code>, <code>segapsg</code>, and <code>ym2151</code>.</li>
+              <li>Control additional chips through the returned object. Global <code>play()</code> and <code>write()</code> target the default chip; Stop disposes additional chips.</li>
+              <li>Concurrent <code>useSoundChip()</code> requests share initialization. Options other than an empty object are not supported.</li>
+            </ul>
+
+            <h2 style="margin-top: 14px;">YM2151 (OPM)</h2>
+            <ul class="helper-list">
+              <li><code>const opm = await useSoundChip("ym2151")</code> reuses an independent eight-channel FM chip; <code>createSoundChip("ym2151")</code> creates a fresh instance.</li>
+              <li><code>opm.setAlgo(0, 7)</code> selects an algorithm; <code>opm.setPan(0, true, true)</code> enables both outputs. Channels are numeric <code>0..7</code>.</li>
+              <li><code>opm.setOperator(0, 3, { mul: 1, tl: 32, ar: 31, rr: 15 })</code> edits an operator. Indices <code>0..3</code> follow register order <code>M1, C1, M2, C2</code>; these are OPM parameters, not YM2612 presets.</li>
+              <li><code>opm.setNote(0, "A4")</code> sets pitch; <code>opm.keyOn(0)</code> starts the envelope; <code>opm.keyOff(0)</code> releases it. Notes accept <code>C#0..C8</code> or MIDI integers <code>13..108</code>.</li>
+              <li><code>opm.setPitch(0, 0x4a, 0)</code> sets raw key code and key fraction (<code>0..63</code>). The clock is fixed at <code>3579545 Hz</code>.</li>
+              <li><code>opm.setNoise(true, 12)</code> replaces CH8's last operator with noise (rate <code>0..31</code>); <code>opm.writeRegister(register, value)</code> accesses all registers, including LFO.</li>
+              <li><code>opm.reset()</code> resets this chip; <code>opm.dispose()</code> releases it. Open <code>examples/x68000/ym2151-tone.js</code> for a complete voice setup.</li>
+            </ul>
+
+            <h2 style="margin-top: 14px;">Sega PSG (independent chip)</h2>
+            <ul class="helper-list">
+              <li><code>const chip = await useSoundChip("segapsg")</code> reuses an independent Sega PSG; <code>createSoundChip("segapsg")</code> creates a fresh instance.</li>
+              <li><code>chip.tone(0, { note: "C4", attenuation: 4 })</code> starts a tone on channel <code>0..2</code>; <code>chip.off(0)</code> silences it.</li>
+              <li><code>chip.noise({ type: "white", rate: "medium", attenuation: 8 })</code> starts noise; <code>chip.noiseOff()</code> silences it.</li>
+              <li>Uses the same API as <code>psg</code>. Both <code>reset()</code> and <code>resetAll()</code> reset only this instance. <code>dispose()</code> releases it; Stop releases all additional chips.</li>
+              <li>Open <code>examples/genesis/segapsg-tone-noise.js</code> in FILES for an example.</li>
+            </ul>
+
+            <h2 style="margin-top: 14px;">YM2608 ADPCM-B sample loading</h2>
+            <p class="subtext">YM2608 ADPCM-B can also load decoded PCM or PCM/Float WAV with
+              <code>await ym2608.adpcm.loadSample(source, {address: 0})</code>.
+              It converts the sample, uploads memory and selects the range/rate; use
+              <code>setVolume()</code>, <code>setPan()</code> and <code>keyOn()</code> to play.
+              Open <code>examples/pc98/ym2608-adpcm-load-sample.js</code> in FILES.</p>
+            <h2 style="margin-top: 14px;">RF5C164 PCM</h2>
+            <ul class="helper-list">
+              <li><code>const pcm = await createSoundChip("rf5c164")</code> creates an eight-channel PCM chip. Physical channels are <code>CH1..CH8</code>.</li>
+              <li><code>await pcm.loadMemory(bytes, address)</code> loads raw RF5C164 BIN bytes from a <code>Uint8Array</code> or <code>ArrayBuffer</code>.</li>
+              <li><code>await pcm.loadSample(source, { address, loopStart })</code> decodes WAV/FLAC and returns <code>start</code>, <code>loopStart</code>, and <code>step</code> for <code>setChannel()</code>. Format support depends on the browser.</li>
+              <li>Sample sources may be a local URL, Blob, or encoded file bytes. Read FILES data with <code>await file("./sound.wav", { type: "arrayBuffer" })</code> first. Converted samples must fit 64 KiB; no automatic resampling.</li>
+              <li><code>await pcm.setChannel(ch, { start, loopStart, step, volume, pan: { left, right } })</code> configures a channel. Start is 256-byte aligned; volume is <code>0..255</code>, pan values <code>0..15</code>.</li>
+              <li><code>await pcm.setPitch(ch, step)</code> changes pitch; <code>await pcm.keyOn(ch)</code> starts or retriggers playback; <code>await pcm.keyOff(ch)</code> stops it.</li>
+              <li><code>pcm.reset()</code> retains sample RAM; <code>pcm.dispose()</code> releases the chip.</li>
+              <li>Open <code>examples/genesis/rf5c164-sine.js</code> in FILES for an example.</li>
+            </ul>
+
+            <h2 style="margin-top: 14px;">dac (YM2612 mode)</h2>
             <ul class="helper-list">
               <li>DAC plays unsigned 8-bit PCM through physical CH6, replacing its FM output while enabled. Values are <code>0..255</code>; <code>128</code> is the neutral level.</li>
               <li><code>fm.setPan(CH6, true, true)</code> routes CH6 to both speakers. <code>fm.setDacEnabled(true)</code> enables DAC; <code>fm.writeDac(128)</code> writes one value; <code>fm.setDacEnabled(false)</code> restores FM output.</li>
@@ -1779,7 +1837,7 @@
               <li><code>await dac.load(name, data)</code> loads packed records from a <code>Uint8Array</code> or <code>ArrayBuffer</code>: each 5-byte record contains a little-endian uint32 sample offset followed by one uint8 DAC value. This is not a WAV file or a raw PCM byte array.</li>
               <li><code>dac.playStream(name, { atSamples: start })</code> schedules a loaded bank relative to the run's sample-clock origin; it does not wait for playback to finish. Enable DAC and set CH6 pan separately.</li>
               <li><code>await dac.loadBase64(name, encoded)</code> loads the same packed format from Base64; <code>dac.scheduleBase64(start, encoded)</code> schedules packed records directly.</li>
-              <li>Open <code>examples/dac/dac-byte-stream.js</code> in FILES for the 440 Hz sine-wave example. For ordinary decoded audio playback, use <code>sample</code> below.</li>
+              <li>Open <code>examples/basic/dac/dac-byte-stream.js</code> in FILES for the 440 Hz sine-wave example. For ordinary decoded audio playback, use <code>sample</code> below.</li>
             </ul>
 
             <h2 style="margin-top: 14px;">sample and noise</h2>
@@ -1896,6 +1954,6 @@
       </label>
     </footer>
 
-    <script type="module" src="./playground.js?v=dac-pcm-1"></script>
+    <script type="module" src="./playground.js?v=play-units-1"></script>
   </body>
 </html>
