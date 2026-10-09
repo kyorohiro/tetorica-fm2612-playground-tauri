@@ -63,6 +63,9 @@ STOP のフェードは同じ処理を使います。音声の待ち行列は512
 追加の転送・バッファによる遅延があるため、本番ライブでの遅延・音切れの評価は別途必要です。
 macOS/arm64 で検証済み。Windows/Linux の実機確認は未実施です。
 Windowsでは機器列挙と出力の両方でWASAPIを指定し、ASIOドライバーの自動探索を行いません。
+Windowsの同梱準備では、Audify 1.10.1のRtAudioにCOMオブジェクトを終了前に解放する
+修正を適用し、CMake／Visual Studio C++でネイティブモジュールを再ビルドします。
+既成のWindowsバイナリーへ差し替えることはできません。
 音声プロセスの応答が途切れた場合は、終了コードとNode／ネイティブ側のエラーを
 Consoleへ表示します。メニューのエラーには操作名を表示し、詳細はConsoleかツールチップで確認できます。
 
@@ -82,6 +85,7 @@ NodeとAudifyを使ってください。システムの外部共有ライブラ�
 実行してください。Cargo は Tauri CLI の beforeBuildCommand を呼びません。
 CIでも、音声リソースの準備と `node scripts/check_audio_sidecar_bundle.mjs` による
 ネイティブモジュールの読み込み確認を Cargo テストより前に実行します。
+WindowsではWASAPIの列挙・GCによる解放を3回繰り返し、子Nodeの正常終了まで確認します。
 macOSの署名なしCI／開発ビルドは、NodeとAudifyをアドホック署名にそろえ、
 前回のDeveloper ID署名との混在によるネイティブモジュールの読み込み失敗を防ぎます。
 実機の低音量テストは、同梱準備後に `node scripts/check_audify_browser.cjs` で実行できます。

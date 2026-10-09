@@ -4,8 +4,10 @@ import {execFileSync} from 'node:child_process';
 import {join} from 'node:path';
 import {signAudioSidecar} from './sign_audio_sidecar.mjs';
 import {findNodeLicense} from './audio_node_license.mjs';
+import {prepareWindowsAudify} from './windows_audify.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url));
 execFileSync(process.platform==='win32'?'python':'python3',['scripts/import_release.py','--check'],{cwd:root,stdio:'inherit'});
+if(process.platform==='win32')await prepareWindowsAudify(root);
 const bundle=join(root,'audio-sidecar-bundle');await mkdir(bundle,{recursive:true});
 const nodePath=join(bundle,process.platform==='win32'?'node.exe':'node');
 const candidate=join(bundle,process.platform==='win32'?'node-next.exe':'node-next');
@@ -31,6 +33,7 @@ await cp(join(root,'audio-sidecar'),bundle,{recursive:true});
 await rm(join(bundle,'node_modules'),{recursive:true,force:true});
 for(const name of ['audify','bindings','file-uri-to-path','ws'])await cp(join(root,'node_modules',name),join(bundle,'node_modules',name),{recursive:true});
 if(process.env.TETORICA_AUDIFY_RELEASE){
+  if(process.platform==='win32')throw Error('Windows must use the patched Audify build, not TETORICA_AUDIFY_RELEASE');
   const release=join(bundle,'node_modules/audify/build/Release');await rm(release,{recursive:true,force:true});
   await cp(process.env.TETORICA_AUDIFY_RELEASE,release,{recursive:true});
 }

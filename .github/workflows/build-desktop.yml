@@ -62,7 +62,7 @@ jobs:
         run: python scripts/import_release.py --check
       - name: Prepare bundled audio runtime before Cargo tests
         run: node scripts/prepare_audio_sidecar.mjs
-      - name: Verify bundled Audify native module loads
+      - name: Verify bundled Audify loads and exits normally
         run: node scripts/check_audio_sidecar_bundle.mjs
       - name: Test native MCP protocol and transport
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
