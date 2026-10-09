@@ -1,3 +1,5 @@
+JavaScript import parser: es-module-lexer 3.0.3, MIT. See vendor/es-module-lexer-LICENSE.
+
 NES APU: JSNES, Apache-2.0. See licenses/jsnes/.
 FDS: fixNES-derived, MIT. See licenses/fixnes-fds/.
 
