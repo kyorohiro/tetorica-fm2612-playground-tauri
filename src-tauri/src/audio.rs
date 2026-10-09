@@ -171,7 +171,10 @@ fn sidecar_command(root: &Path) -> Result<Command, String> {
         }
     }
     let mut command = Command::new(executable);
-    command.arg(script).current_dir(root);
+    // Windows resource_dir can contain a verbatim \\?\ drive prefix. Node's
+    // main-module realpath resolution fails on that absolute script argument
+    // (nodejs/node#62446). Resolve the entry point relative to the resource cwd.
+    command.arg("server.mjs").current_dir(root);
     Ok(command)
 }
 #[derive(Default, Clone)]
@@ -239,6 +242,22 @@ pub async fn audio_shutdown(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[cfg(windows)]
+    fn bundled_server_starts_from_a_verbatim_windows_resource_path() {
+        // canonicalize deliberately produces the \\?\ path used by installed
+        // Tauri resources; exercise the same command and IPC as the app.
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../audio-sidecar-bundle")
+            .canonicalize()
+            .unwrap();
+        assert!(root.as_os_str().to_string_lossy().starts_with(r"\\?\"));
+        let mut child = Sidecar::launch(sidecar_command(&root).unwrap()).unwrap();
+        let status = child.exchange("status", Value::Null).unwrap();
+        assert_eq!(status["active"], false);
+        assert!(child.exchange("devices", Value::Null).unwrap().is_array());
+        assert_eq!(child.exchange("stop", Value::Null).unwrap(), Value::Null);
+    }
     #[test]
     fn child_exit_preserves_stderr_and_exit_code() {
         #[cfg(windows)]

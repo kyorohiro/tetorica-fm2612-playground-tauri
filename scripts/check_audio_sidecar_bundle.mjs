@@ -1,5 +1,5 @@
 import {fileURLToPath} from 'node:url';
-import {join} from 'node:path';
+import {join,toNamespacedPath} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {cp,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -31,8 +31,9 @@ try{
   const requests=[{id:1,op:'stop'},{id:2,op:'status'}];
   if(process.platform==='win32')requests.push({id:3,op:'devices'});
   requests.push({id:4,op:'stop'});
-  const stdout=execFileSync(join(isolated,process.platform==='win32'?'node.exe':'node'),[join(isolated,'server.mjs')],{
-    cwd:isolated,encoding:'utf8',timeout:30000,
+  const resourceRoot=process.platform==='win32'?toNamespacedPath(isolated):isolated;
+  const stdout=execFileSync(join(resourceRoot,process.platform==='win32'?'node.exe':'node'),['server.mjs'],{
+    cwd:resourceRoot,encoding:'utf8',timeout:30000,
     input:requests.map(request=>JSON.stringify(request)).join('\n')+'\n',
     env:{...process.env,NODE_OPTIONS:'',NODE_PATH:''},
   });
