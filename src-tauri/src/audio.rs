@@ -179,6 +179,10 @@ pub struct Audio(Arc<Mutex<Option<Sidecar>>>);
 impl Audio {
     fn request(&self, app: &tauri::AppHandle, op: &str, args: Value) -> Result<Value, String> {
         let mut state = self.0.lock().map_err(|e| e.to_string())?;
+        // Stopping an unused output must not launch a fresh Node process.
+        if state.is_none() && op == "stop" {
+            return Ok(Value::Null);
+        }
         if state.is_none() {
             let root = if cfg!(debug_assertions) {
                 std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../audio-sidecar-bundle")

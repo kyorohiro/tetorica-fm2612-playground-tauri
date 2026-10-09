@@ -67,7 +67,9 @@ Windowsの同梱準備では、Audify 1.10.1のRtAudioにCOMオブジェクト�
 修正を適用し、CMake／Visual Studio C++でネイティブモジュールを再ビルドします。
 既成のWindowsバイナリーへ差し替えることはできません。
 音声プロセスの応答が途切れた場合は、終了コードとNode／ネイティブ側のエラーを
-Consoleへ表示します。メニューのエラーには操作名を表示し、詳細はConsoleかツールチップで確認できます。
+Consoleへ表示します。メニューにも選択・コピーできるエラー全文を表示します。
+失敗してもAudifyの選択とエラーを残すので、メニューを開き直して「Copy error」で
+コピーできます。接続失敗時の実際の音声経路はWebViewへ戻し、エラーは「Clear error」まで保持します。
 
 Node実行ファイル、Audifyのネイティブモジュール、必要な実行時依存とライセンスを
 ビルド時に `audio-sidecar-bundle/` へ用意し、アプリの resources に同梱します。
@@ -86,6 +88,7 @@ NodeとAudifyを使ってください。システムの外部共有ライブラ�
 CIでも、音声リソースの準備と `node scripts/check_audio_sidecar_bundle.mjs` による
 ネイティブモジュールの読み込み確認を Cargo テストより前に実行します。
 WindowsではWASAPIの列挙・GCによる解放を3回繰り返し、子Nodeの正常終了まで確認します。
+別の一時ディレクトリーへ同梱物をコピーし、実際の音声サーバーの起動・応答・終了も検証します。
 macOSの署名なしCI／開発ビルドは、NodeとAudifyをアドホック署名にそろえ、
 前回のDeveloper ID署名との混在によるネイティブモジュールの読み込み失敗を防ぎます。
 実機の低音量テストは、同梱準備後に `node scripts/check_audify_browser.cjs` で実行できます。

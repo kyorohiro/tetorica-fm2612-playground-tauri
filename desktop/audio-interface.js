@@ -14,11 +14,27 @@
   const refresh=document.createElement('button');refresh.type='button';refresh.textContent='Refresh devices';
   const apply=document.createElement('button');apply.type='button';apply.textContent='Apply output';
   const status=document.createElement('p');status.setAttribute('role','status');status.id='desktop-audio-status';status.textContent='WebView output';
+  const details=document.createElement('textarea');details.id='desktop-audio-error';details.hidden=true;
+  details.readOnly=true;details.rows=8;details.setAttribute('aria-label','Last Audify error');
+  Object.assign(details.style,{width:'100%',boxSizing:'border-box',resize:'vertical',userSelect:'text'});
+  const copyError=document.createElement('button');copyError.type='button';copyError.textContent='Copy error';copyError.hidden=true;
+  const clearError=document.createElement('button');clearError.type='button';clearError.textContent='Clear error';clearError.hidden=true;
+  copyError.addEventListener('click',async()=>{
+    try{await navigator.clipboard.writeText(details.value);}
+    catch{details.focus();details.select();}
+  });
+  clearError.addEventListener('click',()=>{details.hidden=copyError.hidden=clearError.hidden=true;details.value='';});
   const hint=document.createElement('p');hint.textContent='Changing output stops playback. Select a device, apply, then Run.';
-  group.append(title,mode,device,refresh,apply,status,hint);menu.append(group);
+  group.append(title,mode,device,refresh,apply,status,details,copyError,clearError,hint);menu.append(group);
   device.hidden=true;refresh.hidden=true;apply.hidden=true;
   let session=null,busy=false,loadedContext=null;
   const show=()=>{device.hidden=refresh.hidden=apply.hidden=mode.value!=='audify';};
+  function reportError(error){
+    const description=String(error.message??error);
+    status.textContent=`WebView output — ${description.split('\n')[0]}`;status.title=description;
+    details.value=description;details.hidden=copyError.hidden=clearError.hidden=false;
+    logLine('[Audify] '+description);
+  }
   function detach(){
     const old=session;session=null;if(!old)return;
     old.ws.onclose=null;old.ws.onerror=null;old.ws.close();
@@ -47,9 +63,9 @@
     const current={ws,tap,source,context};session=current;
     async function failed(message){
       if(session!==current||current.failed)return;current.failed=true;
-      status.textContent=`Audify stopped: ${message}`;
+      reportError(message);
       await stopRun();if(session!==current)return;
-      detach();mode.value='webview';show();void invoke('stop').catch(()=>{});
+      detach();show();void invoke('stop').catch(()=>{});
     }
     tap.port.onmessage=event=>{
       if(session!==current||ws.readyState!==AudioSocket.OPEN)return;
@@ -80,10 +96,8 @@
     const run=document.getElementById('runButton');if(run)run.disabled=true;
     try{await action();}
     catch(error){
-      detach();void invoke('stop').catch(()=>{});mode.value='webview';show();
-      const description=String(error.message??error);
-      status.textContent=`WebView output — ${description.split('\n')[0]}`;status.title=description;
-      logLine('[Audify] '+description);
+      detach();void invoke('stop').catch(()=>{});show();
+      reportError(error);
     }
     finally{busy=false;mode.disabled=device.disabled=refresh.disabled=apply.disabled=false;if(run)run.disabled=false;}
   }

@@ -1,6 +1,6 @@
 [package]
 name = "tetorica-fm2612-playground-tauri"
-version = "0.52.3"
+version = "0.52.4"
 edition = "2021"
 
 [build-dependencies]
