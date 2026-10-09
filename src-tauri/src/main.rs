@@ -50,6 +50,12 @@ fn window_reload(window: WebviewWindow) -> Result<(), String> {
     window.reload().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn window_close(window: WebviewWindow) -> Result<(), String> {
+    allowed(&window)?;
+    window.destroy().map_err(|e| e.to_string())
+}
+
 fn main() {
     let context = tauri::generate_context!();
     let dev_origin = if cfg!(debug_assertions) {
@@ -75,12 +81,25 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             window_top_get,
             window_reload,
+            window_close,
             window_top_set,
             mcp::mcp_status,
             mcp::mcp_regenerate_token,
             mcp::mcp_set,
             mcp::mcp_reply,
         ])
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    if let Some(webview) = window.app_handle().get_webview_window("main") {
+                        // Keep the process alive until the final IndexedDB transaction commits.
+                        if webview.eval("void (window.__tetoricaCloseRequested ? window.__tetoricaCloseRequested() : window.__TAURI_INTERNALS__.invoke('window_close'));").is_ok() {
+                            api.prevent_close();
+                        }
+                    }
+                }
+            }
+        })
         .setup(|app| {
             app.manage(std::sync::Mutex::new(mcp::Mcp::load(
                 &app.path().app_data_dir()?,

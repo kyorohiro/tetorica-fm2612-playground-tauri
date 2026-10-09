@@ -18,6 +18,23 @@ class Element {
   click() { if (!this.disabled) return Promise.all(this.listeners.click.map(fn => fn({target: this, preventDefault(){}, stopImmediatePropagation(){}}))); }
 }
 const settle = () => new Promise(resolve => setImmediate(resolve));
+test('closing waits for autosave; a failed save allows cancellation', async () => {
+  let finish, dialog;
+  const commands=[];
+  const window={__TAURI_INTERNALS__:{invoke:async command=>commands.push(command)},
+    __tetoricaAutosaveFlush:()=>new Promise(resolve=>finish=resolve)};
+  window.top=window;
+  const document={readyState:'loading',addEventListener(){},createElement:()=>new Element(),body:{append:element=>dialog=element}};
+  vm.runInNewContext(source.replace('__DESKTOP_DEV_ORIGIN__','null'),{window,document,location:new URL('tauri://localhost')});
+  const closing=window.__tetoricaCloseRequested();
+  assert.deepEqual(commands,[]);
+  finish();await closing;assert.deepEqual(commands,['window_close']);
+  window.__tetoricaAutosaveFlush=async()=>{throw Error('disk full');};
+  const failed=window.__tetoricaCloseRequested();await settle();
+  assert.match(dialog.children[0].textContent,/disk full/);
+  await dialog.children[1].click();await failed;
+  assert.deepEqual(commands,['window_close']);
+});
 test('single click toggles despite delayed native state; failures recover inside existing Menu', async () => {
   const menu = new Element();
   const children = [];

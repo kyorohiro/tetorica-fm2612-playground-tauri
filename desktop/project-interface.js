@@ -39,7 +39,7 @@
     editorAdapter.syncVirtualFiles?.(virtualFiles.list());
     renderVirtualFileExplorer();
     renderRunFileOptions();
-    setStatus(`MCP updated ${path}. Export cassette to save the project.`);
+    setStatus(`MCP updated ${path}.`);
     return {projectId, path, updated:true};
   };
   Object.defineProperty(window, '__tetoricaMcpRequest', {value(request) {

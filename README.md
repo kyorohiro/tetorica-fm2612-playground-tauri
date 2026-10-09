@@ -15,6 +15,11 @@ npm run dev
 
 ビルドは `npm run build`、検証は `npm test` と `cargo test --locked --manifest-path src-tauri/Cargo.toml`。
 チェックアウトに `dist/` が含まれるため、起動・ビルド時に本体ZIPをダウンロードしません。
+
+メニュー先頭の New Cassette / Import Cassette / Export Cassette でプロジェクトを操作できます。
+デスクトップ版はコード・素材ファイル・編集中のファイルと実行ファイルを WebView の IndexedDB に自動保存し、次回起動時に復元します。保存先はチップ／エンジンごとに分かれます。
+メニューに保存状態を表示し、ウィンドウを閉じるときは最後の保存完了を待ちます。New Cassette は確認後に現在の下書きを置き換えるため、残したい曲は先に Export Cassette してください。
+ブラウザー版にはこの自動保存を適用しません。
 `release.lock.json` は取り込み元の記録と展開内容の整合性検査に使い、dev / build 前と Actions で `python3 scripts/import_release.py --check` を実行します。
 `release.source.json` と `fetch_release.py` は廃止しました。
 

@@ -51,10 +51,11 @@
       event.stopImmediatePropagation();
       if (resetCache.disabled) return;
       resetCache.disabled = true;
-      if (!await confirmAction('Clear the offline cache and reload? Unexported project changes will be lost.')) { resetCache.disabled = false; return; }
+      if (!await confirmAction('Clear the offline cache and reload?')) { resetCache.disabled = false; return; }
       resetCache.disabled = true;
       status.hidden = true;
       try {
+        await window.__tetoricaAutosaveFlush?.();
         if (window.caches) {
           const keys = await window.caches.keys();
           await Promise.all(keys.filter(key => key.startsWith('hello-ymfm-docs-'))
@@ -162,6 +163,13 @@
     void refreshMcp();
 
   }
+  window.__tetoricaCloseRequested = async () => {
+    try { await window.__tetoricaAutosaveFlush?.(); }
+    catch (error) {
+      if (!await confirmAction(`Autosave failed: ${error.message ?? error}. Close without saving?`)) return;
+    }
+    await window.__TAURI_INTERNALS__.invoke('window_close');
+  };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, {once:true});
   else mount();
 })();

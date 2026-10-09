@@ -166,7 +166,7 @@ fn tools() -> Value {
     json!({"tools":[
         {"name":"list_files","description":"List files in the open Playground project (including binary metadata).","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
         {"name":"read_file","description":"Read current text including editor changes. Keep projectId and content for write_file.","inputSchema":{"type":"object","properties":{"path":path},"required":["path"],"additionalProperties":false}},
-        {"name":"write_file","description":"Create or update a project text file, without running code. Requires exact previous content to avoid overwriting human edits. Project is in memory: user exports cassette to save.","inputSchema":{"type":"object","properties":{"path":path,"projectId":{"type":"string"},"content":{"type":"string"},"expectedContent":{"type":["string","null"],"description":"Exact content from read_file, or null to create a missing file."}},"required":["path","projectId","content","expectedContent"],"additionalProperties":false}}
+        {"name":"write_file","description":"Create or update a project text file, without running code. Requires exact previous content to avoid overwriting human edits. Changes are autosaved locally; export a cassette to share the project.","inputSchema":{"type":"object","properties":{"path":path,"projectId":{"type":"string"},"content":{"type":"string"},"expectedContent":{"type":["string","null"],"description":"Exact content from read_file, or null to create a missing file."}},"required":["path","projectId","content","expectedContent"],"additionalProperties":false}}
     ]})
 }
 fn references() -> Vec<String> {
@@ -227,7 +227,7 @@ fn rpc(
     let params = &request["params"];
     let result = match method {
         "initialize" => {
-            json!({"protocolVersion":"2025-06-18","capabilities":{"tools":{},"resources":{}},"serverInfo":{"name":"tetorica-playground","version":env!("CARGO_PKG_VERSION")},"instructions":"Read API/type/example resources before writing. list_files/read_file access the current in-memory project. write_file requires projectId and expectedContent; does not execute code or save to disk."})
+            json!({"protocolVersion":"2025-06-18","capabilities":{"tools":{},"resources":{}},"serverInfo":{"name":"tetorica-playground","version":env!("CARGO_PKG_VERSION")},"instructions":"Read API/type/example resources before writing. list_files/read_file access the current project including unsaved editor changes. write_file requires projectId and expectedContent; does not execute code. Desktop autosave persists the project locally."})
         }
         "ping" => json!({}),
         "tools/list" => tools(),

@@ -1,5 +1,5 @@
 {
-  "archive": "hello_ymfm_wasm_dev_itch_playground_v0.50.5_for_run.zip",
+  "archive": "hello_ymfm_wasm_dev_itch_playground.zip",
   "files": {
     "LICENSE": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c",
     "THIRD_PARTY_LICENSES.txt": "f21d8c5bf944ef45ec1a4f40eca300a64beca8032a3b1b05ba22539dc6a4ce7f",
@@ -73,7 +73,7 @@
     "generated/ym2610b_wasm.wasm": "86cc35e0ada926dab1e929a8beed49eef290def372a441cb5c421b9d590daca9",
     "generated/ym2612_wasm.js": "92dae7b14ae953f9c7c94d4a8ac691319c43208effb7947dd3a5013cd9325019",
     "generated/ym2612_wasm.wasm": "7c19b1c04e198b7efe0c29dab906dc9e8ac36d66523ffcc027f61b17833948f6",
-    "index.html": "8c67189378366d79be31641e1650a8660ed4eece66252d42d23788839ff1000f",
+    "index.html": "07df122b9ce8f859a16865bdb3d8050a760faeb555645a9cc3ad7a2b2ed50b43",
     "js/adpcm_b_sample.js": "8120f9619e491f3f38c8761b750e6e9a01758bd612a823a02670d7a35ebbcd8b",
     "js/bitcrusher-worklet.js": "782a8c0f015770792f7226f3d6a874c23e067ecf8665337244baa5872b3d52d9",
     "js/chip_worklet_transport.js": "9907e24ab2ebc32741330c10ecb1e72aacd1a9fe8ff7a5d675b50fba96fb7a9b",
@@ -206,7 +206,8 @@
     "licenses/nuked-opn2/LICENSE": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331",
     "licenses/nuked-opn2/README.md": "8296e38872f66aa2598ca9d17360bc65e45254ee2028320f512f131712b940aa",
     "llms.txt": "ee2ddf38b1a4dc25ff35147463bf8ee2169d280a8fa7ed8c1a711ab34ba36ce2",
-    "playground.js": "65372610d647afc768f4eddb5979087ae5423c8284a979ab674308bf369a8922",
+    "playground.js": "bcc34343ab217abac794a4a2eb4f2b5c7893ea00e5cc6556a54f9163809caf90",
+    "playground_autosave.js": "61004934111b661a634bda6f02d785e3a6b5e09ba8ea7e20c3ce9a784c1e62c7",
     "playground_cassette.js": "43301b529af901c6c7763716b6ab9993df94d2117fd965e695ac4ed003d3d27a",
     "playground_example_order.js": "f30531c4e11670e8d3435b04dd1d563dfc5d9b8b8f51c5ead2ad0e9d9f2a614e",
     "playground_examples.js": "c7c312a33a7b6d7bfbfdfbcee4576e9c9554ef07c7af71319abdf9c95582a6ce",
@@ -214,7 +215,7 @@
     "playground_file_tree.js": "4e44316e21a85a18163efe38ab92212e54248a27ff5b49c1262ac9be31a3ac7a",
     "playground_fx_monitor.js": "029dc5187ffa4667afc2a4dbbfe50be0f87452515149e4165a4e29f362f0dd2f",
     "playground_midi_import.js": "ef70690682c4a15eb65e64f83c04671265b648b496e79c964a37a4d45d79107f",
-    "playground_monaco.js": "3e1d3e331791d3b2034aa7d3456607dff0ce8180cc09b9780627c2f236758f9f",
+    "playground_monaco.js": "50697afc81ad2360ec7b4e58d84007a389ea8c9c5a828027e32118389b7c8081",
     "playground_monaco_completion.js": "a3522bb8ac70dc060816136e8f5ed56fdda48c1e47d794f9b3f86b4036673840",
     "playground_monaco_definitions.js": "2df38f8b76ed9aee62ede796dede469284e69111ceacadec47c3e996ef1f2e2e",
     "playground_operator_keyboard.js": "62d9accca38bb79531c48bed4cf91d3987ba5c6edd01de40384a0d93883e3d56",
@@ -226,7 +227,7 @@
     "playground_ui.js": "cee83a8e89bb0832c132e58bbae8fe585cacd65102ee658f2f77720da534fdeb",
     "playground_vgm_import.js": "37d70690ffb5b56fdfa305a3723fa61711f9ba8073b516abb0ef59107954718c",
     "playground_vgm_presets.js": "b6d445eb5dc37a91858cc728f754becd694c926a0bb888cbb0e28fa3bda3f403",
-    "playground_virtual_files.js": "75a59971aefecf407fd520f0aaae525d3c3db3b16db15210da0b757ed0ba5a68",
+    "playground_virtual_files.js": "e0be899ab1a05604035e235ad8ff2e8f3caf1383519eb614c486dbc77bf0267c",
     "rf5c164_vgm_export.js": "c1e8abe3c0e7b2d467d71ef5449bf894a1166d17e026f03a26cadd5eaa6df850",
     "samples/sonic-pi/CREDITS.md": "1e8749c1041929f6f4eca7136e43d62a28f31c7e7ca2d083e19e96d94a72e765",
     "samples/sonic-pi/README.md": "25edd3d8b515a2c1886c05bbbd971b6fcd3269b7557fb6e50d01179474baab73",
@@ -450,6 +451,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "3e45f873ae54d7fee087dc2b5e7f3de86b6c7c181db420c55e06be3a244d36ac"
   },
-  "sha256": "b851f50cccec9299958b70047d95ecf1552181e7e69dc428a4786f039c5cbcba",
-  "version": "sha256-b851f50cccec"
+  "sha256": "71891d1c7ad32606dfc90b13adea0e1fab95169189a7cfffad9d1c4d4c3cf470",
+  "version": "sha256-71891d1c7ad3"
 }
