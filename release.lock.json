@@ -206,7 +206,7 @@
     "licenses/nuked-opn2/LICENSE": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331",
     "licenses/nuked-opn2/README.md": "8296e38872f66aa2598ca9d17360bc65e45254ee2028320f512f131712b940aa",
     "llms.txt": "ee2ddf38b1a4dc25ff35147463bf8ee2169d280a8fa7ed8c1a711ab34ba36ce2",
-    "playground.js": "bcc34343ab217abac794a4a2eb4f2b5c7893ea00e5cc6556a54f9163809caf90",
+    "playground.js": "02c4e22ce890d064d00860c844698bbb23528455b986ad1161e29cafa44209c2",
     "playground_autosave.js": "61004934111b661a634bda6f02d785e3a6b5e09ba8ea7e20c3ce9a784c1e62c7",
     "playground_cassette.js": "43301b529af901c6c7763716b6ab9993df94d2117fd965e695ac4ed003d3d27a",
     "playground_example_order.js": "f30531c4e11670e8d3435b04dd1d563dfc5d9b8b8f51c5ead2ad0e9d9f2a614e",
@@ -451,6 +451,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "3e45f873ae54d7fee087dc2b5e7f3de86b6c7c181db420c55e06be3a244d36ac"
   },
-  "sha256": "71891d1c7ad32606dfc90b13adea0e1fab95169189a7cfffad9d1c4d4c3cf470",
-  "version": "sha256-71891d1c7ad3"
+  "sha256": "c7bec0f2ae661d6228c0037820141d190846be4510315b3dbacfb5f8e6b7c3a4",
+  "version": "sha256-c7bec0f2ae66"
 }
