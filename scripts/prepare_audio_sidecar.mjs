@@ -2,6 +2,7 @@ import {cp,mkdir,copyFile,writeFile,chmod,rm,rename,stat} from 'node:fs/promises
 import {fileURLToPath} from 'node:url';
 import {execFileSync} from 'node:child_process';
 import {join} from 'node:path';
+import {signAudioSidecar} from './sign_audio_sidecar.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url));
 execFileSync('python3',['scripts/import_release.py','--check'],{cwd:root,stdio:'inherit'});
 const bundle=join(root,'audio-sidecar-bundle');await mkdir(bundle,{recursive:true});
@@ -29,7 +30,12 @@ await cp(join(root,'audio-sidecar/server.mjs'),join(bundle,'server.mjs'));
 await cp(join(root,'audio-sidecar/output_audify.mjs'),join(bundle,'output_audify.mjs'));
 await rm(join(bundle,'node_modules'),{recursive:true,force:true});
 for(const name of ['audify','bindings','file-uri-to-path','ws'])await cp(join(root,'node_modules',name),join(bundle,'node_modules',name),{recursive:true});
-if(replaced)await cp(join(process.execPath,'../../LICENSE'),join(bundle,'NODE_LICENSE'));
+if(process.env.TETORICA_AUDIFY_RELEASE){
+  const release=join(bundle,'node_modules/audify/build/Release');await rm(release,{recursive:true,force:true});
+  await cp(process.env.TETORICA_AUDIFY_RELEASE,release,{recursive:true});
+}
+if(replaced)await cp(process.env.TETORICA_AUDIO_NODE_LICENSE??join(process.execPath,'../../LICENSE'),join(bundle,'NODE_LICENSE'));
 await cp(join(root,'dist/LICENSE'),join(bundle,'TETORICA_LICENSE'));
 await writeFile(join(bundle,'package.json'),JSON.stringify({private:true,type:'module'}));
-console.log(`Prepared Audify sidecar for ${process.platform}/${process.arch}`);
+if(process.platform==='darwin')await signAudioSidecar(bundle);
+console.log(`Prepared Audify sidecar for ${process.platform}/${process.env.TETORICA_AUDIO_ARCH??process.arch}`);

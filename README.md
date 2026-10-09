@@ -79,6 +79,28 @@ NodeとAudifyを使ってください。システムの外部共有ライブラ�
 この検証には親の開発リポジトリーの `docs/` と Playwright が必要です。
 配布ZIP本体と `release.lock.json` は、このTauri専用機能では変更しません。
 
+### macOS の署名・公証
+
+`sh deploy_mac.sh` は Intel と Apple Silicon を順にビルドします。
+各ターゲット用の公式 Node v25.2.1 と Audify 1.10.1 の事前ビルドを取得し、
+固定した SHA256 を確認して `audio-mac-cache/` に保存します。次回はキャッシュを利用します。
+ホストCPUの Audify を他CPU版へ混ぜず、同梱する全Mach-OのCPUを検査します。
+
+`APPLE_SIGNING_IDENTITY` が設定された場合、同梱 `.node`、全 `.dylib`、Node を
+Developer ID・secure timestamp・Hardened Runtime 付きで署名・検証し、その後Tauriが
+外側のアプリを署名・公証します。NodeだけにJIT用のentitlementを付けます。
+`get-task-allow` や library validation の無効化は付けません。
+Appleの公証用パスワードなどは従来どおり実行環境で設定してください。
+
+Apple Silicon だけを再試行する場合:
+
+```sh
+sh deploy_mac.sh aarch64-apple-darwin
+```
+
+取得元: https://nodejs.org/dist/v25.2.1/SHASUMS256.txt と
+https://github.com/almoghamdani/audify/releases/tag/v1.10.1 の配布資材です。
+
 ## MCP
 
 1. アプリを起動してプロジェクトを開きます。

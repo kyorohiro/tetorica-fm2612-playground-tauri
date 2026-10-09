@@ -1,5 +1,6 @@
 /node_modules/
 /audio-sidecar-bundle/
+/audio-mac-cache/
 /src-tauri/target/
 /src-tauri/gen/
 __pycache__/
