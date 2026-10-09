@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod audio;
 mod mcp;
 
 use tauri::{menu::Menu, Manager, WebviewWindow};
@@ -53,6 +54,7 @@ fn window_reload(window: WebviewWindow) -> Result<(), String> {
 #[tauri::command]
 fn window_close(window: WebviewWindow) -> Result<(), String> {
     allowed(&window)?;
+    window.state::<audio::Audio>().shutdown();
     window.destroy().map_err(|e| e.to_string())
 }
 
@@ -79,6 +81,8 @@ fn main() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
+            audio::audio_request,
+            audio::audio_shutdown,
             window_top_get,
             window_reload,
             window_close,
@@ -101,6 +105,7 @@ fn main() {
             }
         })
         .setup(|app| {
+            app.manage(audio::Audio::default());
             app.manage(std::sync::Mutex::new(mcp::Mcp::load(
                 &app.path().app_data_dir()?,
             )?));
@@ -109,6 +114,12 @@ fn main() {
                 .on_web_resource_request(|request, response| {
                     let local = request.uri().scheme_str() == Some("tauri")
                         || request.uri().host() == Some("tauri.localhost");
+                    if local && request.uri().path() == "/desktop-audio-worklet.js" {
+                        *response.status_mut() = tauri::http::StatusCode::OK;
+                        *response.body_mut() = std::borrow::Cow::Owned(include_bytes!("../../desktop/audio-worklet.js").to_vec());
+                        response.headers_mut().insert("content-type", "text/javascript".parse().unwrap());
+                        response.headers_mut().remove("content-length");
+                    }
                     if local
                         && request.uri().path() == "/playground.js"
                         && response.status().is_success()
@@ -118,6 +129,8 @@ fn main() {
                         bytes.extend_from_slice(include_bytes!(
                             "../../desktop/project-interface.js"
                         ));
+                        bytes.extend_from_slice(b"\n;\n");
+                        bytes.extend_from_slice(include_bytes!("../../desktop/audio-interface.js"));
                         *response.body_mut() = std::borrow::Cow::Owned(bytes);
                         response.headers_mut().remove("content-length");
                         response.headers_mut().remove("etag");

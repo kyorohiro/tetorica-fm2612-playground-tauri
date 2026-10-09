@@ -12,5 +12,9 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.5"
+  },
+  "dependencies": {
+    "audify": "1.10.1",
+    "ws": "8.22.0"
   }
 }

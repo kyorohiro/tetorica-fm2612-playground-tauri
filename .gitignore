@@ -1,4 +1,5 @@
 /node_modules/
+/audio-sidecar-bundle/
 /src-tauri/target/
 /src-tauri/gen/
 __pycache__/

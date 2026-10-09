@@ -42,6 +42,43 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 - `src-tauri/src/main.rs`: ローカルのメインウィンドウに限定した最前面固定コマンド
 - `assets/app-icon.png`: 上流Playgroundアイコン。`npm run icons` でデスクトップ用を生成
 
+## 音声出力
+
+起動時は **WebView (default)** です。Menu → **Audio output** で **Audify** を
+選び、Audio output device から機器を選択して **Apply output** を押します。
+接続表示を確認して Run で演奏を再開してください。出力の変更・機器一覧の更新は
+演奏を停止します。WebView を選ぶと通常の出力へ戻ります。
+
+物理的なスピーカー・USBオーディオ機器に加え、インストール済みの BlackHole などの
+仮想オーディオ機器も選べます。別アプリ側で同じ機器を入力元に指定すると、
+DAWでの録音やエフェクト処理へ送れます。仮想機器自体のインストールは行いません。
+デバイス接続が失敗・切断した場合は演奏を止めて WebView モードへ戻し、原因を表示します。
+出力設定は保存せず、次回起動も WebView です。
+
+音源・ミキサー・エフェクトは従来の Web Audio で処理し、最終出力を追加の
+AudioWorklet からローカルの Node/Audify プロセスへ渡します。Main／Worker 実行と
+STOP のフェードは同じ処理を使います。音声の待ち行列は512フレームの最大4ブロック
+（機器が異なるサイズを返す場合はそのサイズ）に制限し、停止後の古いデータを蓄積しません。
+機器の推奨サンプルレートを使用し、Web Audio と異なる場合は線形補間で変換します。
+追加の転送・バッファによる遅延があるため、本番ライブでの遅延・音切れの評価は別途必要です。
+macOS/arm64 で検証済み。Windows/Linux の実機確認は未実施です。
+
+Node実行ファイル、Audifyのネイティブモジュール、必要な実行時依存とライセンスを
+ビルド時に `audio-sidecar-bundle/` へ用意し、アプリの resources に同梱します。
+利用者のPCにNodeをインストールする必要はありません。ビルドするOS・CPUに合う
+NodeとAudifyを使ってください。システムの外部共有ライブラリーに依存するNodeではなく、
+単体で起動できる公式Node配布を使います。必要なら `TETORICA_AUDIO_NODE` で実行ファイルを指定できます。
+
+- `audio-sidecar/server.mjs`: デバイス列挙・ストリーム制御・上限付き音声受け渡し
+- `audio-sidecar/output_audify.mjs`: 上流 `node/output_audify.mjs` のスナップショット（BSD-3-Clause、`dist/LICENSE`）
+- `desktop/audio-interface.js` / `audio-worklet.js`: メニューと出力接続。固定した上流の配信応答へ追加
+- `src-tauri/src/audio.rs`: ローカルのメインウィンドウだけに公開する制御コマンド。終了時にプロセスを停止
+
+`npm test` はPCMの上限制御とサンプルレート変換も検証します。
+実機の低音量テストは、同梱準備後に `node scripts/check_audify_browser.cjs` で実行できます。
+この検証には親の開発リポジトリーの `docs/` と Playwright が必要です。
+配布ZIP本体と `release.lock.json` は、このTauri専用機能では変更しません。
+
 ## MCP
 
 1. アプリを起動してプロジェクトを開きます。

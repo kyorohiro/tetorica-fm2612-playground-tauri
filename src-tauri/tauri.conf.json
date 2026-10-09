@@ -5,8 +5,8 @@
   "identifier": "net.tetorica.ym2612-playground",
   "build": {
     "frontendDist": "../dist",
-    "beforeDevCommand": "python3 scripts/import_release.py --check",
-    "beforeBuildCommand": "python3 scripts/import_release.py --check"
+    "beforeDevCommand": "node scripts/prepare_audio_sidecar.mjs",
+    "beforeBuildCommand": "node scripts/prepare_audio_sidecar.mjs"
   },
   "app": {
     "withGlobalTauri": false,
@@ -37,6 +37,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "../audio-sidecar-bundle/": "audio-sidecar/"
+    }
   }
 }
