@@ -1,7 +1,6 @@
 {
-  "archive": "hello_ymfm_wasm_dev_itch_playground_v0.50.5.zip",
+  "archive": "hello_ymfm_wasm_dev_itch_playground_v0.50.5_for_run.zip",
   "files": {
-    ".DS_Store": "b9ad3381c40ce7160a1a776775b88123f76f222d22a594e7682f9d587d89e27d",
     "LICENSE": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c",
     "THIRD_PARTY_LICENSES.txt": "f21d8c5bf944ef45ec1a4f40eca300a64beca8032a3b1b05ba22539dc6a4ce7f",
     "assets/opna-rhythm/LICENSE": "fc3f6037e016ec318ec521034aa3c643a01c557c216859bf4dc49b0031ce94f7",
@@ -229,7 +228,6 @@
     "playground_vgm_presets.js": "b6d445eb5dc37a91858cc728f754becd694c926a0bb888cbb0e28fa3bda3f403",
     "playground_virtual_files.js": "75a59971aefecf407fd520f0aaae525d3c3db3b16db15210da0b757ed0ba5a68",
     "rf5c164_vgm_export.js": "c1e8abe3c0e7b2d467d71ef5449bf894a1166d17e026f03a26cadd5eaa6df850",
-    "samples/.DS_Store": "ed2627d828de12c9ef13105ecb6155d8e73638d3cbfb28a931246a75a556824c",
     "samples/sonic-pi/CREDITS.md": "1e8749c1041929f6f4eca7136e43d62a28f31c7e7ca2d083e19e96d94a72e765",
     "samples/sonic-pi/README.md": "25edd3d8b515a2c1886c05bbbd971b6fcd3269b7557fb6e50d01179474baab73",
     "samples/sonic-pi/README_SONICPI.md": "8f0bf923d8669fa3c9b04d84224285583aa7f98023e2ab8bfcafb6cbf3f7e2e2",

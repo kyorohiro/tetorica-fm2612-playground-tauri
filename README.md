@@ -26,6 +26,7 @@ npm run import:release -- ./xxx.zip
 
 ZIP の置き場所・ファイル名は自由です。version 指定は不要で、ZIP と展開ファイルの SHA-256 を記録します。
 取り込み後に動作確認し、`dist/` と `release.lock.json` を同じコミットに含めてください。リリースタグもそのコミットに付けます。
+macOS の付随ファイル（`.DS_Store` と `__MACOSX/`）は取り込み・検証対象から除外します。アプリ本体のバイト列と取り込み元ZIPのハッシュは保持します。
 `.gitattributes` で `dist/` の改行変換を無効にし、Windowsでも同じバイト列を保持します。
 Tauri アプリのバージョンは、この ZIP の取り込みでは変更しません。
 

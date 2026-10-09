@@ -11,6 +11,11 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def is_metadata(name):
+    parts = PurePosixPath(name).parts
+    return '.DS_Store' in parts or '__MACOSX' in parts
+
+
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -25,7 +30,7 @@ def unpack(archive, destination):
                     or ':' in entry.filename or stat.S_ISLNK(entry.external_attr >> 16)):
                 raise ValueError(f'Unsafe ZIP entry: {entry.filename}')
         for entry in entries:
-            if entry.is_dir():
+            if entry.is_dir() or is_metadata(entry.filename):
                 continue
             name = str(PurePosixPath(entry.filename))
             if name in hashes:
@@ -43,8 +48,10 @@ def unpack(archive, destination):
 def check(root):
     lock = json.loads((root / 'release.lock.json').read_text())
     actual = {p.relative_to(root / 'dist').as_posix(): digest(p.read_bytes())
-              for p in (root / 'dist').rglob('*') if p.is_file()}
-    if actual != lock['files']:
+              for p in (root / 'dist').rglob('*')
+              if p.is_file() and not is_metadata(p.relative_to(root / 'dist').as_posix())}
+    expected = {name: sha for name, sha in lock['files'].items() if not is_metadata(name)}
+    if actual != expected:
         raise ValueError('dist differs from release.lock.json; import the pinned ZIP again')
     return lock
 

@@ -58,6 +58,30 @@ class ImportTests(unittest.TestCase):
         files = {'index.html': b'<html>test</html>', 'playground.js': b'// test', 'generated/test.wasm': bytes(range(256))}
         self.assertEqual(self.unpack(files), {name: importer.digest(data) for name, data in files.items()})
 
+    def test_import_excludes_macos_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive = root / 'release.zip'
+            with zipfile.ZipFile(archive, 'w') as output:
+                for name in ['index.html', 'playground.js', '.DS_Store', 'js/.DS_Store', '__MACOSX/._index.html']:
+                    output.writestr(name, 'test')
+            lock = importer.import_release(root, archive)
+            self.assertEqual(set(lock['files']), {'index.html', 'playground.js'})
+            self.assertEqual({p.relative_to(root / 'dist').as_posix() for p in (root / 'dist').rglob('*') if p.is_file()}, {'index.html', 'playground.js'})
+            self.assertEqual(lock['sha256'], importer.digest(archive.read_bytes()))
+            self.assertEqual(importer.check(root), lock)
+
+    def test_check_ignores_metadata_in_legacy_lock_and_local_dist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'dist').mkdir()
+            (root / 'dist/index.html').write_bytes(b'original')
+            lock = {'version': 'legacy', 'files': {'index.html': importer.digest(b'original'), '.DS_Store': importer.digest(b'metadata')}}
+            (root / 'release.lock.json').write_text(json.dumps(lock))
+            self.assertEqual(importer.check(root), lock)
+            (root / 'dist/.DS_Store').write_bytes(b'changed metadata')
+            self.assertEqual(importer.check(root), lock)
+
     def test_check_detects_modified_or_extra_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
