@@ -27,8 +27,7 @@ catch{
   try{if((await stat(nodePath)).size<1024*1024)throw Error('Missing runtime');console.log('Retained the working bundled Node runtime');}
   catch{throw Error('The copied Node cannot run. Set TETORICA_AUDIO_NODE to a standalone Node executable.');}
 }
-await cp(join(root,'audio-sidecar/server.mjs'),join(bundle,'server.mjs'));
-await cp(join(root,'audio-sidecar/output_audify.mjs'),join(bundle,'output_audify.mjs'));
+await cp(join(root,'audio-sidecar'),bundle,{recursive:true});
 await rm(join(bundle,'node_modules'),{recursive:true,force:true});
 for(const name of ['audify','bindings','file-uri-to-path','ws'])await cp(join(root,'node_modules',name),join(bundle,'node_modules',name),{recursive:true});
 if(process.env.TETORICA_AUDIFY_RELEASE){

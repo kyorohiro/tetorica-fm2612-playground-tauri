@@ -3,11 +3,13 @@ import {createInterface} from 'node:readline';
 import {randomBytes} from 'node:crypto';
 import {WebSocketServer,WebSocket} from 'ws';
 import {createOutput} from './output_audify.mjs';
+import {outputApi} from './audio_api.mjs';
 
 let output=null,server=null,wss=null,socket=null;
 let receivedFrames=0,peak=0;
 let lastError=null;
 let deviceAudio=null;
+let api;
 const LIMIT=4;
 async function stop(){
   const old=output;output=null;
@@ -17,8 +19,11 @@ async function stop(){
   if(server){await new Promise(resolve=>server.close(resolve));server=null;}
 }
 async function devices(){
-  const loaded=await import('audify');const {RtAudio}=loaded.default??loaded;
-  deviceAudio??=new RtAudio();return deviceAudio.getDevices().filter(device=>device.outputChannels>=2)
+  const loaded=await import('audify');const audify=loaded.default??loaded;const {RtAudio}=audify;
+  api=outputApi(audify);
+  deviceAudio??=api==null?new RtAudio():new RtAudio(api);
+  if(process.platform==='win32'&&!String(deviceAudio.getApi()).toLowerCase().includes('wasapi'))throw Error('Windows WASAPI is not available in this Audify build');
+  return deviceAudio.getDevices().filter(device=>device.outputChannels>=2)
     .map(device=>({id:device.id,name:device.name,channels:device.outputChannels,
       preferredSampleRate:device.preferredSampleRate,isDefault:device.isDefaultOutput}));
 }
@@ -36,7 +41,7 @@ async function start({deviceId,sampleRate}){
     const available=LIMIT-Math.ceil(output.queuedFrames/output.frames)-credits;
     if(available>0){credits+=available;socket.send(JSON.stringify({type:'credit',count:available}));}
   }
-  output=await createOutput({sampleRate,bufferFrames:512,deviceId:deviceId??undefined,
+  output=await createOutput({sampleRate,bufferFrames:512,deviceId:deviceId??undefined,api,
     onDrain:grant,onError:error=>{lastError=error.message;if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'error',error:error.message}));void stop();}});
   const frames=output.frames,token=randomBytes(32).toString('hex');
   server=createServer((_request,response)=>{response.writeHead(404);response.end();});

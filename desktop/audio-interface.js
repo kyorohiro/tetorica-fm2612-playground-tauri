@@ -79,7 +79,12 @@
     if(busy)return;busy=true;mode.disabled=device.disabled=refresh.disabled=apply.disabled=true;
     const run=document.getElementById('runButton');if(run)run.disabled=true;
     try{await action();}
-    catch(error){detach();void invoke('stop').catch(()=>{});mode.value='webview';show();status.textContent=`WebView output — ${error.message??error}`;}
+    catch(error){
+      detach();void invoke('stop').catch(()=>{});mode.value='webview';show();
+      const description=String(error.message??error);
+      status.textContent=`WebView output — ${description.split('\n')[0]}`;status.title=description;
+      logLine('[Audify] '+description);
+    }
     finally{busy=false;mode.disabled=device.disabled=refresh.disabled=apply.disabled=false;if(run)run.disabled=false;}
   }
   mode.addEventListener('change',()=>{show();void change(async()=>{
