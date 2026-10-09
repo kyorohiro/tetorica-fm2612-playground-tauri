@@ -73,7 +73,7 @@
     "generated/ym2610b_wasm.wasm": "86cc35e0ada926dab1e929a8beed49eef290def372a441cb5c421b9d590daca9",
     "generated/ym2612_wasm.js": "92dae7b14ae953f9c7c94d4a8ac691319c43208effb7947dd3a5013cd9325019",
     "generated/ym2612_wasm.wasm": "7c19b1c04e198b7efe0c29dab906dc9e8ac36d66523ffcc027f61b17833948f6",
-    "index.html": "e23fab2abeb3c51aea925e374ae975d558be12e55a4d4c62cf8c7a8fbdc17eb9",
+    "index.html": "317bfec64eb2e2570bcfb0a9c9f25d59c23fac289f4711852a42d9ed7dbf84f8",
     "js/adpcm_b_sample.js": "8120f9619e491f3f38c8761b750e6e9a01758bd612a823a02670d7a35ebbcd8b",
     "js/bitcrusher-worklet.js": "782a8c0f015770792f7226f3d6a874c23e067ecf8665337244baa5872b3d52d9",
     "js/chip_worklet_transport.js": "9907e24ab2ebc32741330c10ecb1e72aacd1a9fe8ff7a5d675b50fba96fb7a9b",
@@ -216,7 +216,7 @@
     "licenses/nuked-opn2/LICENSE": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331",
     "licenses/nuked-opn2/README.md": "8296e38872f66aa2598ca9d17360bc65e45254ee2028320f512f131712b940aa",
     "llms.txt": "ee2ddf38b1a4dc25ff35147463bf8ee2169d280a8fa7ed8c1a711ab34ba36ce2",
-    "playground.js": "57a996248da8530d5d6154d6e5482bd0f8623d679a0f270575164a3ef1dd3a30",
+    "playground.js": "e9805757b30f089fd90942d093f7ffa30318214f3883d6383a9a6b02d4c5db76",
     "playground_autosave.js": "61004934111b661a634bda6f02d785e3a6b5e09ba8ea7e20c3ce9a784c1e62c7",
     "playground_cassette.js": "703c8a431c985247847bdc2a1c4b23a9929050cf92b7edb2ae8568e631491752",
     "playground_example_order.js": "f30531c4e11670e8d3435b04dd1d563dfc5d9b8b8f51c5ead2ad0e9d9f2a614e",
@@ -232,14 +232,14 @@
     "playground_operator_tab.js": "09e01a2925f51efdfca3e214fb0ba41f49fe46e402b63e72759f051e881bbb8d",
     "playground_page_lifecycle.js": "5abd0c650a6acd1fe63ac16dae4e37846d83fc0745a460794bfa110ebe824d47",
     "playground_query.js": "1dbe71a14122c37c247469907b654ad856efbb3aaf6b6e5db138166be74cb967",
-    "playground_shell.js": "44ae3d8c6d4231e4ff99228b28994b8029b3909b39a733e6bc5cb43761106597",
+    "playground_shell.js": "601f72c74da8274df61caaae134af0ca10b9463f9203de8978430c25e4f03894",
     "playground_shell_modules.js": "81b44f3935567df337c8468eb549ecef2156cae0eb3d8d50c51474fed3d77c5e",
     "playground_shell_runner.js": "473a9b07c91eb524609b5fc3843e399378e8726e878ab19dfbd58a2a80a49785",
     "playground_shell_session.js": "8a731fdc2d8025bcd64920c62c3219c4a21cf6d5f93e77b15b989f6651935f7b",
     "playground_shell_worker.js": "3f8fee6c502286f2e4aa6a5eab386a3db9e7d24c1501211ab4b51ded843df491",
     "playground_sync.js": "df62ebdd2058eadd91e34c65a7c4bd4bea5efc4386217b5abfec83bbc4f94752",
     "playground_tfi_editor.js": "afc594b488867071c63bf5fa83dcebd33d0a24bc75517ee563d99bfc22c49e1c",
-    "playground_ui.js": "cee83a8e89bb0832c132e58bbae8fe585cacd65102ee658f2f77720da534fdeb",
+    "playground_ui.js": "847186bc6f6a6f64aaf586c93856ede1ccfbe01a089f5e8b0492ec9e0da27e33",
     "playground_vgm_import.js": "37d70690ffb5b56fdfa305a3723fa61711f9ba8073b516abb0ef59107954718c",
     "playground_vgm_presets.js": "b6d445eb5dc37a91858cc728f754becd694c926a0bb888cbb0e28fa3bda3f403",
     "playground_virtual_files.js": "eb870165fa8d52e027925e406c98e6b072bca797a5fdaac9167c7e7b7de888f2",
@@ -469,6 +469,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "3e45f873ae54d7fee087dc2b5e7f3de86b6c7c181db420c55e06be3a244d36ac"
   },
-  "sha256": "b3f60b00e3e301d9f90333f4ecbbb6737fc7a343f75bf8ffd6052edde910094f",
-  "version": "sha256-b3f60b00e3e3"
+  "sha256": "da3c7334bc4484736e08052017e0376c08a9c71fdbe17d2a1456b74e24fdd6f3",
+  "version": "sha256-da3c7334bc44"
 }
