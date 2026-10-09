@@ -3,8 +3,8 @@
 {
   let projectId = crypto.randomUUID();
   const replaceProject = virtualFiles.replace.bind(virtualFiles);
-  virtualFiles.replace = entries => {
-    replaceProject(entries);
+  virtualFiles.replace = (...args) => {
+    replaceProject(...args);
     projectId = crypto.randomUUID();
   };
   const textAt = path => path === activeVirtualPath ? getEditorValue() : virtualFiles.get(path)?.data;
