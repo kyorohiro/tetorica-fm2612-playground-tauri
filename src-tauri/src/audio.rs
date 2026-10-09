@@ -159,6 +159,34 @@ impl Drop for Sidecar {
         let _ = self.child.wait();
     }
 }
+fn node_resource_path(path: &Path) -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        use std::path::{Component, Prefix};
+        let mut components = path.components();
+        if let Some(Component::Prefix(prefix)) = components.next() {
+            let mut ordinary = match prefix.kind() {
+                Prefix::VerbatimDisk(drive) => {
+                    std::path::PathBuf::from(format!("{}:\\", char::from(drive)))
+                }
+                Prefix::VerbatimUNC(server, share) => {
+                    let mut unc = std::path::PathBuf::from(r"\\");
+                    unc.push(server);
+                    unc.push(share);
+                    unc
+                }
+                _ => return path.to_owned(),
+            };
+            for component in components {
+                if !matches!(component, Component::RootDir) {
+                    ordinary.push(component.as_os_str());
+                }
+            }
+            return ordinary;
+        }
+    }
+    path.to_owned()
+}
 fn sidecar_command(root: &Path) -> Result<Command, String> {
     let executable = root.join(if cfg!(windows) { "node.exe" } else { "node" });
     let script = root.join("server.mjs");
@@ -170,11 +198,10 @@ fn sidecar_command(root: &Path) -> Result<Command, String> {
             ));
         }
     }
-    let mut command = Command::new(executable);
-    // Windows resource_dir can contain a verbatim \\?\ drive prefix. Node's
-    // main-module realpath resolution fails on that absolute script argument
-    // (nodejs/node#62446). Resolve the entry point relative to the resource cwd.
-    command.arg("server.mjs").current_dir(root);
+    // Relative entry points still fail if the cwd has a verbatim drive prefix
+    // (nodejs/node#62446). Normalize BOTH executable and cwd for Node.
+    let mut command = Command::new(node_resource_path(&executable));
+    command.arg("server.mjs").current_dir(node_resource_path(root));
     Ok(command)
 }
 #[derive(Default, Clone)]
@@ -252,11 +279,24 @@ mod tests {
             .canonicalize()
             .unwrap();
         assert!(root.as_os_str().to_string_lossy().starts_with(r"\\?\"));
-        let mut child = Sidecar::launch(sidecar_command(&root).unwrap()).unwrap();
+        let command = sidecar_command(&root).unwrap();
+        assert!(!command.get_current_dir().unwrap().as_os_str().to_string_lossy().starts_with(r"\\?\"));
+        let mut child = Sidecar::launch(command).unwrap();
         let status = child.exchange("status", Value::Null).unwrap();
         assert_eq!(status["active"], false);
         assert!(child.exchange("devices", Value::Null).unwrap().is_array());
         assert_eq!(child.exchange("stop", Value::Null).unwrap(), Value::Null);
+    }
+    #[test]
+    #[cfg(windows)]
+    fn node_paths_support_drive_and_unc_resources_without_losing_unicode() {
+        for (input, expected) in [
+            (r"\\?\C:\Program Files\Tetorica 音楽\audio-sidecar", r"C:\Program Files\Tetorica 音楽\audio-sidecar"),
+            (r"\\?\UNC\server\share\Tetorica 音楽", r"\\server\share\Tetorica 音楽"),
+            (r"C:\Tetorica\audio-sidecar", r"C:\Tetorica\audio-sidecar"),
+        ] {
+            assert_eq!(node_resource_path(Path::new(input)), Path::new(expected));
+        }
     }
     #[test]
     fn child_exit_preserves_stderr_and_exit_code() {

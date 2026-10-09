@@ -3,6 +3,7 @@ import {join,toNamespacedPath} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {cp,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
+import {nodeResourcePath} from './node_resource_path.mjs';
 const root=fileURLToPath(new URL('../audio-sidecar-bundle/',import.meta.url));
 // Loading the addon checks architecture, ABI and shared-library dependencies.
 // No device is opened and no audio hardware is required on the CI runner.
@@ -31,7 +32,9 @@ try{
   const requests=[{id:1,op:'stop'},{id:2,op:'status'}];
   if(process.platform==='win32')requests.push({id:3,op:'devices'});
   requests.push({id:4,op:'stop'});
-  const resourceRoot=process.platform==='win32'?toNamespacedPath(isolated):isolated;
+  // Start with the same verbatim resource path Rust canonicalize returns,
+  // then apply the native launcher's conversion to executable AND cwd.
+  const resourceRoot=nodeResourcePath(process.platform==='win32'?toNamespacedPath(isolated):isolated);
   const stdout=execFileSync(join(resourceRoot,process.platform==='win32'?'node.exe':'node'),['server.mjs'],{
     cwd:resourceRoot,encoding:'utf8',timeout:30000,
     input:requests.map(request=>JSON.stringify(request)).join('\n')+'\n',

@@ -1,6 +1,6 @@
 {
   "name": "tetorica-fm2612-playground-tauri",
-  "version": "0.52.5",
+  "version": "0.52.6",
   "private": true,
   "scripts": {
     "dev": "tauri dev --no-dev-server",

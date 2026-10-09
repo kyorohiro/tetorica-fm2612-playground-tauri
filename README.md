@@ -92,6 +92,7 @@ WindowsではWASAPIの列挙・GCによる解放を3回繰り返し、子Nodeの
 Windowsではインストール先に使われる`\\?\`形式のパスも検証します。
 Nodeへ渡す起動スクリプトは、同梱フォルダーを作業ディレクトリーとする相対パスです
 （[Nodeの拡張パス解決の不具合](https://github.com/nodejs/node/issues/62446)を回避）。
+実行ファイルと作業ディレクトリーの両方も、ドライブ／UNCの通常パス形式へ変換します。
 macOSの署名なしCI／開発ビルドは、NodeとAudifyをアドホック署名にそろえ、
 前回のDeveloper ID署名との混在によるネイティブモジュールの読み込み失敗を防ぎます。
 実機の低音量テストは、同梱準備後に `node scripts/check_audify_browser.cjs` で実行できます。
