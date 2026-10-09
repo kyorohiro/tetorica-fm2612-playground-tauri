@@ -1522,6 +1522,15 @@
                   </div>
                   <p class="subtext">Explanations show sample times, duty, envelope, sweep, written pitch, noise and wave RAM. High-level mode uses named APIs where register writes remain identical; other operations stay raw. No extra triggers or wave stops are inserted. Vibrato is not inferred.</p>
                 </fieldset>
+                <fieldset id="nesImportOptions" class="vgm-import-options" hidden disabled>
+                  <legend>NES APU / FDS conversion</legend>
+                  <div class="vgm-import-mode">
+                    <label><input type="radio" name="nesImportMode" value="raw" checked>Raw register writes</label>
+                    <label><input type="radio" name="nesImportMode" value="readable">Registers with explanations</label>
+                    <label><input type="radio" name="nesImportMode" value="high">High-level API + raw fallback</label>
+                  </div>
+                  <p class="subtext">Source-clock NES APU (NTSC / PAL), FDS wave/modulation and DMC RAM uploads. High-level mode replaces only byte-identical operations. One pass; asynchronous waits are not sample-accurate scheduling.</p>
+                </fieldset>
                 <div class="vgm-import-actions">
                   <button id="cancelVgmImportButton" type="button">Cancel</button>
                   <button id="convertVgmButton" type="button">Convert</button>
@@ -1739,11 +1748,13 @@
               <li><code>await pg.livePrepare("main-fx", async ({ fx }) =&gt; ...)</code> reuses prepared live state across runs</li>
               <li><code>pg.scale("Eb2", "majorPentatonic", 2)</code>, <code>pg.chord("B2", "minor")</code></li>
               <li><code>pg.noteToBlockFnum("C4")</code>, <code>pg.noteLerp("B2", "E3", 0.5)</code>, <code>pg.lerp(0, 100, 0.5)</code></li>
+              <li><code>hzToBlockFnum(440)</code> / <code>pg.hzToBlockFnum(440)</code> converts Hz to <code>{block, fnum}</code> for <code>fm.setFrequency(channel, block, fnum)</code>. Optional second argument: chip clock in Hz (default 7670454), not the audio sample rate.</li>
               <li><code>pg.choose(array)</code>, <code>pg.cycle(array)</code>, <code>pg.cycle("bass", array)</code></li>
               <li><code>pg.rand()</code>, <code>pg.rrange(0.2, 0.8)</code>, <code>pg.randInt(0, 7)</code></li>
               <li><code>pg.stopLoop(name)</code>, <code>pg.stopAllLoops()</code>, <code>pg.stopAll()</code></li>
             </ul>
 
+            <p class="subtext">Go to Definition (F12 / Ctrl or Cmd + click) opens library declarations read-only. View implementation opens the corresponding JavaScript source.</p>
             <h2 style="margin-top: 14px;">midi (YM2612 mode)</h2>
             <ul class="helper-list">
               <li><code>midi.output("tetorica-ym2612", { channel: CH1 })</code> creates an FM part; <code>"tetorica-sega-psg"</code> uses the three PSG tone voices (not noise). These are internal outputs, not external Web MIDI ports.</li>
@@ -1784,7 +1795,8 @@
             <ul class="helper-list">
               <li><code>const chip = await useSoundChip(name)</code> reuses a chip until Stop. For YM2612, YM2203, and YM2610, it returns the default chip when selected; otherwise it creates an independent chip.</li>
               <li><code>const chip = await createSoundChip(name)</code> creates a fresh independent chip routed through master FX.</li>
-              <li>Supported names: <code>ym2612</code>, <code>ym2203</code>, <code>ym2610</code>, <code>ym2608</code>, <code>rf5c164</code>, <code>gameboy</code>, <code>segapsg</code>, and <code>ym2151</code>.</li>
+              <li><code>createSoundChip("nes", {fds: true})</code> enables FDS. Use <code>chip.pulse</code>, <code>chip.triangle</code>, <code>chip.noise</code>, <code>chip.dmc</code>, and <code>chip.fds</code>; see <code>examples/nes/</code>.</li>
+              <li>Supported names: <code>ym2612</code>, <code>ym2203</code>, <code>ym2610</code>, <code>ym2608</code>, <code>rf5c164</code>, <code>gameboy</code>, <code>segapsg</code>, <code>ym2151</code>, <code>pwm</code>, and <code>nes</code>.</li>
               <li>Control additional chips through the returned object. Global <code>play()</code> and <code>write()</code> target the default chip; Stop disposes additional chips.</li>
               <li>Concurrent <code>useSoundChip()</code> requests share initialization. Options other than an empty object are not supported.</li>
             </ul>
@@ -1954,6 +1966,6 @@
       </label>
     </footer>
 
-    <script type="module" src="./playground.js?v=play-units-1"></script>
+    <script type="module" src="./playground.js?v=definitions-4"></script>
   </body>
 </html>
