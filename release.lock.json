@@ -73,7 +73,7 @@
     "generated/ym2610b_wasm.wasm": "86cc35e0ada926dab1e929a8beed49eef290def372a441cb5c421b9d590daca9",
     "generated/ym2612_wasm.js": "92dae7b14ae953f9c7c94d4a8ac691319c43208effb7947dd3a5013cd9325019",
     "generated/ym2612_wasm.wasm": "7c19b1c04e198b7efe0c29dab906dc9e8ac36d66523ffcc027f61b17833948f6",
-    "index.html": "07df122b9ce8f859a16865bdb3d8050a760faeb555645a9cc3ad7a2b2ed50b43",
+    "index.html": "1f86025e65644df82d88c0c1fa3749abd7b711cf2bbba11b1b01fbf336c43569",
     "js/adpcm_b_sample.js": "8120f9619e491f3f38c8761b750e6e9a01758bd612a823a02670d7a35ebbcd8b",
     "js/bitcrusher-worklet.js": "782a8c0f015770792f7226f3d6a874c23e067ecf8665337244baa5872b3d52d9",
     "js/chip_worklet_transport.js": "9907e24ab2ebc32741330c10ecb1e72aacd1a9fe8ff7a5d675b50fba96fb7a9b",
@@ -136,7 +136,7 @@
     "js/playground_pwm_worklet.js": "6a9e664a99b1066b45f8b120ed80e5fd327be8b481e17a537446e7ff8cd67632",
     "js/playground_rf5c164.js": "90be9d19498fcbaedeee04f8e72d406f1f63f688866026ee4c68ab5a0b1e5e66",
     "js/playground_rf5c164_audio.js": "60d0fd3d548719e1449f1422d621dc75f9ad24e4dc753ad9f679fa02e4a0e8e0",
-    "js/playground_runtime.js": "ce136311d294ad7fc0ead94380067cca4757a5159d74a059bce466b11998996b",
+    "js/playground_runtime.js": "cca23804ee53ca8b4857970e51a457b7253bf671392f203c1cc3176812b74b29",
     "js/playground_segapsg.js": "28437de83e2a5529328fdc822c9521a5bc29b8019b8d3df37eb443cbc56983e1",
     "js/playground_segapsg_audio.js": "22636dfd1e31a7d8795c19ceca18e91f3d71144d2deb8a619d4e058dabe69116",
     "js/playground_segapsg_worklet.js": "3c5aa0d5fc114a40ba008c175264b822e7e77fe356949cfc08f9cbe14b916c8b",
@@ -206,7 +206,7 @@
     "licenses/nuked-opn2/LICENSE": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331",
     "licenses/nuked-opn2/README.md": "8296e38872f66aa2598ca9d17360bc65e45254ee2028320f512f131712b940aa",
     "llms.txt": "ee2ddf38b1a4dc25ff35147463bf8ee2169d280a8fa7ed8c1a711ab34ba36ce2",
-    "playground.js": "02c4e22ce890d064d00860c844698bbb23528455b986ad1161e29cafa44209c2",
+    "playground.js": "9ca95aef2e59a6ba4e06abfa7397f09ec2b39f0fe6d1377ea8f15f68a3d9f0cc",
     "playground_autosave.js": "61004934111b661a634bda6f02d785e3a6b5e09ba8ea7e20c3ce9a784c1e62c7",
     "playground_cassette.js": "43301b529af901c6c7763716b6ab9993df94d2117fd965e695ac4ed003d3d27a",
     "playground_example_order.js": "f30531c4e11670e8d3435b04dd1d563dfc5d9b8b8f51c5ead2ad0e9d9f2a614e",
@@ -451,6 +451,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "3e45f873ae54d7fee087dc2b5e7f3de86b6c7c181db420c55e06be3a244d36ac"
   },
-  "sha256": "c7bec0f2ae661d6228c0037820141d190846be4510315b3dbacfb5f8e6b7c3a4",
-  "version": "sha256-c7bec0f2ae66"
+  "sha256": "89cf0a7fd8abccc5856dc493a9a61601cac34e5ca3e8918a845287f9edefb35d",
+  "version": "sha256-89cf0a7fd8ab"
 }
