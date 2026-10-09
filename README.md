@@ -75,6 +75,12 @@ NodeとAudifyを使ってください。システムの外部共有ライブラ�
 - `src-tauri/src/audio.rs`: ローカルのメインウィンドウだけに公開する制御コマンド。終了時にプロセスを停止
 
 `npm test` はPCMの上限制御とサンプルレート変換も検証します。
+`cargo test` を直接実行する場合は、先に `node scripts/prepare_audio_sidecar.mjs` を
+実行してください。Cargo は Tauri CLI の beforeBuildCommand を呼びません。
+CIでも、音声リソースの準備と `node scripts/check_audio_sidecar_bundle.mjs` による
+ネイティブモジュールの読み込み確認を Cargo テストより前に実行します。
+macOSの署名なしCI／開発ビルドは、NodeとAudifyをアドホック署名にそろえ、
+前回のDeveloper ID署名との混在によるネイティブモジュールの読み込み失敗を防ぎます。
 実機の低音量テストは、同梱準備後に `node scripts/check_audify_browser.cjs` で実行できます。
 この検証には親の開発リポジトリーの `docs/` と Playwright が必要です。
 配布ZIP本体と `release.lock.json` は、このTauri専用機能では変更しません。

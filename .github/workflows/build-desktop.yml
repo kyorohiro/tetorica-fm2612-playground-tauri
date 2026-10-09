@@ -55,11 +55,15 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xdg-utils
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xdg-utils libasound2-dev libpulse-dev libjack-jackd2-dev cmake ninja-build
       - run: npm ci
       - run: npm test
       - name: Verify committed Playground assets
         run: python scripts/import_release.py --check
+      - name: Prepare bundled audio runtime before Cargo tests
+        run: node scripts/prepare_audio_sidecar.mjs
+      - name: Verify bundled Audify native module loads
+        run: node scripts/check_audio_sidecar_bundle.mjs
       - name: Test native MCP protocol and transport
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - name: Build desktop app

@@ -14,9 +14,11 @@ test('nested native libraries are signed before Node with runtime/timestamp, and
     const plist=await fs.readFile(path.join(__dirname,'../src-tauri/AudioNode.entitlements.plist'),'utf8');assert.ok(plist.includes('allow-jit'));assert.ok(!plist.includes('get-task-allow'));assert.ok(!plist.includes('disable-library-validation'));
   }finally{await fs.rm(root,{recursive:true,force:true});}
 });
-test('architecture mismatch fails before signing; unsigned builds still validate architecture',async()=>{
+test('architecture mismatch fails before signing; CI builds use consistent ad-hoc signatures',async()=>{
   const {signAudioSidecar}=await import('../scripts/sign_audio_sidecar.mjs');const root=await fixture(),calls=[];
   try{await assert.rejects(signAudioSidecar(root,{identity:'Developer ID test',arch:'x64',run(command,args){calls.push(command);return 'arm64\n';}}),/expected x86_64/);assert.ok(!calls.includes('codesign'));
-    calls.length=0;await signAudioSidecar(root,{identity:'',arch:'arm64',run(command){calls.push(command);return 'arm64\n';}});assert.ok(!calls.includes('codesign'));
+    const unsigned=[];await signAudioSidecar(root,{identity:'',arch:'arm64',run(command,args){unsigned.push({command,args});return 'arm64\n';}});
+    const signed=unsigned.filter(call=>call.command==='codesign'&&call.args.includes('--sign'));assert.equal(signed.length,3);
+    for(const call of signed){assert.equal(call.args[call.args.indexOf('--sign')+1],'-');assert.ok(!call.args.includes('--timestamp'));assert.ok(!call.args.includes('runtime'));}
   }finally{await fs.rm(root,{recursive:true,force:true});}
 });
