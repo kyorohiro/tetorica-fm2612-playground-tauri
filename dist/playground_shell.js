@@ -1,13 +1,15 @@
-import {createShell,parseCommand,resolvePath} from './js/tetorica_virtual_files/index.js';
+import {registerShellCheck} from './playground_shell_check.js';
+import {createShell,parsePipeline,resolvePath} from './js/tetorica_virtual_files/index.js';
 import {createShellScriptRunner} from './playground_shell_runner.js';
 
 /** The shell shares the editor's store; synchronize live edits before each command. */
 export function installPlaygroundShell({fs, beforeCommand, afterCommand, output, form, input, prompt,stopButton,state,onPlay,panel,terminal,clearButton}) {
   const shell=createShell({fs,authorize(operation,paths){
     if(paths.some(path=>path==='/sys'||path.startsWith('/sys/')))throw Error('/sys is read-only');
-    if((operation==='rm'||operation==='mv')&&paths[0]==='/index.js')throw Error('/index.js is the project entry point');
+    if((operation==='rm'||operation==='mv')&&paths.includes('/index.js'))throw Error('/index.js is the project entry point');
   }});
-  let queue=Promise.resolve(),epoch=0,active=null,streamed=0;
+  registerShellCheck(shell);
+  let queue=Promise.resolve(),epoch=0,active=null,streamed=0,structuredOutput=false;
   const history=[];let historyIndex=0,draft='';
   const setState=text=>{if(state)state.textContent=text;};
   const scroll=()=>{const viewport=terminal??output;viewport.scrollTop=viewport.scrollHeight;};
@@ -15,8 +17,13 @@ export function installPlaygroundShell({fs, beforeCommand, afterCommand, output,
   const clear=()=>{output.textContent='';scroll();};
   const stop=()=>{active?.abort();runner.stop();};
   const runner=createShellScriptRunner({fs,sync:beforeCommand,onChange:afterCommand,
-    onOutput(text){streamed++;append(text);}});
+    onOutput(text){if(structuredOutput)return;streamed++;append(text);}});
   shell.register('js',context=>runner.run(context));
+  shell.register('result',context=>{
+    const args=context.args.filter(arg=>arg!=='--json');
+    if(args.length>1||args.length&&(!/^\d+$/.test(args[0])||!Number.isSafeInteger(Number(args[0]))||Number(args[0])<1))throw Error('Usage: result [--json] [RUN_ID]');
+    return JSON.stringify(runner.result(args.length?Number(args[0]):undefined))+'\n';
+  });
   if(onPlay)shell.register('play',async context=>{
     if(context.args.length!==1)throw Error('Usage: play PATH');
     context.assertActive();const path=context.resolve(context.args[0]);
@@ -31,13 +38,16 @@ export function installPlaygroundShell({fs, beforeCommand, afterCommand, output,
       if(stopButton)stopButton.disabled=false;
       const startOutput=streamed;append(`${shell.cwd} $ ${source}\n`);setState('Running…');
       try{
+        let plan=[];try{plan=Array.isArray(source)?[{args:source}]:parsePipeline(source);}catch{}
+        const tokens=plan[0]?.args??[];
+        structuredOutput=plan.length>1||plan.some(stage=>stage.input||stage.output)||(tokens[0]==='js'||tokens[0]==='pipeline')&&tokens[1]==='--json';
         beforeCommand();
         const result=await shell.execute(source,{signal:controller.signal});
         if(requestedEpoch===epoch)afterCommand();
         if(streamed===startOutput)append(result.stdout+(result.stderr?result.stderr+'\n':''));
         prompt.textContent=shell.cwd+' $';setState(result.code===0?'Finished.':result.code===130?'Stopped.':`Exit ${result.code}`);
         return result;
-      }finally{if(active===controller)active=null;if(stopButton)stopButton.disabled=true;}
+      }finally{structuredOutput=false;if(active===controller)active=null;if(stopButton)stopButton.disabled=true;}
     });
     queue=command.catch(()=>{});return command;
   }
@@ -77,7 +87,7 @@ export function installPlaygroundShell({fs, beforeCommand, afterCommand, output,
   document.getElementById('shellTab')?.addEventListener('click',()=>{input.focus();scroll();});
   clearButton?.addEventListener('click',()=>{clear();input.focus();});
   stopButton?.addEventListener('click',stop);
-  return {execute,shell,stop,invalidate(reason='Project changed'){epoch++;active?.abort();runner.stop(reason);setState('Project changed.');}};
+  return {execute,shell,stop,invalidate(reason='Project changed'){shell.clearSnapshots();epoch++;active?.abort();runner.stop(reason);runner.clearResults();setState('Project changed.');}};
 }
 
 /** Complete the final path argument without evaluating command text, including unfinished quotes. */
@@ -90,11 +100,13 @@ export function completeShellPath(fs,cwd,source){
     if(quote){if(char===quote)quote='';else word+=char;continue;}
     if(char==='"'||char==="'"){quote=char;continue;}
     if(/\s/.test(char)){start=index+1;word='';continue;}
+    if('|<>'.includes(char)){start=index+1;word='';continue;}
     word+=char;
   }
   const unchanged={source,matches:[]};
   try{
-    const args=parseCommand(source.slice(0,start));
+    const commandPrefix=source.slice(0,start);
+    const args=/(?:>>|[<>])\s*$/.test(commandPrefix)?['redirect']:parsePipeline(commandPrefix).at(-1)?.args??[];
     if(!args.length||escaped)return unchanged;
     const slash=word.lastIndexOf('/'),prefix=word.slice(0,slash+1),name=word.slice(slash+1);
     const directory=resolvePath(prefix||'.',cwd);

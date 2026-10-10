@@ -1093,6 +1093,11 @@ function setEditorValue(value) {
   editorAdapter.setValue(text);
 }
 
+function syncActiveEditorFile() {
+  const file = virtualFiles.get(activeVirtualPath);
+  if (!isSystemVirtualPath(activeVirtualPath) && file?.type === "text" && file.data !== getEditorValue()) saveActiveVirtualFile();
+}
+
 function saveActiveVirtualFile() {
   virtualFiles.writeText(
     activeVirtualPath,
@@ -1449,6 +1454,7 @@ const audioMonitor = createAudioMonitor(() => runtime.megaDrive?.audio, {
   spectrumCanvas: document.getElementById("audioMonitorSpectrum"),
   channel: document.getElementById("audioMonitorChannel"),
   status: document.getElementById("audioMonitorStatus"),
+  pauseButton: document.getElementById("audioMonitorPause"),
 });
 
 const ui =
@@ -2275,6 +2281,7 @@ function bootPlayground() {
   renderVirtualFileExplorer();
   renderRunFileOptions();
   installPlaygroundEventHandlers();
+  editor.addEventListener('input', syncActiveEditorFile);
   ui.installBottomTabHandlers();
 installTfiEditorDropTarget();
 installFileExplorerDropTarget();
@@ -2295,7 +2302,10 @@ installFileExplorerDropTarget();
     onMonacoEditorReady({
       monacoEditor,
     }) {
-      monacoEditor.onDidChangeModelContent(() => desktopAutosave?.changed());
+      monacoEditor.onDidChangeModelContent(() => {
+        if (monacoEditor.getModel()?.uri.path === '/project' + activeVirtualPath) syncActiveEditorFile();
+        desktopAutosave?.changed();
+      });
       monacoEditor.onDidChangeModel(() => desktopAutosave?.changed());
       monacoEditor.addAction({
         id: "tetorica-insert-tfi-object",
