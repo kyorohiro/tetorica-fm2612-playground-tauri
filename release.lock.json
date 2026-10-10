@@ -136,7 +136,7 @@
     "js/playground_pwm_worklet.js": "6a9e664a99b1066b45f8b120ed80e5fd327be8b481e17a537446e7ff8cd67632",
     "js/playground_rf5c164.js": "06c746f86d4e73e60a8586e207e4f90913bbd87f19ef8acc7dec39855f5cbd36",
     "js/playground_rf5c164_audio.js": "60d0fd3d548719e1449f1422d621dc75f9ad24e4dc753ad9f679fa02e4a0e8e0",
-    "js/playground_runtime.js": "3f7597283bc3506c4f73fcd2c4fd8b7b9a4ef709a63b06435ddbbbd00c43796a",
+    "js/playground_runtime.js": "0edc092212eca3595975b488a2db1e0bac93ba52d8c5d07b29013ae1ce462434",
     "js/playground_segapsg.js": "28437de83e2a5529328fdc822c9521a5bc29b8019b8d3df37eb443cbc56983e1",
     "js/playground_segapsg_audio.js": "22636dfd1e31a7d8795c19ceca18e91f3d71144d2deb8a619d4e058dabe69116",
     "js/playground_segapsg_worklet.js": "3c5aa0d5fc114a40ba008c175264b822e7e77fe356949cfc08f9cbe14b916c8b",
@@ -235,7 +235,7 @@
     "playground_monaco.js": "b7462ad419800b213aa1688c81e21cfe47e4c4493c57100c09424351371f1b5f",
     "playground_monaco_completion.js": "a3522bb8ac70dc060816136e8f5ed56fdda48c1e47d794f9b3f86b4036673840",
     "playground_monaco_definitions.js": "2df38f8b76ed9aee62ede796dede469284e69111ceacadec47c3e996ef1f2e2e",
-    "playground_operator_keyboard.js": "62d9accca38bb79531c48bed4cf91d3987ba5c6edd01de40384a0d93883e3d56",
+    "playground_operator_keyboard.js": "10639475cd4482cc9054d29d9374f6f3bfb37783aded538daa26b3d38e16991c",
     "playground_operator_tab.js": "09e01a2925f51efdfca3e214fb0ba41f49fe46e402b63e72759f051e881bbb8d",
     "playground_page_lifecycle.js": "5abd0c650a6acd1fe63ac16dae4e37846d83fc0745a460794bfa110ebe824d47",
     "playground_query.js": "1dbe71a14122c37c247469907b654ad856efbb3aaf6b6e5db138166be74cb967",
@@ -479,6 +479,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "3e45f873ae54d7fee087dc2b5e7f3de86b6c7c181db420c55e06be3a244d36ac"
   },
-  "sha256": "67e80aae5d350d65aaebd0984f6f09c974fc3a8b7498ff9c07584c974b02c965",
-  "version": "sha256-67e80aae5d35"
+  "sha256": "467071abdbe07301adb9fa3aa856685b5c7e064127750312c0e1c49dd1af0846",
+  "version": "sha256-467071abdbe0"
 }
