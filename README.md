@@ -139,12 +139,36 @@ https://github.com/almoghamdani/audify/releases/tag/v1.10.1 の配布資材で�
 | `list_files` | 開いているプロジェクトのIDとファイル一覧（バイナリは情報のみ） |
 | `read_file` | テキストを読み取り。エディターの最新内容を含む |
 | `write_file` | テキストファイルを作成・更新（1 MiBまで）。自動実行しない |
+| `shell_execute` | 仮想shellを実行し、projectId／code／stdout／stderrを返す |
 
 更新時は `read_file` の `projectId` と `content` を、それぞれ `projectId` と `expectedContent` に渡します。
 人の編集等で内容が変わっていれば更新を拒否します。新規作成は `list_files` の `projectId` と `expectedContent: null` を指定します。
 Cassetteの読み込み等でプロジェクトを入れ替えた場合も、古いIDによる更新を拒否します。
 対象はメモリー上の仮想ファイルです。**保存は既存のExport Cassetteで行ってください。**
-OS上のファイル操作、バイナリ編集、`/sys` の編集、実行・停止のツールは提供しません。
+`shell_execute` はOSのshellではなく、Playground内の仮想shellです。
+`list_files` の `projectId` と `command`（文字列または引数配列）を渡します。
+`stdin`（最大1 MiB）と `timeoutMs`（100〜30000 ms、既定10000 ms）も指定できます。
+commandは最大16 KiB、引数配列は最大128要素です。
+`help --json` でコマンド一覧を確認でき、find／rg／read／patch／check／js／result／snapshot／undo、パイプとリダイレクトも利用できます。
+`js` はWorkerのJavaScriptを実行し、`play` は演奏を開始できます。
+`/sys` の書込みと `/index.js` の削除は引き続き禁止します。
+OS上のファイルにはアクセスしません。
+
+例（MCPのtool引数）:
+
+```json
+{"projectId":"list_filesのID","command":["read","--json","/index.js"]}
+```
+
+`read --json` のrevisionを、editの`--revision`やpatchの`expectedRevision`に指定して更新します。
+変更前に `snapshot before`、対象作業直後に `snapshot after` を保存し、
+`undo --dry-run --json before after` → `undo --json before after` で競合を確認して取り消せます。
+無関係な編集もsnapshot間に入っている場合は、undoの末尾に対象パスを指定してください。
+MCPのOff／世代変更／プロジェクト切替／タイムアウトでその要求を中断します。
+待ち時間もタイムアウトに含み、期限切れの待機コマンドは後から実行しません。
+中断は完了済みの変更を巻き戻さないため、変更コマンドを自動再試行しないでください。
+stdoutは32000文字、stderrは8000文字まで返し、切詰めは`truncated`に記録します。
+取消履歴はメモリ内のみで、プロジェクト切替や再起動時に破棄します。
 
 `resources/list` / `resources/read` では、配布版に含まれる型定義 `.d.ts`、`llms.txt`、examplesを読み取り専用で参照できます。
 URIは `tetorica://reference/<配布版内のパス>` です。AIにはこれらを参照してからコードを書くよう指示できます。

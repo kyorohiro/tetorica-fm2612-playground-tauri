@@ -239,7 +239,7 @@
     "playground_operator_tab.js": "09e01a2925f51efdfca3e214fb0ba41f49fe46e402b63e72759f051e881bbb8d",
     "playground_page_lifecycle.js": "5abd0c650a6acd1fe63ac16dae4e37846d83fc0745a460794bfa110ebe824d47",
     "playground_query.js": "1dbe71a14122c37c247469907b654ad856efbb3aaf6b6e5db138166be74cb967",
-    "playground_shell.js": "ad4c1cf87cb0db5eac54a2b962140763081c3b5b62a9de061db2e27e6802ae73",
+    "playground_shell.js": "25ef180ed33dd6670e8eea7e58c6c89a6d6d0cebd7e7743f1372327db874e851",
     "playground_shell_check.js": "34637b1949ae34e7f17f33ce97733bb8cd7e612243a1654ee5e8eb51c6208129",
     "playground_shell_diagnostics.js": "3c1249f4f44daced60ab72ce65331c61d3e7c2dcfdadbc77e2a997316c332ba0",
     "playground_shell_modules.js": "81b44f3935567df337c8468eb549ecef2156cae0eb3d8d50c51474fed3d77c5e",
@@ -479,6 +479,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "3e45f873ae54d7fee087dc2b5e7f3de86b6c7c181db420c55e06be3a244d36ac"
   },
-  "sha256": "7f8934c88a48c1f1bc1f163cd462e2b2fc3890e2227134cbbde7de046223544a",
-  "version": "sha256-7f8934c88a48"
+  "sha256": "67e80aae5d350d65aaebd0984f6f09c974fc3a8b7498ff9c07584c974b02c965",
+  "version": "sha256-67e80aae5d35"
 }

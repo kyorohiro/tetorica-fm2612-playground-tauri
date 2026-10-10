@@ -166,7 +166,8 @@ fn tools() -> Value {
     json!({"tools":[
         {"name":"list_files","description":"List files in the open Playground project (including binary metadata).","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
         {"name":"read_file","description":"Read current text including editor changes. Keep projectId and content for write_file.","inputSchema":{"type":"object","properties":{"path":path},"required":["path"],"additionalProperties":false}},
-        {"name":"write_file","description":"Create or update a project text file, without running code. Requires exact previous content to avoid overwriting human edits. Changes are autosaved locally; export a cassette to share the project.","inputSchema":{"type":"object","properties":{"path":path,"projectId":{"type":"string"},"content":{"type":"string"},"expectedContent":{"type":["string","null"],"description":"Exact content from read_file, or null to create a missing file."}},"required":["path","projectId","content","expectedContent"],"additionalProperties":false}}
+        {"name":"write_file","description":"Create or update a project text file, without running code. Requires exact previous content to avoid overwriting human edits. Changes are autosaved locally; export a cassette to share the project.","inputSchema":{"type":"object","properties":{"path":path,"projectId":{"type":"string"},"content":{"type":"string"},"expectedContent":{"type":["string","null"],"description":"Exact content from read_file, or null to create a missing file."}},"required":["path","projectId","content","expectedContent"],"additionalProperties":false}},
+        {"name":"shell_execute","description":"Execute the Playground virtual shell (not an OS shell), including find/read/edit/patch/check/js/result/snapshot/undo. js executes worker JavaScript; play can start audio. Obtain projectId from list_files. Supports text pipelines and redirection, preserves /sys and entry-point protections. Timeout includes queue time; cancellation does not roll back completed command effects. Prefer argument arrays and --json; never automatically retry a timed-out mutation.","inputSchema":{"type":"object","properties":{"projectId":{"type":"string"},"command":{"oneOf":[{"type":"string","minLength":1,"maxLength":16384},{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":128}]},"stdin":{"type":"string","maxLength":1048576},"timeoutMs":{"type":"integer","minimum":100,"maximum":30000,"default":10000}},"required":["projectId","command"],"additionalProperties":false}}
     ]})
 }
 fn references() -> Vec<String> {
@@ -202,14 +203,33 @@ fn project(
     super::allowed(window)?;
     let id = uuid::Uuid::new_v4().to_string();
     let (tx, rx) = mpsc::channel();
+    let timeout_ms = if name == "shell_execute" {
+        match arguments.get("timeoutMs") {
+            None => 10000,
+            Some(value) => match value.as_u64() {
+                Some(n) if (100..=30000).contains(&n) => n,
+                _ => return Err("timeoutMs must be 100..30000".into()),
+            },
+        }
+    } else {
+        5000
+    };
     pending.lock().unwrap().insert(id.clone(), tx);
     let deadline = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis()
-        + 5000;
+        + u128::from(timeout_ms);
     let request = json!({"id":id,"name":name,"arguments":arguments,"deadline":deadline,"generation":generation});
-    let result = window.eval(project_dispatch(&request)).map_err(|e|e.to_string()).and_then(|_| rx.recv_timeout(Duration::from_secs(6)).map_err(|_|"Playground editor IPC did not respond within 6 seconds. No automatic retry was performed.".into()));
+    let result = window
+        .eval(project_dispatch(&request))
+        .map_err(|e| e.to_string())
+        .and_then(|_| {
+            rx.recv_timeout(Duration::from_millis(timeout_ms + 1000))
+                .map_err(|_| {
+                    "Playground editor IPC timed out. No automatic retry was performed.".into()
+                })
+        });
     pending.lock().unwrap().remove(&id);
     result
 }
@@ -227,13 +247,13 @@ fn rpc(
     let params = &request["params"];
     let result = match method {
         "initialize" => {
-            json!({"protocolVersion":"2025-06-18","capabilities":{"tools":{},"resources":{}},"serverInfo":{"name":"tetorica-playground","version":env!("CARGO_PKG_VERSION")},"instructions":"Read API/type/example resources before writing. list_files/read_file access the current project including unsaved editor changes. write_file requires projectId and expectedContent; does not execute code. Desktop autosave persists the project locally."})
+            json!({"protocolVersion":"2025-06-18","capabilities":{"tools":{},"resources":{}},"serverInfo":{"name":"tetorica-playground","version":env!("CARGO_PKG_VERSION")},"instructions":"Read API/type/example resources before writing. list_files/read_file access the current project including unsaved editor changes. write_file requires projectId and expectedContent; does not execute code. shell_execute runs the virtual shell and returns code/stdout/stderr. Use help --json for commands, capture snapshots before and immediately after edits for undo, and do not automatically retry timed-out mutations. Desktop autosave persists the project locally."})
         }
         "ping" => json!({}),
         "tools/list" => tools(),
         "tools/call" => {
             let name = params["name"].as_str().unwrap_or("");
-            if !["list_files", "read_file", "write_file"].contains(&name) {
+            if !["list_files", "read_file", "write_file", "shell_execute"].contains(&name) {
                 return Some(error(id, -32602, "Unknown tool"));
             }
             let args = params.get("arguments").cloned().unwrap_or(json!({}));
@@ -505,6 +525,37 @@ mod tests {
         )
         .unwrap();
         assert_eq!(unknown["error"]["code"], -32602);
+    }
+    #[test]
+    fn shell_tool_schema_and_dispatch() {
+        let schema = tools();
+        let tool = schema["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "shell_execute")
+            .unwrap();
+        assert_eq!(
+            tool["inputSchema"]["properties"]["timeoutMs"]["maximum"],
+            30000
+        );
+        let reply = rpc(
+            request(
+                "tools/call",
+                json!({"name":"shell_execute","arguments":{"projectId":"p","command":["pwd"]}}),
+            ),
+            |name, args| {
+                assert_eq!(name, "shell_execute");
+                assert_eq!(args["command"], json!(["pwd"]));
+                Ok(json!({"result":{"projectId":"p","code":0,"stdout":"/","stderr":""}}))
+            },
+            |_| panic!(),
+        )
+        .unwrap();
+        assert_eq!(reply["result"]["isError"], false);
+        let value: Value =
+            serde_json::from_str(reply["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(value["code"], 0);
     }
     #[test]
     fn local_authenticated_clients_only() {
