@@ -1,7 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod audio;
+mod git;
+mod git_dialog;
+mod git_keys;
 mod mcp;
+mod project_git;
 
 use tauri::{menu::Menu, Manager, WebviewWindow};
 
@@ -83,6 +87,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             audio::audio_request,
             audio::audio_shutdown,
+            git::git_request,
+            git::git_cancel,
             window_top_get,
             window_reload,
             window_close,
@@ -105,6 +111,7 @@ fn main() {
             }
         })
         .setup(|app| {
+            app.manage(git::setup(app.handle()).map_err(std::io::Error::other)?);
             app.manage(audio::Audio::default());
             app.manage(std::sync::Mutex::new(mcp::Mcp::load(
                 &app.path().app_data_dir()?,
@@ -131,6 +138,8 @@ fn main() {
                         ));
                         bytes.extend_from_slice(b"\n;\n");
                         bytes.extend_from_slice(include_bytes!("../../desktop/audio-interface.js"));
+                        bytes.extend_from_slice(b"\n;\n");
+                        bytes.extend_from_slice(include_bytes!("../../desktop/git-interface.js"));
                         *response.body_mut() = std::borrow::Cow::Owned(bytes);
                         response.headers_mut().remove("content-length");
                         response.headers_mut().remove("etag");

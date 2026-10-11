@@ -39,7 +39,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../audio-sidecar-bundle/": "audio-sidecar/"
+      "../audio-sidecar-bundle/": "audio-sidecar/",
+      "../desktop/git-licenses.txt": "git-licenses.txt"
     }
   }
 }
