@@ -9,12 +9,10 @@
     "test": "python3 -m unittest discover -s tests && node --test tests/*.test.cjs",
     "tauri": "tauri",
     "icons": "node scripts/generate-icons.mjs",
-    "test:git:ssh": "node scripts/check_git_ssh.cjs",
     "test:git:browser": "node scripts/check_git_browser.cjs"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "2.11.5",
-    "ssh2": "^1.17.0"
+    "@tauri-apps/cli": "2.11.5"
   },
   "dependencies": {
     "audify": "1.10.1",

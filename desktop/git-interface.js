@@ -1,5 +1,5 @@
 // Appended to the pinned Playground module. Git uses the shared JavaScript
-// engine; Rust supplies only native HTTPS transport and repository import.
+// engine; Rust supplies HTTPS transport and OS credential storage.
 {
   const flushTextEditor=saveActiveVirtualFile;
   saveActiveVirtualFile=()=>{
@@ -28,23 +28,12 @@
       signal?.throwIfAborted();return {...result,method,body:[decode(result.body)]};
     }}};
   }
-  async function importFolder(){
-    saveActiveVirtualFile();const fingerprint=()=>JSON.stringify({revisions:virtualFiles.checkpoint().revisions,path:activeVirtualPath,value:virtualFiles.get(activeVirtualPath)?.type==='text'?getEditorValue():null});const before=fingerprint();
-    const result=await invoke('git_request',{request:{action:'open'}});
-    if(fingerprint()!==before)throw Error('Files changed while opening; current files were kept.');
-    await runtime.stopWithFade();
-    if(fingerprint()!==before)throw Error('Files changed while stopping audio; current files were kept.');
-    const files=[...result.snapshot.files,...(result.gitSnapshot?.files??[])];
-    restoreVirtualFilesFromCassette({files:new Map(files.map(file=>[file.path.slice(1),decode(file.data)])),directories:[...result.snapshot.directories,...(result.gitSnapshot?.directories??[])]});
-    for(const file of result.gitSnapshot?.files??[])virtualFiles.writeBinary(file.path,decode(file.data));
-    editorAdapter.syncVirtualFiles?.(virtualFiles.list());renderVirtualFileExplorer();renderRunFileOptions();desktopAutosave?.changed();
-  }
   const tokens={
     list:()=>invoke('git_tokens',{request:{action:'list'}}),
     add:args=>invoke('git_tokens',{request:{action:'add',...args}}),
     remove:id=>invoke('git_tokens',{request:{action:'delete',id}}),
   };
-  installPlaygroundGit({fs:virtualFiles,shell:playgroundShell.shell,lifecycle:playgroundShell,beginRemote,importFolder,tokens,beforeCommand:saveActiveVirtualFile,afterCommand(){
+  installPlaygroundGit({fs:virtualFiles,shell:playgroundShell.shell,beginRemote,tokens,beforeCommand:saveActiveVirtualFile,afterCommand(){
     editorAdapter.syncVirtualFiles?.(virtualFiles.list());renderVirtualFileExplorer();renderRunFileOptions();desktopAutosave?.changed();
   }});
 }

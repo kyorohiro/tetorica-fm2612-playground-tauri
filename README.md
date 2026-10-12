@@ -219,6 +219,7 @@ git branch -a
 名前・メールはリポジトリ設定として Cassette に保存します。
 
 Tauri は HTTPS の remote 操作を native Rust に任せます。Node.js や外部 CORS proxy は不要です。
+旧 Rust Git／SSH 実装は削除済みで、libgit2／libssh2 はビルド・同梱しません。
 
 ```sh
 git remote add origin https://github.com/owner/repository.git

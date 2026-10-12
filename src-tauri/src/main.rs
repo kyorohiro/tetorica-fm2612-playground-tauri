@@ -1,13 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod audio;
-mod git;
 mod git_dialog;
 mod git_http;
-mod git_keys;
 mod git_tokens;
 mod mcp;
-mod project_git;
 
 use tauri::{menu::Menu, Manager, WebviewWindow};
 
@@ -89,12 +86,10 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             audio::audio_request,
             audio::audio_shutdown,
-            git::git_request,
             git_http::git_https_begin,
             git_http::git_https_request,
             git_http::git_https_end,
             git_tokens::git_tokens,
-            git::git_cancel,
             window_top_get,
             window_reload,
             window_close,
@@ -119,7 +114,6 @@ fn main() {
         .setup(|app| {
             app.manage(git_http::Transport::default());
             app.manage(git_tokens::setup(app.handle()).map_err(std::io::Error::other)?);
-            app.manage(git::setup(app.handle()).map_err(std::io::Error::other)?);
             app.manage(audio::Audio::default());
             app.manage(std::sync::Mutex::new(mcp::Mcp::load(
                 &app.path().app_data_dir()?,

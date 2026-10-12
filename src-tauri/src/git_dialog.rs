@@ -19,13 +19,6 @@ pub fn on_main<T: Send + 'static>(
     .map_err(|e| e.to_string())?;
     rx.recv().map_err(|e| e.to_string())
 }
-pub fn folder(app: &AppHandle, title: &str) -> Result<std::path::PathBuf> {
-    let title = title.to_owned();
-    on_main(app, move || {
-        rfd::FileDialog::new().set_title(title).pick_folder()
-    })?
-    .ok_or("Cancelled".into())
-}
 pub fn confirm(app: &AppHandle, title: &str, text: &str) -> Result<()> {
     let title = title.to_owned();
     let text = text.to_owned();
@@ -74,15 +67,6 @@ pub fn choose_token(app: &AppHandle, description: String, names: Vec<String>, pr
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn choose_token(_: &AppHandle, _: String, _: Vec<String>, _: usize) -> Result<usize> {
     Err("Native token selection is unavailable on this platform".into())
-}
-#[cfg(target_os = "macos")]
-pub fn passphrase(
-    app: &AppHandle,
-    title: &str,
-    description: &str,
-    creating: bool,
-) -> Result<Zeroizing<String>> {
-    secret(app, title, description, "Passphrase (required)", creating)
 }
 #[cfg(target_os = "macos")]
 pub fn secret(
@@ -145,10 +129,6 @@ pub fn secret(
         }
         Ok(secret)
     })?
-}
-#[cfg(not(target_os = "macos"))]
-pub fn passphrase(_: &AppHandle, _: &str, _: &str, _: bool) -> Result<Zeroizing<String>> {
-    Err("Native secure passphrase entry is currently available on macOS only; SSH is disabled on this platform".into())
 }
 #[cfg(any(target_os = "windows", target_os = "linux"))]
 pub fn secret(app: &AppHandle, title: &str, description: &str, placeholder: &str, creating: bool) -> Result<Zeroizing<String>> {

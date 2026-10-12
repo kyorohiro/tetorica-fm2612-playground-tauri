@@ -261,9 +261,6 @@ impl Store {
         self.select(id)?;
         Ok(entry)
     }
-    pub fn directory(&self) -> &std::path::Path {
-        &self.directory
-    }
     pub fn read(&self, entry: &Entry) -> Result<Zeroizing<String>> {
         let expected = self.entry(&entry.id)?;
         if expected.host != entry.host {

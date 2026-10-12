@@ -13,9 +13,6 @@ tiny_http = "0.12"
 uuid = { version = "1", features = ["v4"] }
 serde = { version = "1", features = ["derive"] }
 base64 = "0.22"
-git2 = { version = "0.21", features = ["vendored-libgit2", "ssh", "https", "vendored-openssl"] }
-ssh-key = { version = "0.6", features = ["ed25519", "encryption", "rand_core"] }
-rand_core = { version = "0.6", features = ["getrandom"] }
 zeroize = "1"
 rfd = "0.16"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
