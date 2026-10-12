@@ -4354,7 +4354,7 @@ dependencies = [
 
 [[package]]
 name = "tetorica-fm2612-playground-tauri"
-version = "0.62.2"
+version = "0.62.3"
 dependencies = [
  "base64 0.22.1",
  "gtk",

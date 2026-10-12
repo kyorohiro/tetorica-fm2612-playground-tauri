@@ -1,5 +1,8 @@
 //! Win32 modal dialogs with a password edit or a token combo box.
-use std::ptr::{null, null_mut};
+use std::{
+    cell::Cell,
+    ptr::{null, null_mut},
+};
 use windows_sys::Win32::{
     Foundation::HWND,
     Graphics::Gdi::{GetStockObject, DEFAULT_GUI_FONT},
@@ -33,6 +36,52 @@ struct Context {
     description: String,
     mode: Mode,
     result: Option<Result<Value>>,
+    cursor: Box<VisibleCursor>,
+}
+// SetCursor changes the shape, but a negative ShowCursor count still hides it.
+// Balance only our own increments when the modal dialog finishes.
+struct VisibleCursor {
+    increments: Cell<u32>,
+    previous: HCURSOR,
+}
+impl VisibleCursor {
+    unsafe fn new() -> Result<Self> {
+        let cursor = Self {
+            increments: Cell::new(0),
+            previous: GetCursor(),
+        };
+        cursor.ensure_visible()?;
+        SetCursor(LoadCursorW(null_mut(), IDC_ARROW));
+        Ok(cursor)
+    }
+    unsafe fn ensure_visible(&self) -> Result<()> {
+        for _ in 0..128 {
+            let count = ShowCursor(1);
+            if count > 0 {
+                ShowCursor(0); // Already visible; leave its count unchanged.
+                return Ok(());
+            }
+            self.increments.set(self.increments.get() + 1);
+            if count == 0 {
+                return Ok(());
+            }
+        }
+        Err("Could not restore cursor visibility for the token dialog".into())
+    }
+}
+impl Drop for VisibleCursor {
+    fn drop(&mut self) {
+        unsafe {
+            for _ in 0..self.increments.get() {
+                ShowCursor(0);
+            }
+            SetCursor(if self.previous.is_null() {
+                LoadCursorW(null_mut(), IDC_ARROW)
+            } else {
+                self.previous
+            });
+        }
+    }
 }
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(Some(0)).collect()
@@ -120,6 +169,7 @@ unsafe extern "system" fn procedure(
     if message == WM_INITDIALOG {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, lparam);
         let context = &mut *(lparam as *mut Context);
+        SetCursor(LoadCursorW(null_mut(), IDC_ARROW));
         SetWindowTextW(hwnd, wide(&context.title).as_ptr());
         let dpi = GetDpiForWindow(hwnd).max(96) as i32;
         SetWindowPos(
@@ -222,6 +272,9 @@ unsafe extern "system" fn procedure(
             EndDialog(hwnd, 0);
         } else {
             SetFocus(field);
+            // Focus changes can hide the cursor after the modal guard starts.
+            let _ = context.cursor.ensure_visible();
+            SetCursor(LoadCursorW(null_mut(), IDC_ARROW));
         }
         return 0;
     }
@@ -235,6 +288,7 @@ unsafe extern "system" fn procedure(
             && (target == GetDlgItem(hwnd, FIELD) || target == GetDlgItem(hwnd, REPEATED));
         let cursor = LoadCursorW(null_mut(), if input { IDC_IBEAM } else { IDC_ARROW });
         if !cursor.is_null() {
+            let _ = (*context).cursor.ensure_visible();
             SetCursor(cursor);
             // DLGPROC's return value marks the message as handled. Its actual
             // result goes in DWLP_MSGRESULT, so DefDlgProc returns TRUE and
@@ -297,6 +351,7 @@ pub fn choose_token(description: String, names: Vec<String>, preferred: usize) -
         description,
         mode: Mode::Choose { names, preferred },
         result: None,
+        cursor: Box::new(unsafe { VisibleCursor::new()? }),
     })? {
         Value::Choice(index) => Ok(index),
         _ => Err("Unexpected dialog result".into()),
@@ -316,6 +371,7 @@ pub fn secret(
             creating,
         },
         result: None,
+        cursor: Box::new(unsafe { VisibleCursor::new()? }),
     })? {
         Value::Secret(secret) => Ok(secret),
         _ => Err("Unexpected dialog result".into()),
@@ -341,6 +397,45 @@ mod tests {
             }
         }
     }
+    unsafe fn display_count() -> i32 {
+        ShowCursor(1);
+        ShowCursor(0)
+    }
+    #[test]
+    fn modal_cursor_is_visible_even_when_the_owner_hid_it_and_restores_the_count() {
+        unsafe {
+            let _shape = Cursor(GetCursor());
+            struct Hidden(u32);
+            impl Drop for Hidden {
+                fn drop(&mut self) {
+                    unsafe {
+                        for _ in 0..self.0 {
+                            ShowCursor(1);
+                        }
+                    }
+                }
+            }
+            let initial = display_count();
+            {
+                let mut hidden = Hidden(0);
+                let count = loop {
+                    hidden.0 += 1;
+                    let count = ShowCursor(0);
+                    if count <= -3 {
+                        break count;
+                    }
+                };
+                let visible = VisibleCursor::new().unwrap();
+                assert_eq!(display_count(), 0);
+                assert!(!GetCursor().is_null());
+                visible.ensure_visible().unwrap();
+                assert_eq!(display_count(), 0);
+                drop(visible);
+                assert_eq!(display_count(), count);
+            }
+            assert_eq!(display_count(), initial);
+        }
+    }
     #[test]
     fn dialog_restores_cursor_on_background_controls_and_password_input() {
         unsafe {
@@ -361,6 +456,7 @@ mod tests {
                     description: "Dummy UI".into(),
                     mode,
                     result: None,
+                    cursor: Box::new(VisibleCursor::new().unwrap()),
                 };
                 let template = template();
                 let hwnd = CreateDialogIndirectParamW(
