@@ -1,6 +1,7 @@
 import {installFileExplorerResize} from './playground_file_resize.js';
-import {installPlaygroundWorkbench} from './playground_workbench.js';
-import {installPlaygroundShell} from './playground_shell.js';
+import {installPlaygroundWorkbench} from './playground_workbench.js?v=compact-shell-1';
+import {installPlaygroundShell} from './playground_shell.js?v=compact-shell-1';
+import {installPlaygroundGit} from './playground_git.js';
 import {openDraftStore, createProjectAutosave} from './playground_autosave.js';
 let desktopAutosave = null;
 let playgroundShell = null;
@@ -21,7 +22,7 @@ import {
 import {
   createTetoricaSynth,
   normalizeTetoricaChip,
-} from "./js/tetorica_synth.js";
+} from "./js/tetorica_synth.js?v=prepared-fx-rerun-2";
 import {
   createTfiOperatorObjectText,
   createTfiPresetObjectText,
@@ -63,7 +64,7 @@ import { exportYm2608VgmToPlaygroundJavaScript } from "./js/ym2608vgm.js";
 import { exportYm2610BVgmToPlaygroundJavaScript } from "./js/ym2610bvgm.js";
 import {
   createPlaygroundRuntime,
-} from "./js/playground_runtime.js?v=stop-fade-1";
+} from "./js/playground_runtime.js?v=stop-audition-1";
 import { createVgmPresetFiles } from "./playground_vgm_presets.js";
 import { createTfiFileEditor, tfiToEditorPreset } from "./playground_tfi_editor.js";
 import { renderFileTree } from "./playground_file_tree.js?v=virtual-files-1";
@@ -471,7 +472,7 @@ const operatorKeyboard = createPlaygroundOperatorKeyboard({
   channelCount: megaDrive.capabilities.fmChannels,
   presets: playgroundPresets,
   presetOrder: FM_PRESET_ORDER,
-  ensureAudioReady: () => runtime.ensureReady(),
+  ensureAudioReady: () => runtime.prepareAudition(),
   onChannelChange(channel) {
     operatorTab.selectChannel?.(channel);
   },
@@ -1099,6 +1100,8 @@ function syncActiveEditorFile() {
 }
 
 function saveActiveVirtualFile() {
+  const file=virtualFiles.get(activeVirtualPath);
+  if(file?.type!=='text'||isSystemVirtualPath(activeVirtualPath)||activeVirtualPath==='/.git'||activeVirtualPath.startsWith('/.git/'))return;
   virtualFiles.writeText(
     activeVirtualPath,
     getEditorValue()
@@ -1484,6 +1487,10 @@ const ui =
     onBottomTabChange(tabName, layout) {
       if (layout) workbench.sync(layout);
       const tool = layout ? (layout.dockOpen ? layout.bottomTab : null) : tabName;
+      document.getElementById('shellActions').hidden = tool !== 'shell';
+      if (tool !== 'shell') {
+        for (const id of ['shellMenu', 'shellHelp']) document.getElementById(id).hidePopover?.();
+      }
       const primary = layout?.primaryTab ?? tabName;
       fxMonitor.setVisible(tool === "fxMonitor");
       const showAudio = tool === "audio" || (inlineAudioMonitor && primary === "code");
@@ -1730,7 +1737,7 @@ function restoreVirtualFilesFromCassette(cassette) {
   virtualFiles.replace(
     Array.from(cassette.files, ([path, bytes]) => ({
       path: `/${path}`,
-      data: textExtensions.test(path)
+      data: !path.startsWith('.git/') && textExtensions.test(path)
         ? new TextDecoder().decode(bytes)
         : bytes,
     })),
@@ -2391,6 +2398,9 @@ playgroundShell=installPlaygroundShell({fs:virtualFiles,
     runVirtualPath=path;renderRunFileOptions();await runCode({propagateError:true});
   },
 });
+if(!window.__TAURI_INTERNALS__)installPlaygroundGit({fs:virtualFiles,shell:playgroundShell.shell,lifecycle:playgroundShell,beforeCommand:saveActiveVirtualFile,afterCommand(){
+  editorAdapter.syncVirtualFiles?.(virtualFiles.list());renderVirtualFileExplorer();renderRunFileOptions();
+}});
 window.addEventListener('pagehide',()=>playgroundShell.invalidate('Page closed'));
 
 installMidiImport({button:document.getElementById('importMidiButton'), presets:playgroundPresets,

@@ -10,6 +10,7 @@ import {createGameboyClient} from './playground_gameboy.js';
 import {createYm2608Client} from './playground_ym2608.js?v=loop-async-tasks-1';
 import {createRf5c164Client} from './playground_rf5c164.js';
 import {createNativeSampleController} from './native_sample.js';
+import {serializeLogError} from './playground_log.js';
 /**
  * @file playground_logic_worker.js
  * 実行環境: Browser（Web Worker）
@@ -23,7 +24,7 @@ import {createMidiApi, createMidiRack} from './playground_midi.js?v=play-units-1
 import { hzToBlockFnum } from "./pitch.js";
 import { createDeadlineScheduler } from "./playground_clock.js?v=loop-async-tasks-1";
 
-import {createNativeFXController} from "./native_fx.js";
+import {createNativeFXController} from "./native_fx.js?v=prepared-fx-rerun-2";
 let nativeFXPort = null;
 let chipConnection = null;
 let currentRun = null;
@@ -173,6 +174,10 @@ function patchWorkerProperty(target, property, replacement, restoreSteps) {
 }
 
 function postCommand(command, args = []) {
+  // DOMException details can be lost by structured cloning in browsers.
+  if (command === 'log' || command === 'warn' || command === 'error') {
+    args = args.map(serializeLogError);
+  }
   postMessage({ type: "command", command, args });
 }
 
@@ -753,10 +758,15 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
 
 let lifecycleQueue = Promise.resolve();
 let stopping = Promise.resolve();
+let lifecycleGeneration = 0;
 
-async function handleLifecycleMessage(message) {
+async function handleLifecycleMessage(message, generation = lifecycleGeneration) {
   if (message.type === "run") {
     await stopping;
+    if (generation !== lifecycleGeneration) {
+      postMessage({type: 'execution-error', message: 'Run stopped'});
+      return;
+    }
     const previousRun = currentRun;
     currentRun = previousRun ?? createRun(message.sourceCode, message.presets ?? {}, message.scaleIntervals ?? {}, message.capabilities ?? {}, message.timing ?? {});
     if (currentRun.stopped) {
@@ -774,8 +784,8 @@ async function handleLifecycleMessage(message) {
     }
     return;
   }
-  if (message.type === "stop" && currentRun) {
-    await currentRun.stop();
+  if (message.type === "stop") {
+    await currentRun?.stop();
     postMessage({ type: "stopped" });
   }
 }
@@ -786,6 +796,7 @@ self.onmessage = (event) => {
   if (message.type === "chip-port") { chipConnection?.port.close(); chipConnection={port:message.port,state:message.state}; return; }
   if (message.type === "native-fx") { nativeFXPort?.close(); nativeFXPort = message.port; return; }
   if (message.type === "stop") {
+    lifecycleGeneration += 1;
     // Interrupt waits now: queuing stop behind run.execute would wait for the
     // very evaluation we need to cancel.
     stopping = stopping.then(() => handleLifecycleMessage(message))
@@ -804,7 +815,8 @@ self.onmessage = (event) => {
     currentRun?.handleKeyboard(message.id, message.event);
     return;
   }
+  const generation = lifecycleGeneration;
   lifecycleQueue = lifecycleQueue
     .catch(() => undefined)
-    .then(() => handleLifecycleMessage(message));
+    .then(() => handleLifecycleMessage(message, generation));
 };

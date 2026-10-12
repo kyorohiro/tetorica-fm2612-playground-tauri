@@ -17,6 +17,7 @@ import {createYm2608Client} from './playground_ym2608.js?v=loop-async-tasks-1';
 import {createRf5c164Client} from './playground_rf5c164.js';
 import {createRf5c164Audio} from './playground_rf5c164_audio.js';
 import {samplePCM} from './native_sample.js';
+import {formatLogArgs} from './playground_log.js';
 /**
  * @file playground_runtime.js
  * 実行環境: Browser（メインスレッド）
@@ -28,14 +29,14 @@ import {parseMidiFile} from './midi_file.js?v=readable-midi-1';
 import { createAudioScheduler } from "./playground_audio_scheduler.js";
 import {
   FM_PRESETS,
-} from "./megasynth.js";
+} from "./megasynth.js?v=prepared-fx-rerun-2";
 import { createTetoricaSynth } from "./tetorica_synth.js";
 import {
   createPitchFromMidi,
 } from "./pitch.js";
 import { createPlaygroundClock } from "./playground_clock.js?v=loop-async-tasks-1";
 import { executeWithPlaygroundGuards } from "./playground_execution.js";
-import { createPlaygroundLive } from "./playground_live.js?v=loop-async-tasks-1";
+import { createPlaygroundLive } from "./playground_live.js?v=prepared-fx-rerun-2";
 import { createPlaygroundMusic } from "./playground_music.js?v=play-units-1";
 import { createPlaygroundNoiseApi } from "./playground_noise.js";
 import { createFmProxy } from "./playground_sync.js?v=dac-pcm-1";
@@ -176,12 +177,12 @@ export function createPlaygroundRuntime(
     options.execution ?? "main";
   const defaultLogicWorkerUrl =
     new URL(
-      "./playground_logic_worker.js?v=native-fx-1",
+      "./playground_logic_worker.js?v=stop-media-race-1",
       import.meta.url
     );
   defaultLogicWorkerUrl.searchParams.set(
     "v",
-    "play-units-1"
+    "stop-media-race-1"
   );
   const logicWorkerUrl =
     options.logicWorkerUrl ??
@@ -424,11 +425,19 @@ export function createPlaygroundRuntime(
     apply(voice.filter.q, options.q);
   }
 
+  async function ensureMediaReady() {
+    const token = currentRunToken, loop = currentLoopContext;
+    if (pendingFadeStop || logicWorkerStopPromise || loop?.stopped) throw new Error('Run stopped');
+    // Media preparation must never reopen the output gate after Stop.
+    await ensureReady({resumeOutput: false});
+    if (token !== currentRunToken || pendingFadeStop || logicWorkerStopPromise || loop?.stopped) throw new Error('Run stopped');
+  }
+
   async function loadSample(
     name,
     source
   ) {
-    await ensureReady();
+    await ensureMediaReady();
     return megaDrive.sample.load(
       name,
       source
@@ -439,7 +448,7 @@ export function createPlaygroundRuntime(
     name,
     sampleOptions = {}
   ) {
-    await ensureReady();
+    await ensureMediaReady();
     return megaDrive.sample.play(
       name,
       sampleOptions
@@ -458,7 +467,7 @@ export function createPlaygroundRuntime(
     name,
     url
   ) {
-    await ensureReady();
+    await ensureMediaReady();
     return megaDrive.stream.load(
       name,
       url
@@ -469,7 +478,7 @@ export function createPlaygroundRuntime(
     name,
     streamOptions = {}
   ) {
-    await ensureReady();
+    await ensureMediaReady();
     return megaDrive.stream.play(
       name,
       streamOptions
@@ -715,11 +724,15 @@ export function createPlaygroundRuntime(
     });
   }
 
-  async function ensureReady() {
+  async function ensureReady({resumeOutput = true} = {}) {
+    const token = currentRunToken;
+    const resumeOutputIfCurrent = () => {
+      if (resumeOutput && token === currentRunToken && !pendingFadeStop) resumeStopFade();
+    };
     if (pendingFadeStop) await pendingFadeStop;
     if (prepareAudioPromise) {
       await prepareAudioPromise;
-      resumeStopFade();
+      resumeOutputIfCurrent();
       return synth;
     }
 
@@ -738,7 +751,7 @@ export function createPlaygroundRuntime(
         }
         workerLevelsMuted = false;
       }
-      resumeStopFade();
+      resumeOutputIfCurrent();
       emitRuntimeState(
         "Audio ready"
       );
@@ -756,7 +769,7 @@ export function createPlaygroundRuntime(
       (async () => {
         await megaDrive.start();
         await megaDrive.audio?.prepareNativeFX?.();
-        resumeStopFade();
+        resumeOutputIfCurrent();
         if (megaDrive.audio?.nativeFX) {
           megaDrive.audio.nativeFX.onError = (message) => {
             options.onLog?.(`[FX] ${message}`);
@@ -790,6 +803,12 @@ export function createPlaygroundRuntime(
 
   async function initialize() {
     await ensureReady();
+  }
+
+  /** An explicit keyboard audition starts after the preceding Stop has finished. */
+  async function prepareAudition() {
+    if (pendingFadeStop) await pendingFadeStop;
+    return ensureReady();
   }
 
   function registerKeyboardHandler(
@@ -857,7 +876,15 @@ export function createPlaygroundRuntime(
     });
     logicWorkerStopPromise = stopped;
     resolveLogicWorkerStop = finish;
-    timer = setTimeout(finish, 100);
+    // A timeout is not a stop acknowledgement: old cleanup commands can still
+    // arrive and mute the next Run. Retire an unresponsive Worker instead.
+    timer = setTimeout(() => {
+      if (logicWorker === worker) {
+        terminateLogicWorker();
+        stopAllAudio();
+      }
+      finish();
+    }, 2000);
     worker.postMessage({ type: "stop" });
     return stopped;
   }
@@ -1164,6 +1191,10 @@ export function createPlaygroundRuntime(
       emitLog(error.message);
       while (workerRunRequests.length > 0) {
         workerRunRequests.shift().reject(error);
+      }
+      if (resolveLogicWorkerStop) {
+        terminateLogicWorker();
+        stopAllAudio();
       }
     };
   }
@@ -1886,7 +1917,7 @@ export function createPlaygroundRuntime(
     await ensureReady();
     if (runToken !== currentRunToken) return;
     clearKeyboardHandlers();
-    liveApi.clearRunFxChain();
+    liveApi.clearRunFxChain({preservePrepared: true});
     setPlaybackState("running");
     emitStatus("Running...");
     emitRuntimeState("Running");
@@ -2067,11 +2098,20 @@ export function createPlaygroundRuntime(
       return Promise.resolve();
     }
     const runToken = currentRunToken;
-    const now = context.currentTime, end = now + 0.04;
+    const now = context.currentTime, duration = 0.12, end = now + duration;
     const gain = stopFadeNode.gain;
     if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
     else {gain.cancelScheduledValues(now);gain.setValueAtTime(gain.value, now);}
-    gain.linearRampToValueAtTime(0, end);
+    // Zero slope at both ends avoids a sharp envelope change on sustained
+    // samples and reverb tails. The gate sits after the entire FX chain.
+    const startGain = gain.value;
+    if (typeof gain.setValueCurveAtTime === 'function') {
+      const curve = Float32Array.from({length: 65}, (_, i) =>
+        startGain * (1 + Math.cos(Math.PI * i / 64)) / 2);
+      gain.setValueCurveAtTime(curve, now, duration);
+    } else {
+      gain.linearRampToValueAtTime(0, end);
+    }
     pendingFadeStop = (async () => {
       // Follow the audio clock: a wall timer alone may fire before the ramp is rendered.
       while (runToken === currentRunToken && context.state === 'running' && context.currentTime < end) {
@@ -2147,6 +2187,7 @@ export function createPlaygroundRuntime(
     logicWorkerUrl,
     initialize,
     ensureReady,
+    prepareAudition,
     load,
     put,
     get,
@@ -2202,22 +2243,4 @@ export function Playground(
   return createPlaygroundRuntime(
     options
   );
-}
-
-function formatLogArgs(args) {
-  return args
-    .map((value) =>
-      typeof value === "string"
-        ? value
-        : safeStringify(value)
-    )
-    .join(" ");
-}
-
-function safeStringify(value) {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
 }
