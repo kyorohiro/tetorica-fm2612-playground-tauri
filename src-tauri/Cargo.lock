@@ -4919,7 +4919,7 @@ dependencies = [
 
 [[package]]
 name = "tetorica-fm2612-playground-tauri"
-version = "0.61.6"
+version = "0.62.1"
 dependencies = [
  "base64 0.22.1",
  "git2",
