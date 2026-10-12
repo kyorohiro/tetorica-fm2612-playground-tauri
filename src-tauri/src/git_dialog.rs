@@ -1,4 +1,10 @@
-//! Secrets are entered in AppKit, never in HTML or IPC arguments.
+//! OS-native dialogs; secrets never enter HTML or IPC arguments.
+#[cfg(target_os = "linux")]
+#[path = "git_dialog_linux.rs"]
+mod platform;
+#[cfg(target_os = "windows")]
+#[path = "git_dialog_windows.rs"]
+mod platform;
 use tauri::AppHandle;
 use zeroize::Zeroizing;
 type Result<T> = std::result::Result<T, String>;
@@ -61,9 +67,13 @@ pub fn choose_token(app: &AppHandle, description: String, names: Vec<String>, pr
         Ok(index as usize)
     })?
 }
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+pub fn choose_token(app: &AppHandle, description: String, names: Vec<String>, preferred: usize) -> Result<usize> {
+    on_main(app, move || platform::choose_token(description, names, preferred))?
+}
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn choose_token(_: &AppHandle, _: String, _: Vec<String>, _: usize) -> Result<usize> {
-    Err("Native token selection is currently available on macOS only".into())
+    Err("Native token selection is unavailable on this platform".into())
 }
 #[cfg(target_os = "macos")]
 pub fn passphrase(
@@ -140,7 +150,14 @@ pub fn secret(
 pub fn passphrase(_: &AppHandle, _: &str, _: &str, _: bool) -> Result<Zeroizing<String>> {
     Err("Native secure passphrase entry is currently available on macOS only; SSH is disabled on this platform".into())
 }
-#[cfg(not(target_os = "macos"))]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+pub fn secret(app: &AppHandle, title: &str, description: &str, placeholder: &str, creating: bool) -> Result<Zeroizing<String>> {
+    let title = title.to_owned();
+    let description = description.to_owned();
+    let placeholder = placeholder.to_owned();
+    on_main(app, move || platform::secret(title, description, placeholder, creating))?
+}
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 pub fn secret(_: &AppHandle, _: &str, _: &str, _: &str, _: bool) -> Result<Zeroizing<String>> {
-    Err("Native secure token entry is currently available on macOS only".into())
+    Err("Native secure token entry is unavailable on this platform".into())
 }

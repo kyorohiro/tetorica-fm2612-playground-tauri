@@ -239,7 +239,10 @@ Menu → **Git 設定…** で名前付きのトークンを管理します。
 設定画面は登録と削除のみです。PAT を入れ替える場合は削除して登録し直します。
 削除は GitHub 側での失効操作ではありません。削除時は該当 token の active session を破棄します。
 トークンは JavaScript／IPC／Cassette へ返さず、ファイルには名前・ID・ホストとアプリの選択 ID だけ保存します。
-PAT 本文は macOS Keychain に保存します。Keychain の利用は現在 macOS のみ対応しています。
+PAT 本文は macOS Keychain、Windows Credential Manager、Linux Secret Service に保存します。
+入力・選択画面は AppKit／Win32／GTK で開き、PAT を WebView に渡しません。
+Linux は GNOME Keyring や Secret Service 対応の KDE Wallet が動作し、保管庫が解除されている必要があります。
+保管庫が使えない場合はエラーを表示します。平文ファイルへの保存には切り替えません。
 Browser 版はローカル操作のみ対応します。Git 設定画面には Git の操作ボタンはありません。
 以前の repository selection 形式は、トークンを保持したまま app selection へ移行します。
 
@@ -256,6 +259,21 @@ Git 操作は隔離した snapshot 上で実行し、キャンセルや編集中
 検証: root repository の `npm run test:virtual-files` と
 `node scripts/check_virtual_git_browser.cjs`、native の `cargo test`。
 HTTPS＋トークンでの GitHub push はユーザー環境で確認済みです。
-保存済みトークン方式は Keychain の実 API と protocol fixture で検証し、ユーザーの PAT での再確認は別途必要です。
+保存済みトークン方式は macOS Keychain の実 API と protocol fixture で検証しています。
+Windows は資格情報ストア・Win32 ダイアログの対象モジュールをクロスコンパイルで確認していますが、実機確認は未実施です。
+Linux は Docker 内の GNOME Keyring／GTK で、保存・読み出し・削除、伏字入力、選択、キャンセル、画面の破棄と保管庫未接続時のエラーを検証しています。
+新しい方式での実 GitHub push の再確認は別途必要です。
+
+保管庫へ一時的なダミー項目を書いて削除するテスト：
+
+```sh
+cargo test --manifest-path src-tauri/Cargo.toml os_credential_round_trip -- --ignored
+```
+
+Linux の native 入力・選択・キャンセル画面テスト（GTK display が必要）：
+
+```sh
+xvfb-run -a cargo test --manifest-path src-tauri/Cargo.toml native_input_selection_cancel_and_cleanup -- --ignored --test-threads=1
+```
 
 Git／HTTPS の依存ライセンスはアプリの `git-licenses.txt`、`git-js-licenses.txt` に同梱します。

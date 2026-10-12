@@ -1,48 +1,16 @@
-//! Named PATs in macOS Keychain; app-wide selection, independent of Cassettes.
+//! Named PATs in the OS credential store; app-wide selection, independent of Cassettes.
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, fs, io::Write, path::PathBuf, sync::Mutex};
 use tauri::{AppHandle, Manager, WebviewWindow};
 use zeroize::Zeroizing;
 type Result<T> = std::result::Result<T, String>;
-const SERVICE: &str = "net.tetorica.ym2612-playground.git-tokens";
+#[path = "git_secret_store.rs"]
+mod backend;
+use backend::{Keychain, Secrets, SUPPORTED, storage_name};
+#[cfg(test)]
+use backend::SERVICE;
 
-pub trait Secrets: Send {
-    fn put(&mut self, id: &str, secret: &[u8]) -> Result<()>;
-    fn get(&self, id: &str) -> Result<Zeroizing<Vec<u8>>>;
-    fn delete(&mut self, id: &str) -> Result<()>;
-}
-struct Keychain;
-#[cfg(target_os = "macos")]
-impl Secrets for Keychain {
-    fn put(&mut self, id: &str, secret: &[u8]) -> Result<()> {
-        security_framework::passwords::set_generic_password(SERVICE, id, secret)
-            .map_err(|_| "Could not save the token in macOS Keychain".into())
-    }
-    fn get(&self, id: &str) -> Result<Zeroizing<Vec<u8>>> {
-        security_framework::passwords::generic_password(security_framework::passwords::PasswordOptions::new_generic_password(SERVICE,id))
-            .map(Zeroizing::new).map_err(|_|"Could not read the saved token from macOS Keychain. Unlock Keychain or update this token in Menu → Git".into())
-    }
-    fn delete(&mut self, id: &str) -> Result<()> {
-        match security_framework::passwords::delete_generic_password(SERVICE, id) {
-            Ok(()) => Ok(()),
-            Err(error) if error.code() == -25300 => Ok(()),
-            Err(_) => Err("Could not delete the token from macOS Keychain".into()),
-        }
-    }
-}
-#[cfg(not(target_os = "macos"))]
-impl Secrets for Keychain {
-    fn put(&mut self, _: &str, _: &[u8]) -> Result<()> {
-        Err("Saved tokens are currently available on macOS only".into())
-    }
-    fn get(&self, _: &str) -> Result<Zeroizing<Vec<u8>>> {
-        Err("Saved tokens are currently available on macOS only".into())
-    }
-    fn delete(&mut self, _: &str) -> Result<()> {
-        Err("Saved tokens are currently available on macOS only".into())
-    }
-}
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Entry {
@@ -265,6 +233,7 @@ impl Store {
         }
         Ok(())
     }
+    #[cfg(test)]
     pub fn selected(&self, url: &str) -> Result<Entry> {
         let repository = crate::git_http::repository_url(url)?;
         let id = self
@@ -308,7 +277,7 @@ impl Store {
     fn public(&self) -> Result<Value> {
         let selected = &self.metadata.selected_id;
         Ok(
-            json!({"tokens":self.metadata.tokens,"selectedId":selected,"supported":cfg!(target_os="macos")}),
+            json!({"tokens":self.metadata.tokens,"selectedId":selected,"supported":SUPPORTED,"storage":storage_name()}),
         )
     }
 }
@@ -331,12 +300,12 @@ pub async fn git_tokens(window: WebviewWindow, app: AppHandle, request: Request)
                 let name=request.name.as_deref().ok_or("Enter a token name")?;
                 if name.trim().is_empty()||name.len()>160||name.chars().any(char::is_control){return Err("Enter a token name (at most 160 bytes)".into());}
                 let origin=host(request.host.as_deref().ok_or("Enter an HTTPS host")?)?;
-                let secret=crate::git_dialog::secret(&app,"Save personal access token",&format!("Save token ‘{name}’ for {origin} in macOS Keychain. The secret is never returned to JavaScript or saved in the Cassette."),"Personal access token (required)",false)?;
+                let secret=crate::git_dialog::secret(&app,"Save personal access token",&format!("Save token ‘{name}’ for {origin} in {}. The secret is never returned to JavaScript or saved in the Cassette.",storage_name()),"Personal access token (required)",false)?;
                 let entry=store.add(name,&origin,&secret)?;Ok(json!({"saved":true,"entry":entry}))
             }
             "replace"=>{
                 let id=request.id.as_deref().ok_or("Choose a token")?;let entry=store.entry(id)?;
-                let secret=crate::git_dialog::secret(&app,"Update personal access token",&format!("Replace saved token ‘{}’ for {} in macOS Keychain.",entry.name,entry.host),"New personal access token (required)",false)?;
+                let secret=crate::git_dialog::secret(&app,"Update personal access token",&format!("Replace saved token ‘{}’ for {} in {}.",entry.name,entry.host,storage_name()),"New personal access token (required)",false)?;
                 store.replace(id,&secret)?;app.state::<crate::git_http::Transport>().revoke_token(id)?;Ok(json!({"updated":true}))
             }
             "select"=>{
@@ -347,7 +316,7 @@ pub async fn git_tokens(window: WebviewWindow, app: AppHandle, request: Request)
             }
             "delete"=>{
                 let id=request.id.as_deref().ok_or("Choose a token")?;let entry=store.entry(id)?;
-                crate::git_dialog::confirm(&app,"Delete saved token",&format!("Delete ‘{}’ from macOS Keychain? The token itself is not revoked on GitHub.",entry.name))?;
+                crate::git_dialog::confirm(&app,"Delete saved token",&format!("Delete ‘{}’ from {}? The token itself is not revoked on GitHub.",entry.name,storage_name()))?;
                 store.remove(id)?;app.state::<crate::git_http::Transport>().revoke_token(id)?;Ok(json!({"deleted":true}))
             }
             _=>Err("Unsupported saved token operation".into())
@@ -397,6 +366,22 @@ mod tests {
     }
     fn temp() -> Temp {
         Temp(std::env::temp_dir().join(format!("tetorica-token-test-{}", uuid::Uuid::new_v4())))
+    }
+    #[test]
+    fn failed_credential_save_does_not_register_a_token() {
+        struct Unavailable;
+        impl Secrets for Unavailable {
+            fn put(&mut self, _: &str, _: &[u8]) -> Result<()> { Err("Credential store unavailable".into()) }
+            fn get(&self, _: &str) -> Result<Zeroizing<Vec<u8>>> { Err("Credential store unavailable".into()) }
+            fn delete(&mut self, _: &str) -> Result<()> { Err("Credential store unavailable".into()) }
+        }
+        let t = temp();
+        let mut store = Store::open(t.0.clone(), Box::new(Unavailable)).unwrap();
+        let error = store.add("GitHub", "https://github.com", "dummy-never-saved").err().unwrap();
+        assert!(!error.contains("dummy-never-saved"));
+        assert!(store.metadata.tokens.is_empty());
+        assert!(store.metadata.selected_id.is_none());
+        assert!(!t.0.join("tokens.json").exists());
     }
     #[test]
     fn connection_choices_filter_host_and_revalidate_deleted_tokens() {
