@@ -7,7 +7,7 @@ use std::{
     sync::Mutex,
     time::{Duration, Instant},
 };
-use tauri::{AppHandle, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow};
 use zeroize::Zeroizing;
 type Result<T> = std::result::Result<T, String>;
 const LIMIT: usize = 64 * 1024 * 1024;
@@ -18,10 +18,23 @@ struct Session {
     branch: String,
     commit: String,
     token: Zeroizing<String>,
+    token_id: String,
     expires: Instant,
 }
 #[derive(Default)]
 pub struct Transport(Mutex<Option<Session>>);
+impl Transport {
+    pub fn revoke_token(&self, id: &str) -> Result<()> {
+        let mut session = self.0.lock().map_err(|e| e.to_string())?;
+        if session
+            .as_ref()
+            .is_some_and(|session| session.token_id == id)
+        {
+            *session = None;
+        }
+        Ok(())
+    }
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Begin {
@@ -48,7 +61,7 @@ pub struct Response {
     headers: BTreeMap<String, String>,
     body: String,
 }
-fn repository_url(value: &str) -> Result<tauri::Url> {
+pub(crate) fn repository_url(value: &str) -> Result<tauri::Url> {
     let url = tauri::Url::parse(value).map_err(|_| "Invalid repository URL")?;
     if url.scheme() != "https"
         || url.host_str().is_none()
@@ -150,10 +163,23 @@ pub async fn git_https_begin(
     let url = request.url.clone();
     let branch = request.branch.clone();
     let commit = request.commit.clone();
-    let token=tauri::async_runtime::spawn_blocking(move||{
-        if operation=="push"{crate::git_dialog::confirm(&app,"Push Cassette",&format!("Push commit {} on branch {} to {}?",request.commit,request.branch,url))?;}
-        crate::git_dialog::secret(&app,"Git HTTPS authentication",&format!("{} {}\nEnter a personal access token with permission to this repository. It is used for this operation only and is not saved.",operation,url),"Personal access token (required)",false)
-    }).await.map_err(|e|e.to_string())??;
+    let (token, token_id) = tauri::async_runtime::spawn_blocking(move || -> Result<(Zeroizing<String>, String)> {
+        let state = app.state::<crate::git_tokens::Tokens>();
+        let (entries, preferred) = state.0.lock().map_err(|e| e.to_string())?.choices(&url)?;
+        let index = preferred.as_ref().and_then(|id| entries.iter().position(|entry| &entry.id == id)).unwrap_or(0);
+        let description = if operation == "push" {
+            format!("送信先：{}\nブランチ：{}\nコミット：{}\n\n使用するトークンを選んでください。", url, request.branch, request.commit)
+        } else {
+            format!("操作：{}\n接続先：{}\n\n使用するトークンを選んでください。", operation, url)
+        };
+        let selected = crate::git_dialog::choose_token(&app, description, entries.iter().map(|entry| entry.name.clone()).collect(), index)?;
+        let mut store = state.0.lock().map_err(|e| e.to_string())?;
+        let entry = store.choose(&url, &entries[selected].id)?;
+        let secret = store.read(&entry)?;
+        Ok((secret, entry.id))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     if token.chars().any(char::is_control) {
         return Err("Invalid token".into());
     }
@@ -169,6 +195,7 @@ pub async fn git_https_begin(
         branch,
         commit,
         token,
+        token_id,
         expires: Instant::now() + Duration::from_secs(180),
     });
     Ok(id)
@@ -239,8 +266,11 @@ pub async fn git_https_request(
         }
         let response = call.send().map_err(|e| e.to_string())?;
         let status = response.status();
-        if status.as_u16()==401||status.as_u16()==403 {
-            return Err("Git host rejected authentication. Check token permissions and the repository URL".into());
+        if status.as_u16() == 401 || status.as_u16() == 403 {
+            return Err(
+                "Git host rejected authentication. Check token permissions and the repository URL"
+                    .into(),
+            );
         }
         if status.is_redirection() {
             return Err(
@@ -293,6 +323,23 @@ pub fn git_https_end(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn replacing_or_deleting_a_token_revokes_its_active_session() {
+        let transport = Transport(Mutex::new(Some(Session {
+            id: "session".into(),
+            repository: repository_url("https://github.com/owner/repository.git").unwrap(),
+            operation: "push".into(),
+            branch: "main".into(),
+            commit: "a".repeat(40),
+            token: Zeroizing::new("dummy-token".into()),
+            token_id: "saved-token".into(),
+            expires: Instant::now() + Duration::from_secs(60),
+        })));
+        transport.revoke_token("other-token").unwrap();
+        assert!(transport.0.lock().unwrap().is_some());
+        transport.revoke_token("saved-token").unwrap();
+        assert!(transport.0.lock().unwrap().is_none());
+    }
     #[test]
     fn transport_is_scoped_to_an_approved_repository_and_protocol() {
         let repo = repository_url("https://github.com/owner/repository.git").unwrap();

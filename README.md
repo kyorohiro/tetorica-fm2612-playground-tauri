@@ -197,7 +197,7 @@ GitHub Actionsは手動実行で各OSのインストーラーを生成し、`v*`
 Import Cassette はその履歴を復元し、New Cassette は編集ファイルと履歴を消します。
 通常の Git 操作で実フォルダを選ぶ必要はありません。
 
-Menu → **Git…**、または Shell で操作できます。
+Git 操作は Shell のコマンドから行います。Menu → **Git 設定…** はアプリ共通のトークン設定だけを扱います。
 
 ```sh
 git init
@@ -228,16 +228,24 @@ git fetch
 git pull
 ```
 
-操作ごとに native の secure input で Personal Access Token を入力します。
-トークンは WebView／IPC／Cassette／ディスクへ渡さず、native の一時メモリに置き、
-操作終了時に破棄します。通信先を承認済みのリポジトリと Git HTTPS endpoint に限定し、
-redirect は拒否します。Push の送信先・branch・commit は native ダイアログで確認します。
-現在、secure input は macOS のみ対応しています。Windows/Linux では remote 操作を拒否します。
-Browser 版はローカル操作のみ対応します。SSH 鍵は新方式では使用しません。
+Menu → **Git 設定…** で名前付きのトークンを管理します。
 
-前の実フォルダ方式で作った履歴は **Import existing repository folder…** から取り込めます。
-フォルダ内のファイルと `.git` を Cassette にコピーします。元の実フォルダは変更しません。
-SSH URL の origin は HTTPS URL に設定し直してください。
+1. **登録名**（例 `GitHub用`）と **接続先ホスト**（例 `https://github.com`）を入力します。
+2. **トークンを登録…** を押し、別の native secure input に PAT を貼り付けます。
+3. Shell から `git push` を実行し、native 確認画面で保存済みトークンを選びます。
+   前回使ったトークンを初期値にし、接続先ホストが一致するものだけ表示します。
+
+登録と前回の選択はアプリ共通で、New/Import Cassette や再起動でも保持します。
+設定画面は登録と削除のみです。PAT を入れ替える場合は削除して登録し直します。
+削除は GitHub 側での失効操作ではありません。削除時は該当 token の active session を破棄します。
+トークンは JavaScript／IPC／Cassette へ返さず、ファイルには名前・ID・ホストとアプリの選択 ID だけ保存します。
+PAT 本文は macOS Keychain に保存します。Keychain の利用は現在 macOS のみ対応しています。
+Browser 版はローカル操作のみ対応します。Git 設定画面には Git の操作ボタンはありません。
+以前の repository selection 形式は、トークンを保持したまま app selection へ移行します。
+
+通信先を native で確認したリポジトリと Git HTTPS endpoint に限定し、redirect は拒否します。
+トークンを登録したホストとは異なるホストへ送信しません。
+Push の送信先・branch・commit・トークン名は native ダイアログで確認します。
 
 Cassette は ZIP／展開後とも 16 MiB 上限です。Git のメモリ FS は通常ファイルのみ対応し、
 symlink、実行ビットの保存、submodule、Git LFS は未対応です。
@@ -247,6 +255,7 @@ Git 操作は隔離した snapshot 上で実行し、キャンセルや編集中
 
 検証: root repository の `npm run test:virtual-files` と
 `node scripts/check_virtual_git_browser.cjs`、native の `cargo test`。
-GitHub での新方式の認証・push は別途実環境で確認してください。
+HTTPS＋トークンでの GitHub push はユーザー環境で確認済みです。
+保存済みトークン方式は Keychain の実 API と protocol fixture で検証し、ユーザーの PAT での再確認は別途必要です。
 
 Git／HTTPS の依存ライセンスはアプリの `git-licenses.txt`、`git-js-licenses.txt` に同梱します。

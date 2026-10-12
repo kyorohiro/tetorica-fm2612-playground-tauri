@@ -21,8 +21,9 @@ rfd = "0.16"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.7"
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSAlert", "NSSecureTextField", "NSTextField", "NSView", "NSControl"] }
+objc2-app-kit = { version = "0.3", features = ["NSAlert", "NSPopUpButton", "NSSecureTextField", "NSTextField", "NSView", "NSControl"] }
 objc2-foundation = "0.3"
 
 [features]

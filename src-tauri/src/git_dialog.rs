@@ -38,6 +38,34 @@ pub fn confirm(app: &AppHandle, title: &str, text: &str) -> Result<()> {
     }
 }
 #[cfg(target_os = "macos")]
+pub fn choose_token(app: &AppHandle, description: String, names: Vec<String>, preferred: usize) -> Result<usize> {
+    on_main(app, move || {
+        use objc2::MainThreadMarker;
+        use objc2_app_kit::{NSAlert, NSAlertFirstButtonReturn, NSPopUpButton};
+        use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+        let mtm = MainThreadMarker::new().ok_or("Token dialog must run on the main thread")?;
+        if names.is_empty() { return Err("No saved tokens".to_owned()); }
+        let alert = NSAlert::new(mtm);
+        alert.setMessageText(&NSString::from_str("Git 通信の確認"));
+        alert.setInformativeText(&NSString::from_str(&description));
+        alert.addButtonWithTitle(&NSString::from_str("実行"));
+        alert.addButtonWithTitle(&NSString::from_str("キャンセル"));
+        let picker = NSPopUpButton::new(mtm);
+        picker.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(360.0, 30.0)));
+        for name in &names { picker.addItemWithTitle(&NSString::from_str(name)); }
+        picker.selectItemAtIndex(preferred.min(names.len() - 1) as _);
+        alert.setAccessoryView(Some(&picker));
+        if alert.runModal() != NSAlertFirstButtonReturn { return Err("Cancelled".to_owned()); }
+        let index = picker.indexOfSelectedItem();
+        if index < 0 || index as usize >= names.len() { return Err("Choose a token".to_owned()); }
+        Ok(index as usize)
+    })?
+}
+#[cfg(not(target_os = "macos"))]
+pub fn choose_token(_: &AppHandle, _: String, _: Vec<String>, _: usize) -> Result<usize> {
+    Err("Native token selection is currently available on macOS only".into())
+}
+#[cfg(target_os = "macos")]
 pub fn passphrase(
     app: &AppHandle,
     title: &str,

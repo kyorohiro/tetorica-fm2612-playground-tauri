@@ -5,6 +5,7 @@ mod git;
 mod git_dialog;
 mod git_http;
 mod git_keys;
+mod git_tokens;
 mod mcp;
 mod project_git;
 
@@ -92,6 +93,7 @@ fn main() {
             git_http::git_https_begin,
             git_http::git_https_request,
             git_http::git_https_end,
+            git_tokens::git_tokens,
             git::git_cancel,
             window_top_get,
             window_reload,
@@ -116,6 +118,7 @@ fn main() {
         })
         .setup(|app| {
             app.manage(git_http::Transport::default());
+            app.manage(git_tokens::setup(app.handle()).map_err(std::io::Error::other)?);
             app.manage(git::setup(app.handle()).map_err(std::io::Error::other)?);
             app.manage(audio::Audio::default());
             app.manage(std::sync::Mutex::new(mcp::Mcp::load(

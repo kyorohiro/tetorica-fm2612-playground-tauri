@@ -295,6 +295,9 @@ fn execute(app: &AppHandle, state: &Shared, request: Request) -> Result<Value> {
         if root.starts_with(&key_directory) || key_directory.starts_with(&root) {
             return Err("The application's key storage cannot be opened as a project, including its parent folders".into());
         }
+        let tokens=app.state::<crate::git_tokens::Tokens>();
+        let token_directory=tokens.0.lock().map_err(|e|e.to_string())?.directory().to_path_buf();
+        if root.starts_with(&token_directory)||token_directory.starts_with(&root){return Err("Native token settings cannot be opened as a project".into());}
         if request.action == "clone" {
             if std::fs::read_dir(&root)
                 .map_err(|e| e.to_string())?

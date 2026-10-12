@@ -39,7 +39,12 @@
     for(const file of result.gitSnapshot?.files??[])virtualFiles.writeBinary(file.path,decode(file.data));
     editorAdapter.syncVirtualFiles?.(virtualFiles.list());renderVirtualFileExplorer();renderRunFileOptions();desktopAutosave?.changed();
   }
-  installPlaygroundGit({fs:virtualFiles,shell:playgroundShell.shell,lifecycle:playgroundShell,beginRemote,importFolder,beforeCommand:saveActiveVirtualFile,afterCommand(){
+  const tokens={
+    list:()=>invoke('git_tokens',{request:{action:'list'}}),
+    add:args=>invoke('git_tokens',{request:{action:'add',...args}}),
+    remove:id=>invoke('git_tokens',{request:{action:'delete',id}}),
+  };
+  installPlaygroundGit({fs:virtualFiles,shell:playgroundShell.shell,lifecycle:playgroundShell,beginRemote,importFolder,tokens,beforeCommand:saveActiveVirtualFile,afterCommand(){
     editorAdapter.syncVirtualFiles?.(virtualFiles.list());renderVirtualFileExplorer();renderRunFileOptions();desktopAutosave?.changed();
   }});
 }
