@@ -18,7 +18,15 @@
   function encode(bytes){let value='';for(let i=0;i<bytes.length;i+=32768)value+=String.fromCharCode(...bytes.subarray(i,i+32768));return btoa(value);}
   const decode=data=>Uint8Array.from(atob(data),c=>c.charCodeAt(0));
   async function beginRemote(request){
-    const session=await invoke('git_https_begin',{request});
+    // Let WebView2 leave its typing state before entering the native modal loop.
+    const focused=document.activeElement;
+    focused?.blur?.();
+    await new Promise(resolve=>setTimeout(resolve,0));
+    let session;
+    try{session=await invoke('git_https_begin',{request});}
+    finally{
+      if(focused?.isConnected&&document.activeElement===document.body)focused.focus?.({preventScroll:true});
+    }
     return {close:()=>invoke('git_https_end',{session}),http:{async request({url,method='GET',headers={},body,signal}){
       signal?.throwIfAborted();const chunks=[];let length=0;
       if(body)for await(const chunk of body){signal?.throwIfAborted();length+=chunk.length;if(length>64*1024*1024)throw Error('Git request exceeds 64 MiB');chunks.push(chunk);}
