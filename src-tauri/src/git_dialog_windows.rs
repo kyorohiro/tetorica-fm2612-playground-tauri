@@ -229,6 +229,20 @@ unsafe extern "system" fn procedure(
     if context.is_null() {
         return 0;
     }
+    if message == WM_SETCURSOR && (lparam as u32 & 0xffff) == HTCLIENT {
+        let target = wparam as HWND;
+        let input = matches!((*context).mode, Mode::Secret { .. })
+            && (target == GetDlgItem(hwnd, FIELD) || target == GetDlgItem(hwnd, REPEATED));
+        let cursor = LoadCursorW(null_mut(), if input { IDC_IBEAM } else { IDC_ARROW });
+        if !cursor.is_null() {
+            SetCursor(cursor);
+            // DLGPROC's return value marks the message as handled. Its actual
+            // result goes in DWLP_MSGRESULT, so DefDlgProc returns TRUE and
+            // neither the owner nor the default handler can hide the cursor.
+            SetWindowLongPtrW(hwnd, DWLP_MSGRESULT as i32, 1);
+            return 1;
+        }
+    }
     if message == WM_CLOSE || (message == WM_COMMAND && (wparam & 0xffff) == IDCANCEL as usize) {
         clear(hwnd);
         EndDialog(hwnd, 0);
@@ -305,5 +319,77 @@ pub fn secret(
     })? {
         Value::Secret(secret) => Ok(secret),
         _ => Err("Unexpected dialog result".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    struct Window(HWND);
+    impl Drop for Window {
+        fn drop(&mut self) {
+            unsafe {
+                DestroyWindow(self.0);
+            }
+        }
+    }
+    struct Cursor(HCURSOR);
+    impl Drop for Cursor {
+        fn drop(&mut self) {
+            unsafe {
+                SetCursor(self.0);
+            }
+        }
+    }
+    #[test]
+    fn dialog_restores_cursor_on_background_controls_and_password_input() {
+        unsafe {
+            let _cursor = Cursor(GetCursor());
+            for mode in [
+                Mode::Choose {
+                    names: vec!["Personal".into(), "Work".into()],
+                    preferred: 1,
+                },
+                Mode::Secret {
+                    placeholder: "PAT".into(),
+                    creating: false,
+                },
+            ] {
+                let secret = matches!(mode, Mode::Secret { .. });
+                let mut context = Context {
+                    title: "Cursor test".into(),
+                    description: "Dummy UI".into(),
+                    mode,
+                    result: None,
+                };
+                let template = template();
+                let hwnd = CreateDialogIndirectParamW(
+                    null_mut(),
+                    template.as_ptr().cast(),
+                    null_mut(),
+                    Some(procedure),
+                    &mut context as *mut Context as isize,
+                );
+                assert!(!hwnd.is_null());
+                let window = Window(hwnd);
+                for (target, expected) in [
+                    (hwnd, IDC_ARROW),
+                    (GetDlgItem(hwnd, IDOK), IDC_ARROW),
+                    (
+                        GetDlgItem(hwnd, FIELD),
+                        if secret { IDC_IBEAM } else { IDC_ARROW },
+                    ),
+                ] {
+                    assert!(!target.is_null());
+                    SetCursor(null_mut());
+                    assert_eq!(
+                        SendMessageW(hwnd, WM_SETCURSOR, target as usize, HTCLIENT as isize),
+                        1
+                    );
+                    assert_eq!(GetCursor(), LoadCursorW(null_mut(), expected));
+                }
+                drop(window); // The callback context must outlive the window.
+            }
+        }
     }
 }
