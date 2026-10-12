@@ -44,8 +44,19 @@ pub fn passphrase(
     description: &str,
     creating: bool,
 ) -> Result<Zeroizing<String>> {
+    secret(app, title, description, "Passphrase (required)", creating)
+}
+#[cfg(target_os = "macos")]
+pub fn secret(
+    app: &AppHandle,
+    title: &str,
+    description: &str,
+    placeholder: &str,
+    creating: bool,
+) -> Result<Zeroizing<String>> {
     let title = title.to_owned();
     let description = description.to_owned();
+    let placeholder = placeholder.to_owned();
     on_main(app, move || {
         use objc2::MainThreadMarker;
         use objc2_app_kit::{NSAlert, NSAlertFirstButtonReturn, NSSecureTextField, NSView};
@@ -68,7 +79,7 @@ pub fn passphrase(
             NSPoint::new(0.0, height - 26.0),
             NSSize::new(320.0, 26.0),
         ));
-        password.setPlaceholderString(Some(&NSString::from_str("Passphrase (required)")));
+        password.setPlaceholderString(Some(&NSString::from_str(&placeholder)));
         view.addSubview(&password);
         let repeated = NSSecureTextField::new(mtm);
         if creating {
@@ -89,7 +100,7 @@ pub fn passphrase(
             return Err("Cancelled".to_owned());
         }
         if secret.is_empty() {
-            return Err("A nonempty passphrase is required".to_owned());
+            return Err("A nonempty secret is required".to_owned());
         }
         if creating && *secret != *repeat {
             return Err("Passphrases do not match".to_owned());
@@ -100,4 +111,8 @@ pub fn passphrase(
 #[cfg(not(target_os = "macos"))]
 pub fn passphrase(_: &AppHandle, _: &str, _: &str, _: bool) -> Result<Zeroizing<String>> {
     Err("Native secure passphrase entry is currently available on macOS only; SSH is disabled on this platform".into())
+}
+#[cfg(not(target_os = "macos"))]
+pub fn secret(_: &AppHandle, _: &str, _: &str, _: &str, _: bool) -> Result<Zeroizing<String>> {
+    Err("Native secure token entry is currently available on macOS only".into())
 }

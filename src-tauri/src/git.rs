@@ -319,11 +319,12 @@ fn execute(app: &AppHandle, state: &Shared, request: Request) -> Result<Value> {
                 .clone(url, &root)
                 .map_err(|e| e.to_string())?;
         }
-        let (project, value) = if request.action == "create" {
+        let (project, mut value) = if request.action == "create" {
             Project::create(root, request.snapshot.ok_or("Missing snapshot")?)?
         } else {
             Project::open(root)?
         };
+        value["gitSnapshot"] = project.git_snapshot()?;
         state.project = Some(project);
         return Ok(value);
     }

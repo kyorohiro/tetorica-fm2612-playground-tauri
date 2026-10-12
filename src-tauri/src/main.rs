@@ -3,6 +3,7 @@
 mod audio;
 mod git;
 mod git_dialog;
+mod git_http;
 mod git_keys;
 mod mcp;
 mod project_git;
@@ -88,6 +89,9 @@ fn main() {
             audio::audio_request,
             audio::audio_shutdown,
             git::git_request,
+            git_http::git_https_begin,
+            git_http::git_https_request,
+            git_http::git_https_end,
             git::git_cancel,
             window_top_get,
             window_reload,
@@ -111,6 +115,7 @@ fn main() {
             }
         })
         .setup(|app| {
+            app.manage(git_http::Transport::default());
             app.manage(git::setup(app.handle()).map_err(std::io::Error::other)?);
             app.manage(audio::Audio::default());
             app.manage(std::sync::Mutex::new(mcp::Mcp::load(
@@ -124,6 +129,12 @@ fn main() {
                     if local && request.uri().path() == "/desktop-audio-worklet.js" {
                         *response.status_mut() = tauri::http::StatusCode::OK;
                         *response.body_mut() = std::borrow::Cow::Owned(include_bytes!("../../desktop/audio-worklet.js").to_vec());
+                        response.headers_mut().insert("content-type", "text/javascript".parse().unwrap());
+                        response.headers_mut().remove("content-length");
+                    }
+                    if local && request.uri().path() == "/desktop-git-runtime.js" {
+                        *response.status_mut() = tauri::http::StatusCode::OK;
+                        *response.body_mut() = std::borrow::Cow::Owned(include_bytes!("../../desktop/git-runtime.bundle.js").to_vec());
                         response.headers_mut().insert("content-type", "text/javascript".parse().unwrap());
                         response.headers_mut().remove("content-length");
                     }

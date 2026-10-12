@@ -293,6 +293,64 @@ impl Project {
         }
         Ok(())
     }
+    pub fn git_snapshot(&self) -> Result<Value> {
+        verify_git_dir(&self.root)?;
+        fn walk(
+            root: &Path,
+            dir: &Path,
+            files: &mut Vec<File>,
+            dirs: &mut Vec<String>,
+            size: &mut usize,
+        ) -> Result<()> {
+            for entry in fs::read_dir(dir).map_err(err)? {
+                let path = entry.map_err(err)?.path();
+                let meta = fs::symlink_metadata(&path).map_err(err)?;
+                if meta.file_type().is_symlink() {
+                    return Err("Linked Git metadata is not supported".into());
+                }
+                let relative_path = path
+                    .strip_prefix(root)
+                    .map_err(err)?
+                    .to_str()
+                    .ok_or("Non-UTF8 Git path")?
+                    .replace('\\', "/");
+                relative(&format!("/{relative_path}"))?;
+                if relative_path == "objects/info/alternates" {
+                    return Err(
+                        "Repositories with external object stores cannot be imported".into(),
+                    );
+                }
+                let name = format!("/.git/{relative_path}");
+                if files.len() + dirs.len() >= MAX_FILES {
+                    return Err("Too many Git metadata entries".into());
+                }
+                if meta.is_dir() {
+                    dirs.push(name);
+                    walk(root, &path, files, dirs, size)?;
+                } else {
+                    let bytes = read_file(&path)?.ok_or("Git metadata disappeared")?;
+                    *size += bytes.len();
+                    if *size > MAX_PROJECT {
+                        return Err("Git history exceeds 256 MiB".into());
+                    }
+                    files.push(File {
+                        path: name,
+                        data: STANDARD.encode(bytes),
+                    });
+                }
+            }
+            Ok(())
+        }
+        let root = self.root.join(".git");
+        let mut files = Vec::new();
+        let mut dirs = Vec::new();
+        if root.exists() {
+            repo(&self.root)?;
+            dirs.push("/.git".into());
+            walk(&root, &root, &mut files, &mut dirs, &mut 0)?;
+        }
+        Ok(json!({"files":files,"directories":dirs}))
+    }
     pub fn reload(&mut self) -> Result<Value> {
         let (baseline, dirs) = scan(&self.root)?;
         self.baseline = baseline;
@@ -545,6 +603,26 @@ mod tests {
         }
     }
     #[test]
+    fn repository_import_includes_history_without_modifying_the_folder() {
+        let t = temp();
+        let (p, _) = Project::create(t.0.clone(), snapshot(&[("/index.js", b"one")])).unwrap();
+        p.stage(&["/index.js".into()]).unwrap();
+        let commit = p.commit("first", "Test", "test@example.com").unwrap();
+        let metadata = p.git_snapshot().unwrap();
+        assert!(metadata["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|file| file["path"] == "/.git/HEAD"));
+        assert!(metadata["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|file| file["path"] == "/.git/index"));
+        assert_eq!(p.log().unwrap()[0]["id"], commit["commit"]);
+        assert_eq!(fs::read(t.0.join("index.js")).unwrap(), b"one");
+    }
+    #[test]
     fn create_current_project_in_empty_folder() {
         let t = temp();
         let (p, value) = Project::create(
@@ -569,17 +647,27 @@ mod tests {
     #[test]
     fn status_and_diff_distinguish_staged_and_editor_changes() {
         let t = temp();
-        let (mut p, _) = Project::create(t.0.clone(), snapshot(&[("/index.js", b"first\n")])).unwrap();
+        let (mut p, _) =
+            Project::create(t.0.clone(), snapshot(&[("/index.js", b"first\n")])).unwrap();
         assert_eq!(p.status().unwrap()["files"][0]["untracked"], true);
-        assert!(p.diff(false).unwrap()["text"].as_str().unwrap().contains("first"));
+        assert!(p.diff(false).unwrap()["text"]
+            .as_str()
+            .unwrap()
+            .contains("first"));
         p.stage(&["/index.js".into()]).unwrap();
         assert_eq!(p.status().unwrap()["files"][0]["staged"], true);
         assert_eq!(p.diff(false).unwrap()["text"], "");
-        assert!(p.diff(true).unwrap()["text"].as_str().unwrap().contains("first"));
+        assert!(p.diff(true).unwrap()["text"]
+            .as_str()
+            .unwrap()
+            .contains("first"));
         p.commit("first", "Test", "test@example.invalid").unwrap();
         p.save(snapshot(&[("/index.js", b"edited\n")])).unwrap();
         assert_eq!(p.status().unwrap()["files"][0]["worktree"], true);
-        assert!(p.diff(false).unwrap()["text"].as_str().unwrap().contains("edited"));
+        assert!(p.diff(false).unwrap()["text"]
+            .as_str()
+            .unwrap()
+            .contains("edited"));
         assert_eq!(p.diff(true).unwrap()["text"], "");
     }
     #[test]

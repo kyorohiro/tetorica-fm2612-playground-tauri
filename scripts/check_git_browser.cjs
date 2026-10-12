@@ -1,20 +1,51 @@
-// Serve dist/ on port 8087, or set GIT_TEST_URL. Requires Playwright.
-const {chromium}=require('playwright');const fs=require('node:fs'),assert=require('node:assert/strict');
-const gitSource=fs.readFileSync(require('node:path').join(__dirname,'../desktop/git-interface.js'),'utf8');
-(async()=>{const browser=await chromium.launch({headless:true});try{const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('dialog',dialog=>dialog.accept());
-await page.addInitScript(()=>{let revision=1;window.__gitRequests=[];window.__TAURI_INTERNALS__={invoke:async(name,{request}={})=>{if(name!=='git_request')return;window.__gitRequests.push(request);switch(request.action){case'create':return{projectId:'created-project',revision,folder:'/temporary/current-project',status:{initialized:true,files:[]}};case'open':return {projectId:'test-project',revision,folder:'/temporary/test-project',snapshot:{files:[{path:'/index.js',data:btoa('// loaded project')},{path:'/sound.bin',data:btoa(String.fromCharCode(0,128,255))}],directories:['/']}};case'reload':window.__gitConcurrentEdit();return{projectId:'test-project',revision:++revision,folder:'/temporary/test-project',snapshot:{files:[{path:'/index.js',data:btoa('// disk update')}],directories:['/']}};case'save':if(request.revision!==revision)throw Error('Project changed; reopen before saving');return{projectId:'test-project',revision:++revision};case'init':case'status':case'stage':return{initialized:true,branch:'main',files:[{path:'index.js',status:1,staged:true},{path:'sound.bin',status:1,staged:true}]};case'commit':return{commit:'test-commit'};case'keys':return{generated:false};default:return{};}}};});
-await page.route('**/playground.js?*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+'\n;\n'+gitSource+'\nwindow.__gitConcurrentEdit=()=>virtualFiles.writeText("/concurrent.js","// concurrent editor change");'});});
-await page.goto(process.env.GIT_TEST_URL||'http://127.0.0.1:8087/index.html');await page.waitForFunction(()=>window.monaco?.editor?.getEditors().some(e=>e.getModel()?.uri.path.startsWith('/project/'))&&document.getElementById('desktop-git'));
-await page.evaluate(()=>monaco.editor.getEditors().find(e=>e.getModel()?.uri.path==='/project/index.js').setValue('// keep current code'));
-await page.locator('#shellTab').click();await page.locator('#shellInput').fill('git start');await page.locator('#shellInput').press('Enter');await page.waitForFunction(()=>document.querySelector('#shellOutput').textContent.includes('Git is ready'));
-const created=await page.evaluate(()=>window.__gitRequests.find(r=>r.action==='create'));assert.equal(Buffer.from(created.snapshot.files.find(f=>f.path==='/index.js').data,'base64').toString(),'// keep current code');assert.equal(await page.evaluate(()=>monaco.editor.getEditors().find(e=>e.getModel()?.uri.path==='/project/index.js').getValue()),'// keep current code');
-await page.locator('#shellInput').fill('git add index.js');await page.locator('#shellInput').press('Enter');await page.waitForFunction(()=>window.__gitRequests.some(r=>r.action==='stage'&&r.projectId==='created-project'));assert.equal(await page.evaluate(()=>monaco.editor.getEditors().find(e=>e.getModel()?.uri.path==='/project/index.js').getValue()),'// keep current code');
-await page.locator('#mainMenu').evaluate(e=>e.open=true);await page.locator('#desktop-git').click();await page.locator('[data-git=open]').click();await page.waitForFunction(()=>document.querySelector('#gitFolder').textContent==='/temporary/test-project');
-await page.evaluate(()=>monaco.editor.getEditors().find(e=>e.getModel()?.uri.path==='/project/index.js').setValue('// edited project'));
-await page.locator('[data-git=status]').click();await page.waitForFunction(()=>!document.querySelector('[data-git=status]').disabled);assert.match(await page.locator('#gitChanges').textContent(),/staged.*index.js/);
-let requests=await page.evaluate(()=>window.__gitRequests);const saved=requests.filter(r=>r.action==='save').at(-1);assert.equal(Buffer.from(saved.snapshot.files.find(f=>f.path==='/index.js').data,'base64').toString(),'// edited project');assert.deepEqual([...Buffer.from(saved.snapshot.files.find(f=>f.path==='/sound.bin').data,'base64')],[0,128,255]);
-await page.locator('[data-git=init]').click();await page.waitForFunction(()=>document.querySelectorAll('#gitChanges input').length===2);await page.locator('#gitMessage').fill('test commit');await page.locator('#gitAuthor').fill('Test');await page.locator('#gitEmail').fill('test@example.invalid');await page.locator('[data-git=commit]').click();await page.waitForFunction(()=>document.querySelector('#gitOutput').textContent.includes('test-commit'));requests=await page.evaluate(()=>window.__gitRequests);assert.deepEqual(requests.slice(-4).map(r=>r.action),['save','stage','commit','status']);assert(requests.every(r=>!Object.hasOwn(r,'passphrase')));assert.equal(await page.locator('#desktop-git-dialog input[type=password]').count(),0);
-await page.locator('#gitClose').click();await page.getByRole('button',{name:'sound.bin',exact:true}).click();await page.locator('#mainMenu').evaluate(e=>e.open=true);await page.locator('#desktop-git').click();await page.locator('[data-git=save]').click();await page.waitForFunction(()=>!document.querySelector('[data-git=save]').disabled);requests=await page.evaluate(()=>window.__gitRequests);const binarySave=requests.filter(r=>r.action==='save').at(-1);assert.deepEqual([...Buffer.from(binarySave.snapshot.files.find(f=>f.path==='/sound.bin').data,'base64')],[0,128,255]);
-await page.locator('[data-git=keys]').click();await page.waitForFunction(()=>document.querySelector('#gitOutput').textContent.includes('No Playground SSH key'));await page.locator('#gitClose').click();await page.locator('#shellTab').click();await page.locator('#shellInput').fill('git status');await page.locator('#shellInput').press('Enter');await page.waitForFunction(()=>document.querySelector('#shellOutput').textContent.includes('[staged] index.js'));assert.deepEqual(errors,[]);
-await page.locator('#mainMenu').evaluate(e=>e.open=true);await page.locator('#desktop-git').click();const beforeReload=await page.evaluate(()=>window.__gitRequests.filter(r=>r.action==='save').at(-1).revision+1);await page.locator('[data-git=reload]').click();await page.waitForFunction(()=>!document.querySelector('[data-git=reload]').disabled);assert.match(await page.locator('#gitOutput').textContent(),/Files were edited/);await page.locator('[data-git=save]').click();await page.waitForFunction(()=>document.querySelector('#gitOutput').textContent.includes('Project changed'));requests=await page.evaluate(()=>window.__gitRequests);assert.equal(requests.filter(r=>r.action==='save').at(-1).revision,beforeReload);if(process.env.GIT_TEST_SCREENSHOT)await page.screenshot({path:process.env.GIT_TEST_SCREENSHOT});
-console.log(JSON.stringify({passed:true,textAndBinary:true,saveStageCommit:true,shell:true,noWebviewPassword:true}));}finally{await browser.close();}})().catch(error=>{console.error(error);process.exit(1);});
+// Pinned desktop page with the shared JS Git and native HTTPS bridge.
+const {chromium,webkit}=require('playwright');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const local=path.resolve(__dirname,'..'),root=process.env.GIT_SOURCE_ROOT||local,desktop=true;
+(async()=>{const browser=await (process.argv.includes('--webkit')?webkit:chromium).launch({headless:true});try{
+  const page=await browser.newPage({acceptDownloads:true}),errors=[];page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept(dialog.type()==='prompt'?'git-round-trip':undefined));
+  if(desktop){
+    await page.addInitScript(()=>{
+      window.__gitRequests=[];
+      const pkt=text=>(new TextEncoder().encode(text).length+4).toString(16).padStart(4,'0')+text;
+      window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+        window.__gitRequests.push({command,args});
+        if(command==='git_https_begin')return 'native-session';
+        if(command==='git_https_request'){
+          const {url,method}=args.request;
+          if(window.__gitRejectNext){window.__gitRejectNext=false;throw 'Git host rejected authentication. Check token permissions and the repository URL';}
+          const body=method==='GET'?pkt('# service=git-receive-pack\n')+'0000'+pkt('0000000000000000000000000000000000000000 capabilities^{}\0report-status side-band-64k\n')+'0000':pkt('\x01'+pkt('unpack ok\n')+pkt('ok refs/heads/main\n')+'0000')+'0000';
+          return{url,statusCode:200,statusMessage:'OK',headers:{'content-type':method==='GET'?'application/x-git-receive-pack-advertisement':'application/x-git-receive-pack-result'},body:btoa(body)};
+        }
+      }};
+    });
+    await page.route('**/desktop-git-runtime.js',route=>route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(root,'desktop/git-runtime.bundle.js'),'utf8')}));
+    await page.route('**/playground.js?*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+'\n;\n'+fs.readFileSync(path.join(root,'desktop/git-interface.js'),'utf8')});});
+  }
+  await page.goto(process.env.GIT_TEST_URL||process.argv.find(arg=>arg.startsWith('--url='))?.slice(6)||'http://127.0.0.1:8087/index.html');
+  await page.waitForFunction(()=>window.monaco?.editor?.getEditors().some(e=>e.getModel()?.uri.path==='/project/index.js')&&document.getElementById('desktop-git'));
+  await page.evaluate(()=>monaco.editor.getEditors().find(e=>e.getModel()?.uri.path==='/project/index.js').setValue('// first revision\n'));
+  await page.locator('#shellTab').click();
+  const run=async(command,expected)=>{
+    await page.locator('#shellOutput').evaluate(element=>element.textContent='');const before='';await page.locator('#shellInput').fill(command);await page.locator('#shellInput').press('Enter');
+    await page.waitForFunction(({before,expected})=>{const text=document.querySelector('#shellOutput').textContent;return text!==before&&text.includes(expected)&&document.querySelector('#shellStopButton').disabled;},{before,expected}).catch(async error=>{throw Error(command+' failed: '+(await page.locator('#shellOutput').textContent()).slice(-3000)+'; '+errors.join('; '));});
+  };
+  await run('git init','On branch main');await run('git config user.name Test','Test');await run('git config user.email test@example.com','test@example.com');
+  await run('git diff','first revision');await run('git add index.js','[staged] index.js');await run('git diff --cached','first revision');await run('git commit -m first','\"commit\":');await run('git branch -a','* main');
+  await page.evaluate(()=>monaco.editor.getEditors().find(e=>e.getModel()?.uri.path==='/project/index.js').setValue('// browser edit\n'));
+  await run('git status .','[unstaged] index.js');await run('git diff','browser edit');
+  if(desktop){
+    await run('git remote add origin https://github.com/owner/repository.git','origin');await run('git remote -v','repository.git (push)');await page.evaluate(()=>window.__gitRejectNext=true);await run('git push origin main','Git host rejected authentication. Check token permissions');await run('git push origin main','"completed": true');
+    const requests=await page.evaluate(()=>window.__gitRequests);assert(requests.some(r=>r.command==='git_https_request'&&r.args.request.method==='POST'));
+    assert(!requests.some(r=>r.command==='git_request'));assert(requests.every(r=>!JSON.stringify(r).match(/password|authorization|personal_access_token/i)));
+  }else await run('git push origin main','Browser Git supports local operations');
+  await page.locator('#mainMenu').evaluate(e=>e.open=true);await page.locator('#exportCassetteButton').click();
+  const downloadPromise=page.waitForEvent('download');await page.locator('#confirmCassetteExportButton').click();const download=await downloadPromise;
+  const archive=await download.path();const {loadPlaygroundCassette}=await import(path.join(root,'dist/playground_cassette.js'));const cassette=await loadPlaygroundCassette(fs.readFileSync(archive));assert(cassette.files.has('.git/HEAD'));assert(cassette.files.has('.git/index'));assert(cassette.files.has('.git/refs/heads/main'));
+  await page.locator('#mainMenu').evaluate(e=>e.open=true);await page.locator('#newCassetteButton').click();await page.locator('#newCassetteDialog button[value=new]').click();await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('New cassette'));
+  await run('git status','No Git repository');
+  await page.locator('input[type=file][accept=".zip,application/zip"]').setInputFiles({name:'git-round-trip.cassette.zip',mimeType:'application/zip',buffer:fs.readFileSync(archive)});
+  await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('Loaded cassette'));
+  await run('git log','first');await run('git diff','browser edit');
+  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,desktop,localGit:true,cassetteHistoryRoundTrip:true,newCassetteClearsGit:true,nativeHttps:desktop}));
+}finally{await browser.close();}})().catch(error=>{console.error(error);process.exit(1);});

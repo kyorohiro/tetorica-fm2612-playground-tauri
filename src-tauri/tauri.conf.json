@@ -5,7 +5,10 @@
   "identifier": "net.tetorica.ym2612-playground",
   "build": {
     "frontendDist": "../dist",
-    "beforeDevCommand": "node scripts/prepare_audio_sidecar.mjs",
+    "beforeDevCommand": {
+      "script": "node scripts/prepare_audio_sidecar.mjs",
+      "wait": true
+    },
     "beforeBuildCommand": "node scripts/prepare_audio_sidecar.mjs"
   },
   "app": {
@@ -40,7 +43,8 @@
     ],
     "resources": {
       "../audio-sidecar-bundle/": "audio-sidecar/",
-      "../desktop/git-licenses.txt": "git-licenses.txt"
+      "../desktop/git-licenses.txt": "git-licenses.txt",
+      "../desktop/git-js-licenses.txt": "git-js-licenses.txt"
     }
   }
 }

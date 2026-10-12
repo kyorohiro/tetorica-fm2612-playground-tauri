@@ -190,66 +190,63 @@ SSE購読は提供せずGETに405を返します。ローカルのネイティ�
 GitHub Actionsは手動実行で各OSのインストーラーを生成し、`v*`タグでドラフトリリースへ添付します。
 署名・公証の設定は含みません。秘密情報を含む他アプリの配布スクリプトはコピーしていません。
 
-## 内蔵 Git（開発中）
+## Cassette Git（開発中）
 
-今の編集内容から始める場合は、Shell で `git start`、または Menu → **Git…** →
-**Save current project and start Git…** を選びます。native のフォルダ選択で空フォルダを
-作成・選択すると、現在のファイルを保存して Git を初期化します。エディタの内容は保持します。
-続けて `git add index.js`、`git commit -m "First commit"` と進めます。
-空でないフォルダへの新規保存は拒否します。
+ローカル Git は browser と Tauri で同じ JavaScript 実装（isomorphic-git）を使用します。
+`/.git` は Virtual Files に保存され、Export Cassette に履歴・ステージ・接続先が含まれます。
+Import Cassette はその履歴を復元し、New Cassette は編集ファイルと履歴を消します。
+通常の Git 操作で実フォルダを選ぶ必要はありません。
 
-Menu → **Git…** から実フォルダを開きます。Virtual Files と Monaco に取り込み、
-**Save files** で実フォルダへ保存します。外部で変更されたファイルは無条件に上書きせず、競合として停止します。
-`.git`、`.ssh`、`/sys`、node_modules、target は編集対象に取り込みません。
-保存からの削除は、このセッションで取り込んだ管理対象ファイルだけに限定します。
-フォルダの関連付けはセッション内で保持し、New/Import Cassette や再起動後は開き直します。
-
-初めてのフォルダでは **Initialize Git**、保存後は **Changes** でファイルを選び、
-メッセージと Author/Email を指定して **Stage selected and commit** を押します。
-Author/Email が両方空の場合は Git 設定の署名情報を利用します。
-コミットには既にステージ済みのファイルも含みます。`git diff --cached` で確認できます。
-Changes／Diff と Shell の `git status`／`git diff` は、現在の編集内容をフォルダへ保存してから確認します。
-Status は untracked／unstaged／staged を表示します。`git diff` は未ステージの差分、
-`git diff --cached` はステージ済みの差分です。History は直近50コミットを表示します。
-
-Shell でも `git init`, `git status`, `git diff [--cached]`, `git add PATH...`,
-`git add .`, `git commit -m MESSAGE`, `git log`, `git fetch`, `git pull`, `git push` が利用できます。
-これらは native API の別名であり、システムの Git/SSH CLI は呼びません。
-
-SSH は **Generate SSH key…** でアプリ専用の Ed25519 鍵を作り、**Show public key** の公開鍵を
-Git ホストへ登録します。既存の秘密鍵やシステムの ssh-agent は利用しません。
-秘密鍵はパスフレーズ必須で暗号化し、アプリのデータ領域に owner-only で保存します（Unix）。
-パスフレーズは macOS の native secure text field で入力し、WebView・IPC に渡しません。
-現在、Windows/Linux の secure input は未実装のため、それらの環境では SSH 操作を拒否します。
-公開鍵は一つだけ管理し、既存の鍵は上書きしません。
-
-SSH repository URL を入力して **Set origin…** で接続先を設定し、Fetch/Pull/Push を利用します。
-Clone は選択した空フォルダへ行います。初回のホスト鍵は native ダイアログで確認し、
-登録済みの鍵が変わった場合は接続を拒否します。Push は現在のブランチへの non-force push のみです。
-Pull は保存・コミット済みの clean な作業ツリーからの fast-forward のみを扱い、分岐した履歴の
-自動 merge/rebase、ブランチ切り替え、LFS、submodule、コミット署名は未対応です。
-シンボリックリンク・hard link、linked worktree、外部 workdir、非UTF-8のパスは現在取り扱いません。
-
-**Request cancel** は通信の中断を要求します。チェック地点で中断するため即時停止ではなく、
-既にサーバーが受理した push を取り消す機能ではありません。
-1ファイル64MiB・プロジェクト合計256MiB・10000ファイル/ディレクトリまで取り込みます。
-保存はファイル単位の一時ファイルと rename を使い、失敗時は可能な範囲でロールバックします。
-複数ファイル全体のクラッシュ時原子性は保証しません。
-
-Git は `git2`/内蔵 `libgit2`、SSH 通信は `libssh2`、鍵生成と暗号化は Rust の `ssh-key` を使用します。
-検証は native の同期・Git・鍵テスト、テスト用 SSH サーバーによる生成鍵の認証、
-配布済み Web 本体に追加した Git UI の保存・ステージ・コミット・Shell 連携を対象としています。
-実際の Git ホストと各OSでの動作は、配布前に別途確認してください。
-
-Git の追加検証:
+Menu → **Git…**、または Shell で操作できます。
 
 ```sh
-cargo test --locked --manifest-path src-tauri/Cargo.toml
-npm run test:git:ssh
-# dist/ を 8087 で配信し、Playwright を用意してから:
-npm run test:git:browser
+git init
+git config user.name "Your Name"
+git config user.email "you@example.com"
+git add index.js
+git commit -m "First commit"
+git status .
+git status --short
+git diff index.js
+git diff --cached
+git log
+git branch -a
 ```
 
-SSH テストは一時サーバーと一時的な生成鍵だけを使い、ユーザーの鍵・SSH agent・Git ホストには接続しません。
-Git UI のブラウザ検証は `GIT_TEST_URL` で配信先を変更できます。
-内蔵 Git の依存ライセンスは bundle 内の `git-licenses.txt` に同梱します。
+エディタの変更は Git 操作前に Virtual Files へ反映します。`git diff` は未ステージの変更、
+`git diff --cached` はステージ済みの変更です。`git add .` はプロジェクト全体を対象にします。
+`/.git` と `/sys` はステージ対象に含みません。
+名前・メールはリポジトリ設定として Cassette に保存します。
+
+Tauri は HTTPS の remote 操作を native Rust に任せます。Node.js や外部 CORS proxy は不要です。
+
+```sh
+git remote add origin https://github.com/owner/repository.git
+git remote -v
+git push origin main
+git fetch
+git pull
+```
+
+操作ごとに native の secure input で Personal Access Token を入力します。
+トークンは WebView／IPC／Cassette／ディスクへ渡さず、native の一時メモリに置き、
+操作終了時に破棄します。通信先を承認済みのリポジトリと Git HTTPS endpoint に限定し、
+redirect は拒否します。Push の送信先・branch・commit は native ダイアログで確認します。
+現在、secure input は macOS のみ対応しています。Windows/Linux では remote 操作を拒否します。
+Browser 版はローカル操作のみ対応します。SSH 鍵は新方式では使用しません。
+
+前の実フォルダ方式で作った履歴は **Import existing repository folder…** から取り込めます。
+フォルダ内のファイルと `.git` を Cassette にコピーします。元の実フォルダは変更しません。
+SSH URL の origin は HTTPS URL に設定し直してください。
+
+Cassette は ZIP／展開後とも 16 MiB 上限です。Git のメモリ FS は通常ファイルのみ対応し、
+symlink、実行ビットの保存、submodule、Git LFS は未対応です。
+Pull は変更のない作業状態での fast-forward のみ対応します。
+Git 操作は隔離した snapshot 上で実行し、キャンセルや編集中の変更があれば古い内容を反映しません。
+リモートで完了した push はキャンセルしても取り消されません。
+
+検証: root repository の `npm run test:virtual-files` と
+`node scripts/check_virtual_git_browser.cjs`、native の `cargo test`。
+GitHub での新方式の認証・push は別途実環境で確認してください。
+
+Git／HTTPS の依存ライセンスはアプリの `git-licenses.txt`、`git-js-licenses.txt` に同梱します。
