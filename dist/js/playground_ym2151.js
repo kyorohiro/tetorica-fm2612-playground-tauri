@@ -1,3 +1,5 @@
+import {noteToHz, opmPitchFromHz} from './soundchip_pitch.js';
+import {attachChipClock, CHIP_CLOCKS} from './playground_chip_clock.js';
 /** Independent OPM client. Operator indices follow register order M1, C1, M2, C2. */
 /** @param {MessagePort} port */
 export function createYm2151Client(port) {
@@ -21,7 +23,7 @@ export function createYm2151Client(port) {
     ks: [0x80, 6, 3], ar: [0x80, 0, 31], am: [0xa0, 7, 1], d1r: [0xa0, 0, 31],
     dt2: [0xc0, 6, 3], d2r: [0xc0, 0, 31], d1l: [0xe0, 4, 15], rr: [0xe0, 0, 15],
   };
-  return {
+  const client = {
     writeRegister,
     reset() { send('reset'); registers.fill(0); },
     setOperator(ch, operator, options) {
@@ -40,21 +42,13 @@ export function createYm2151Client(port) {
     setPan(ch, left, right) {
       channel(ch); writeRegister(0x20 + ch, (registers[0x20 + ch] & 0x3f) | (left ? 0x40 : 0) | (right ? 0x80 : 0));
     },
-    /** MIDI integer 13..108 (C#0..C8), at the default 3579545 Hz clock. */
-    setNote(ch, note) {
-      channel(ch);
-      let midi = note;
-      if (typeof note === 'string') {
-        const match = /^([A-Ga-g])([#b]?)(-?\d+)$/.exec(note);
-        if (!match) throw new RangeError('Invalid YM2151 note');
-        midi = (Number(match[3]) + 1) * 12 + ({C:0,D:2,E:4,F:5,G:7,A:9,B:11}[match[1].toUpperCase()]) + (match[2] === '#' ? 1 : match[2] === 'b' ? -1 : 0);
-      }
-      if (!Number.isInteger(midi) || midi < 13 || midi > 108) throw new RangeError('YM2151 note must be C#0..C8 (MIDI 13..108)');
-      const index = midi - 13;
-      const keyCode = (Math.floor(index / 12) << 4) | [0,1,2,4,5,6,8,9,10,12,13,14][index % 12];
-      writeRegister(0x28 + ch, keyCode); writeRegister(0x30 + ch, 0);
-      return keyCode;
+    /** Note name or integer MIDI 0..127; hardware KC/KF range applies. */
+    setNote(ch, note) { return client.setFrequency(ch, noteToHz(note)).keyCode; },
+    setFrequency(ch, hz) {
+      channel(ch); const pitch = opmPitchFromHz(hz, client.clock);
+      client.setPitch(ch, pitch.keyCode, pitch.keyFraction); return pitch;
     },
+    noteOn(ch, note) { client.setNote(ch, note); client.keyOn(ch); },
     /** Raw key code and 6-bit key fraction; useful for bends and VGM values. */
     setPitch(ch, keyCode, keyFraction = 0) {
       channel(ch); integer(keyCode, 127, 'Key code'); integer(keyFraction, 63, 'Key fraction');
@@ -65,4 +59,5 @@ export function createYm2151Client(port) {
     setNoise(enabled, frequency = 0) { integer(frequency, 31, 'Noise frequency'); writeRegister(15, (enabled ? 128 : 0) | frequency); },
     dispose() { if (disposed) return; send('dispose'); disposed = true; port.close(); },
   };
+  return attachChipClock(client, port, CHIP_CLOCKS.ym2151);
 }

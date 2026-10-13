@@ -1,3 +1,4 @@
+import {noteToHz as noteHz} from './soundchip_pitch.js';
 /** Shared, synchronous Game Boy register synthesizer. No audio-device dependency. */
 import {GAMEBOY_APU_CLOCK} from './gameboyapu.js';
 /** @typedef {{direction?:'down'|'up',period?:number}} GameboyEnvelope
@@ -5,8 +6,8 @@ import {GAMEBOY_APU_CLOCK} from './gameboyapu.js';
  * @typedef {{volume?:number,envelope?:GameboyEnvelope,divisor?:number,shift?:number,width?:7|15}} GameboyNoiseVoice
  * @typedef {GameboyEnvelope & {volume?:number}} GameboyEnvelopeSettings
  * @typedef {{direction?:'down'|'up',period?:number,shift?:number}} GameboySweep
- * @typedef {{setVoice(ch:number,voice:GameboyPulseVoice):void,setDuty(ch:number,duty:0.125|0.25|0.5|0.75):void,setEnvelope(ch:number,envelope:GameboyEnvelopeSettings):void,setSweep(sweep:GameboySweep):void,setFrequency(ch:number,hz:number):number,setNote(ch:number,note:string|number):number,keyOn(ch:number):void,keyOff(ch:number):void}} GameboyPulseApi
- * @typedef {{stopAndSetWaveform(samples:number[]|Uint8Array):void,setWaveform(samples:number[]|Uint8Array):void,setLevel(level:0|1|0.5|0.25):void,setFrequency(hz:number):number,setNote(note:string|number):number,keyOn():void,keyOff():void}} GameboyWaveApi
+ * @typedef {{setVoice(ch:number,voice:GameboyPulseVoice):void,setDuty(ch:number,duty:0.125|0.25|0.5|0.75):void,setEnvelope(ch:number,envelope:GameboyEnvelopeSettings):void,setSweep(sweep:GameboySweep):void,setFrequency(ch:number,hz:number):number,setNote(ch:number,note:string|number):number,keyOn(ch:number):void,keyOff(ch:number):void,noteOn(ch:number,note:string|number):void}} GameboyPulseApi
+ * @typedef {{stopAndSetWaveform(samples:number[]|Uint8Array):void,setWaveform(samples:number[]|Uint8Array):void,setLevel(level:0|1|0.5|0.25):void,setFrequency(hz:number):number,setNote(note:string|number):number,keyOn():void,keyOff():void,noteOn(note:string|number):void}} GameboyWaveApi
  * @typedef {{setVoice(voice:GameboyNoiseVoice):void,setEnvelope(envelope:GameboyEnvelopeSettings):void,setParameters(parameters:Pick<GameboyNoiseVoice,'divisor'|'shift'|'width'>):void,keyOn():void,keyOff():void}} GameboyNoiseApi
  */
 const DUTIES = [0.125, 0.25, 0.5, 0.75];
@@ -25,17 +26,6 @@ function options(value, keys) {
       (Object.getPrototypeOf(value) !== null && Object.getPrototypeOf(Object.getPrototypeOf(value)) !== null)) throw new TypeError('Expected options object');
   for (const key of Reflect.ownKeys(value)) if (!keys.includes(key)) throw new TypeError(`Unknown property: ${String(key)}`);
 }
-/** @param {string | number} note */
-function noteHz(note) {
-  let midi = note;
-  if (typeof note === 'string') {
-    const match = /^([A-G])([#b]?)(-?\d+)$/.exec(note);
-    if (!match) throw new RangeError('Invalid note');
-    midi = (Number(match[3]) + 1) * 12 + {C:0,D:2,E:4,F:5,G:7,A:9,B:11}[match[1]] + (match[2] === '#' ? 1 : match[2] === 'b' ? -1 : 0);
-  }
-  integer(midi, 0, 127);
-  return 440 * 2 ** ((midi - 69) / 12);
-}
 /** Borrows the core. Disposing a Synth never destroys this transport's chip. */
 export class GameboyDirectTransport {
   /** @param {import('./gameboyapu.js').GameboyApu} chip */
@@ -49,14 +39,14 @@ export class GameboyDirectTransport {
   reset() { this.chip.reset(); }
 }
 export class GameboySynth {
-  #transport; #clock; #disposed = false; #initialized = false;
+  #transport; #disposed = false; #initialized = false;
   // Sent registers and configured values retained across keyOff. Neither is core status.
   #shadow = new Uint8Array(48); #voice = new Uint8Array(48);
   /** @param {{transport: {writeRegister(offset: number, value: number): void, reset(): void}, clock?: number}} [options] */
   constructor({transport, clock = GAMEBOY_APU_CLOCK} = {}) {
     if (!transport || typeof transport.writeRegister !== 'function' || typeof transport.reset !== 'function') throw new TypeError('Expected transport');
     integer(clock, 1, 0x3fffffff);
-    this.#transport = transport; this.#clock = clock;
+    this.#transport = transport; this.clock = clock;
     /** @type {Readonly<GameboyPulseApi>} */
     this.pulse = Object.freeze({
       setVoice: (ch, value) => this.#setVoice(this.#pulse(ch), value, false),
@@ -65,6 +55,7 @@ export class GameboySynth {
       setSweep: value => this.#sweep(value),
       setFrequency: (ch, hz) => this.#frequency(this.#pulse(ch) + 3, hz, 32),
       setNote: (ch, note) => { this.#ready(); return this.#frequency(this.#pulse(ch) + 3, noteHz(note), 32); },
+      noteOn: (ch, note) => { this.pulse.setNote(ch, note); this.pulse.keyOn(ch); },
       keyOn: ch => this.#keyOn(this.#pulse(ch)),
       keyOff: ch => { const base = this.#pulse(ch); this.#ready(); this.#send(base + 2, 0); },
     });
@@ -75,6 +66,7 @@ export class GameboySynth {
       setLevel: level => { this.#ready(); const code = choice(level, LEVELS); this.#update(12, 0x60, code << 5, true); },
       setFrequency: hz => this.#frequency(13, hz, 64),
       setNote: note => { this.#ready(); return this.#frequency(13, noteHz(note), 64); },
+      noteOn: note => { this.wave.setNote(note); this.wave.keyOn(); },
       keyOn: () => { this.#ready(); this.#send(10, this.#voice[10] | 0x80); this.#send(12, this.#voice[12]); this.#trigger(13); },
       keyOff: () => { this.#ready(); this.#send(10, this.#shadow[10] & 0x7f); },
     });
@@ -184,17 +176,40 @@ export class GameboySynth {
   #frequency(low, hz, divisor) {
     this.#ready();
     if (!Number.isFinite(hz) || hz <= 0) throw new RangeError('Expected finite positive Hz');
-    const n = Math.round(2048 - this.#clock / (divisor * hz));
+    const n = Math.round(2048 - this.clock / (divisor * hz));
     integer(n, 0, 2047);
     this.#update(low, 255, n & 255, true);
     this.#update(low + 1, 0x87, n >> 8, true); // Never replay trigger; retain length-enable.
-    return this.#clock / (divisor * (2048 - n));
+    return this.clock / (divisor * (2048 - n));
   }
   #trigger(low) {
     this.#send(low, this.#voice[low]);
     this.#voice[low + 1] &= ~0xc0;
     this.#send(low + 1, this.#voice[low + 1] | 0x80);
   }
+  /** Tone channel 0/1=pulse, 2=wave. Configure Hz without triggering.
+   * @param {number} ch @param {number} hz */
+  setFrequency(ch, hz) {
+    integer(ch, 0, 2);
+    return ch === 2 ? this.wave.setFrequency(hz) : this.pulse.setFrequency(ch, hz);
+  }
+  /** @param {number} ch @param {string|number} note */
+  setNote(ch, note) {
+    integer(ch, 0, 2);
+    return ch === 2 ? this.wave.setNote(note) : this.pulse.setNote(ch, note);
+  }
+  /** Channel 0/1=pulse, 2=wave, 3=noise. @param {number} ch */
+  keyOn(ch) {
+    integer(ch, 0, 3);
+    if (ch === 2) this.wave.keyOn(); else if (ch === 3) this.noise.keyOn(); else this.pulse.keyOn(ch);
+  }
+  /** @param {number} ch */
+  keyOff(ch) {
+    integer(ch, 0, 3);
+    if (ch === 2) this.wave.keyOff(); else if (ch === 3) this.noise.keyOff(); else this.pulse.keyOff(ch);
+  }
+  /** Set a note name or integer MIDI note and trigger. @param {number} ch @param {string|number} note */
+  noteOn(ch, note) { this.setNote(ch, note); this.keyOn(ch); }
   #keyOn(base) {
     this.#ready();
     if (base === 0) this.#send(0, this.#voice[0]);

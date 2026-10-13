@@ -1,10 +1,12 @@
 import {installFileExplorerResize} from './playground_file_resize.js';
+import {installFileExplorerMenu} from './playground_file_menu.js?v=file-menu-1';
 import {installPlaygroundWorkbench} from './playground_workbench.js?v=compact-shell-1';
 import {installPlaygroundShell} from './playground_shell.js?v=compact-shell-1';
 import {installPlaygroundGit} from './playground_git.js';
 import {openDraftStore, createProjectAutosave} from './playground_autosave.js';
 let desktopAutosave = null;
 let playgroundShell = null;
+let fileExplorerMenu = null;
 let restoredDesktopProject = false;
 let pendingDesktopCassetteAssets = null;
 const cassettePresetNames = new Set();
@@ -34,8 +36,8 @@ import {
   createPlaygroundOperatorTab,
 } from "./playground_operator_tab.js";
 import { createPlaygroundOperatorKeyboard } from "./playground_operator_keyboard.js";
-import { DEFAULT_CODE, EXAMPLES, EXAMPLE_FILES } from "./playground_examples.js?v=play-units-1";
-import { initializePlaygroundMonaco } from "./playground_monaco.js?v=cassette-autosave-1";
+import { DEFAULT_CODE, EXAMPLES, EXAMPLE_FILES } from "./playground_examples.js?v=shared-beat-clock-1";
+import { initializePlaygroundMonaco } from "./playground_monaco.js?v=shared-beat-clock-1";
 import {
   decodeBase64Bytes,
   loadTfiPresetsFromQuery,
@@ -64,16 +66,17 @@ import { exportYm2608VgmToPlaygroundJavaScript } from "./js/ym2608vgm.js";
 import { exportYm2610BVgmToPlaygroundJavaScript } from "./js/ym2610bvgm.js";
 import {
   createPlaygroundRuntime,
-} from "./js/playground_runtime.js?v=live-fx-definitions-1";
+} from "./js/playground_runtime.js?v=shared-beat-clock-1";
 import { createVgmPresetFiles } from "./playground_vgm_presets.js";
 import { createTfiFileEditor, tfiToEditorPreset } from "./playground_tfi_editor.js";
-import { renderFileTree } from "./playground_file_tree.js?v=virtual-files-1";
+import { renderFileTree } from "./playground_file_tree.js?v=file-menu-1";
 import { createPlaygroundUi } from "./playground_ui.js?v=fx-monitor-1";
 import {
   handleMegaSynthEvent,
 } from "./playground_sync.js";
 
 const REFERENCE_MIDI = 62;
+window.__playgroundStartup?.stage('Starting Playground… Preparing your project.');
 const REFERENCE_BLOCK = 4;
 const REFERENCE_FNUM = 553;
 const NOTE_TO_SEMITONE = {
@@ -1349,9 +1352,9 @@ function clearVirtualTfiPresets() {
 
 function transferExplorerFiles(source, destination, copy = false) {
   try {
+    if (normalizeVirtualPath(source) === normalizeVirtualPath(destination)) return false;
     saveActiveVirtualFile();
     const moved = transferVirtualFiles(virtualFiles, source, destination, { copy });
-    if (!moved.length) return;
     if (!copy) {
       const active = moved.find(entry => entry.from === activeVirtualPath);
       const running = moved.find(entry => entry.from === runVirtualPath);
@@ -1370,9 +1373,39 @@ function transferExplorerFiles(source, destination, copy = false) {
     renderVirtualFileExplorer();
     renderRunFileOptions();
     setStatus(`${copy ? "Copied" : "Moved"} ${source} to ${destination}.`);
+    return true;
   } catch (error) {
     setStatus(`Could not ${copy ? "copy" : "move"}: ${error.message}`);
+    return false;
   }
+}
+
+function refreshExplorerFiles(directory = '/') {
+  editorAdapter.syncVirtualFiles?.(virtualFiles.list());
+  clearVirtualTfiPresets();
+  registerVirtualTfiPresets();
+  expandedFileFolders.set(directory, true);
+  renderVirtualFileExplorer();
+  renderRunFileOptions();
+}
+
+function deleteExplorerPath(path) {
+  if (path === '/' || path === '/index.js' || path === '/sys' || isSystemVirtualPath(path)) {
+    setStatus('This project path cannot be deleted.');
+    return;
+  }
+  const contains = value => value === path || value?.startsWith(`${path}/`);
+  const directory = virtualFiles.stat(path).type === 'directory';
+  if (!window.confirm(`Delete ${path}${directory ? ' and all its contents' : ''}?`)) return;
+  saveActiveVirtualFile();
+  virtualFiles.remove(path, {recursive: true});
+  if (contains(runVirtualPath)) runVirtualPath = '/index.js';
+  if (contains(activeVirtualPath) || contains(activeTfiFilePath)) {
+    activeVirtualPath = '/index.js';
+    showVirtualFile(virtualFiles.get(activeVirtualPath));
+  }
+  refreshExplorerFiles();
+  setStatus(`Deleted ${path}.`);
 }
 
 function promptExplorerTransfer(copy) {
@@ -1731,6 +1764,7 @@ function formatCassetteStatus(assets) {
 
 function restoreVirtualFilesFromCassette(cassette) {
   playgroundShell?.invalidate('Project changed');
+  fileExplorerMenu?.clear();
   const textExtensions = /\.(?:js|json|md|txt)$/i;
   const previousSource = getEditorValue();
   clearVirtualTfiPresets();
@@ -2288,10 +2322,23 @@ function bootPlayground() {
   renderVirtualFileExplorer();
   renderRunFileOptions();
   installPlaygroundEventHandlers();
+  fileExplorerList.setAttribute('aria-busy', 'false');
+  editor.readOnly = false;
+  window.__playgroundStartup?.stage('Project ready. Loading the code editor…');
   editor.addEventListener('input', syncActiveEditorFile);
   ui.installBottomTabHandlers();
 installTfiEditorDropTarget();
 installFileExplorerDropTarget();
+  fileExplorerMenu = installFileExplorerMenu({
+    root: fileExplorerList,
+    fs: virtualFiles,
+    sync: saveActiveVirtualFile,
+    transfer: transferExplorerFiles,
+    onChanged: refreshExplorerFiles,
+    onCreated: openVirtualFile,
+    onDelete: deleteExplorerPath,
+    status: setStatus,
+  });
   void initializePlaygroundMonaco({
     chip: selectedChip,
     editor,
@@ -2326,7 +2373,7 @@ installFileExplorerDropTarget();
         },
       });
     },
-  });
+  }).then(() => window.__playgroundStartup?.ready(), error => window.__playgroundStartup?.fail(error));
 }
 
 async function initializeDesktopAutosave() {
@@ -2370,6 +2417,7 @@ async function initializeDesktopAutosave() {
   } catch (error) {status(`Autosave unavailable: ${error.message ?? error}`);}
 }
 
+if (window.__TAURI_INTERNALS__) window.__playgroundStartup?.stage('Starting Playground… Restoring your saved project.');
 await initializeDesktopAutosave();
 bootPlayground();
 let shellPreviousPath = activeVirtualPath;

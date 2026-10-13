@@ -1,8 +1,10 @@
+import {midiToOpnPitch, opnPitchFromHz} from './soundchip_pitch.js';
+import {CHIP_CLOCKS} from './playground_chip_clock.js';
 import {createNesClient} from './playground_nes.js';
 import {createPWM32XClient} from './pwm32x_playback.js';
 import {createYm2151Client} from './playground_ym2151.js';
 import {createSegaPsgClient} from './playground_segapsg.js';
-import {resolvePlaySeconds} from './playground_duration.js';
+import {resolvePlaySeconds,resolvePlayDuration} from './playground_duration.js?v=shared-beat-clock-1';
 import {createLoopAsyncTasks} from './playground_async_tasks.js';
 import {createOpnClient} from './playground_opn.js';
 import {createSoundChipRegistry} from './playground_soundchips.js';
@@ -20,9 +22,9 @@ import {serializeLogError} from './playground_log.js';
 import {createNativeNoiseController, controlNativeNoise} from './native_noise.js';
 import {createWorkerDac} from './playground_worker_dac.js';
 import {createWorkerChip} from './playground_worker_chip.js?v=dac-pcm-1';
-import {createMidiApi, createMidiRack} from './playground_midi.js?v=play-units-1';
+import {createMidiApi, createMidiRack} from './playground_midi.js?v=shared-beat-clock-1';
 import { hzToBlockFnum } from "./pitch.js";
-import { createDeadlineScheduler } from "./playground_clock.js?v=loop-async-tasks-1";
+import {createDeadlineScheduler,createBeatClock,runTween} from './playground_clock.js?v=shared-beat-clock-1';
 
 import {createNativeFXController,createLiveFxLifecycle} from "./native_fx.js?v=live-fx-definitions-1";
 let nativeFXPort = null;
@@ -191,18 +193,32 @@ function request(command, args = [], loopContext = null) {
 }
 
 function createClock(run) {
-  const scheduler = createDeadlineScheduler({ now: () => performance.now() / 1000 });
-  let bpm = 120;
-  let clockStart = performance.now() / 1000;
+  const scheduler = createDeadlineScheduler({ now: () => performance.now() / 1000,
+    setTimer:(fn,ms)=>setTimeout(fn,ms), clearTimer:id=>clearTimeout(id),
+    createTaskChannel:()=>typeof MessageChannel === 'function' ? new MessageChannel() : null,
+  });
+  const state = {bpm:120,clockStartTime:performance.now()/1000};
+  const beatClock = createBeatClock({now:()=>performance.now()/1000,scheduler,state});
   let sampleClockStart = null;
   let dacLookaheadSeconds = 0.25;
 
   function secondsPerBeat() {
-    return 60 / bpm;
+    return 60 / state.bpm;
   }
 
   function currentBeat() {
-    return (performance.now() / 1000 - clockStart) / secondsPerBeat();
+    return beatClock.currentBeat();
+  }
+
+  async function waitForBeat(target) {
+    const token=run.token, context=run.currentLoop;
+    const check=()=>{
+      if(context?.interruptError && !run.stopped && !context.stopped)throw context.interruptError;
+      if(run.stopped || token!==run.token || context?.stopped || (context && !run.loops.has(context.name)))throw new Error('Run stopped');
+    };
+    check();
+    await new Promise(resolve=>beatClock.wait(target,()=>{run.currentLoop=context;resolve();},context));
+    check();
   }
 
   async function sleep(seconds) {
@@ -246,7 +262,9 @@ function createClock(run) {
       });
     },
     currentBeat,
-    getBpm: () => bpm,
+    getBpm: () => state.bpm,
+    waitForBeat,
+    waitBeats: beats => waitForBeat(currentBeat()+beats),
     sleep,
     async sleepSamples(samples, sampleRate = 44100) {
       const duration = Math.max(0, Number(samples) || 0) / Math.max(1, Number(sampleRate) || 44100);
@@ -262,27 +280,25 @@ function createClock(run) {
       await sleepUntil(sampleClockStart + loopContext.sampleCursorSeconds, loopContext);
     },
     async beat(beats = 1) {
+      if(!Number.isFinite(beats)||beats<0)throw new RangeError('Beats must be finite and nonnegative');
       const context = run.currentLoop;
       if (!context) {
-        await sleep((Number(beats) || 0) * secondsPerBeat());
+        await waitForBeat(currentBeat()+beats);
         return;
       }
-      context.cursorBeat = Math.max(context.cursorBeat, currentBeat()) + (Number(beats) || 0);
-      await sleep(Math.max(0, context.cursorBeat - currentBeat()) * secondsPerBeat());
+      context.cursorBeat = Math.max(context.cursorBeat, currentBeat()) + beats;
+      await waitForBeat(context.cursorBeat);
     },
     async nextBeat() {
       const context = run.currentLoop;
       const next = Math.floor(Math.max(context?.cursorBeat ?? 0, currentBeat()) + 0.000001) + 1;
       if (context) context.cursorBeat = next;
-      await sleep(Math.max(0, next - currentBeat()) * secondsPerBeat());
+      await waitForBeat(next);
     },
     setBpm(value) {
-      const next = Number(value);
-      if (!Number.isFinite(next) || next <= 0) throw new Error(`Invalid BPM: ${value}`);
-      const position = currentBeat();
-      bpm = next;
+      beatClock.setBpm(value);
       run.syncFXTempo?.();
-      clockStart = performance.now() / 1000 - position * secondsPerBeat();
+      postMessage({type:'tempo',bpm:state.bpm});
     },
     beginSampleSchedule() {
       if (sampleClockStart === null) {
@@ -317,6 +333,7 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
     audioHandles: new Set(),
   };
   const clock = createClock(run);
+  run.setBpm = clock.setBpm;
   clock.setDacLookahead(timing.lookaheadSeconds ?? 0.25);
   run.resetSampleClock = () => clock.resetSampleClock();
   const commandProxy = (command) => (...args) => postCommand(command, args);
@@ -325,8 +342,11 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
   run.resumeChip = () => chip?.resume();
   const workerDac = chip && capabilities.dac ? createWorkerDac(chip.send, timing) : null;
   run.resetSampleClock = () => { clock.resetSampleClock(); workerDac?.reset(); };
+  let fallbackClock = timing.chipClock ?? CHIP_CLOCKS[capabilities.chip ?? 'ym2612'];
   const fm = new Proxy({}, {
     get(_target, property) {
+      if (property === 'clock') return chip?.fm.clock ?? fallbackClock;
+      if (property === 'setClock' && !chip) return async hz => { await request('fm.setClock', [hz], run.currentLoop); fallbackClock = hz; };
       if (property === "id") return capabilities.chip ?? "ym2612";
       if (property === "then") return undefined;
       if (property === "dac") {
@@ -537,36 +557,20 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
     const rootMidi = noteToMidi(root);
     return intervals.map((interval) => midiToNote(rootMidi + interval));
   };
-  const pitchFromMidi = (midi) => {
-    let block = 4;
-    let fnum = 553 * Math.pow(2, (midi - 62) / 12);
-    while (fnum >= 1024 && block < 7) {
-      fnum /= 2;
-      block += 1;
-    }
-    while (fnum < 512 && block > 0) {
-      fnum *= 2;
-      block -= 1;
-    }
-    return { block, fnum: Math.max(0, Math.min(0x7ff, Math.round(fnum))) };
-  };
+  const pitchFromMidi = midi => midiToOpnPitch(midi, fm.clock ?? CHIP_CLOCKS[capabilities.chip ?? 'ym2612'], capabilities.chip === 'ym2203' ? 72 : 144);
   const noteToBlockFnum = (note) => pitchFromMidi(typeof note === "number" ? note : noteToMidi(note));
   const noteLerp = (from, to, amount) => pitchFromMidi(
     noteToMidi(from) + (noteToMidi(to) - noteToMidi(from)) * Number(amount)
   );
-  const tween = async (seconds, fn) => {
-    if (typeof fn !== "function") throw new Error("tween(seconds, fn) requires a callback");
-    const duration = Math.max(0, Number(seconds) || 0);
-    if (duration === 0) return fn(1);
-    const startedAt = performance.now();
-    await fn(0);
-    while (true) {
-      const progress = Math.min(1, (performance.now() - startedAt) / (duration * 1000));
-      if (progress >= 1) break;
-      await clock.sleep(Math.min(1 / 60, duration / 16));
-      await fn(Math.min(1, (performance.now() - startedAt) / (duration * 1000)));
-    }
-    await fn(1);
+  const tween = (duration, onUpdate) => {
+    const token=run.token, context=run.currentLoop;
+    return runTween(duration,onUpdate,{
+      seconds:()=>performance.now()/1000,beats:clock.currentBeat,getBpm:clock.getBpm,sleep:clock.sleep,
+      check:()=>{
+        if(context?.interruptError && !run.stopped && !context.stopped)throw context.interruptError;
+        if(run.stopped || token!==run.token || context?.stopped || (context && !run.loops.has(context.name)))throw new Error('Run stopped');
+      },
+    });
   };
   let localMidiRack=null;
   const midi=createMidiApi((method,args)=> {
@@ -574,6 +578,7 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
     if(chip && capabilities.chip==='ym2612'){
       if(chip.raw.dac?.enabled)throw new Error('Disable DAC before using MIDI FM playback');
       localMidiRack ??= createMidiRack({
+        getClockScale:() => CHIP_CLOCKS.ym2612 / (fm.clock ?? CHIP_CLOCKS.ym2612),
         preset:Object.values(presets)[0] ?? {},
         write:entry=>chip.write(entry.port,entry.register,entry.value),
         writePsg:entry=>chip.psg.write(entry.value),
@@ -582,9 +587,10 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
       return localMidiRack[method](...args);
     }
     return request('midi.invoke',[method,args],run.currentLoop);
-  },{sleep:clock.sleep,bpm:clock.getBpm,owner:()=>run.currentLoop?.name??null,check:()=>{if(run.stopped || run.currentLoop?.stopped)throw new DOMException('Run stopped','AbortError');}});
+  },{sleep:clock.sleep,waitBeats:clock.waitBeats,bpm:clock.getBpm,owner:()=>run.currentLoop?.name??null,check:()=>{if(run.stopped || run.currentLoop?.stopped)throw new DOMException('Run stopped','AbortError');}});
   run.midi=midi;
   run.adoptChipState=state=>chip?.adoptState(state);
+  run.adoptChipClock=hz=>{fallbackClock=hz;chip?.raw._adoptClock(hz);};
   const localNoteOwners=new Map();
   const globals = {
     trackAsync: promise => loopTasks.track(promise),
@@ -634,14 +640,16 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
     OP1: 0, OP2: 1, OP3: 2, OP4: 3,
     write: (...args) => chip ? chip.write(...args) : postCommand("write", args),
     play: chip ? async (note,options={})=>{
-      const seconds=resolvePlaySeconds(options,clock.getBpm());
+      resolvePlaySeconds(options,clock.getBpm());
+      const length=resolvePlayDuration(options);
       const channel=options.channel??0, owner={};
       if(options.preset){const preset=presets[options.preset];if(!preset)throw new Error('Unknown preset');fm.setPreset(channel,preset);}
       const pitch=noteToBlockFnum(note);fm.noteOn(channel,pitch.block,pitch.fnum);localNoteOwners.set(channel,owner);
-      try{await clock.sleep(seconds);}finally{if(localNoteOwners.get(channel)===owner){fm.noteOff(channel);localNoteOwners.delete(channel);}}
+      try{if(length.beats!==undefined)await clock.waitBeats(length.beats);else await clock.sleep(length.seconds);}finally{if(localNoteOwners.get(channel)===owner){fm.noteOff(channel);localNoteOwners.delete(channel);}}
     } : (note, options={}) => {
-      const seconds=resolvePlaySeconds(options,clock.getBpm());
-      return request("play", [note, {channel:options.channel, preset:options.preset, seconds}], run.currentLoop);
+      resolvePlaySeconds(options,clock.getBpm());
+      const length=resolvePlayDuration(options);
+      return request("play", [note, {channel:options.channel, preset:options.preset, ...length}], run.currentLoop);
     },
     psgTone: chip?.psg ? (channel,period,attenuation=0)=>psg.tone(channel,{period,attenuation}) : capabilities.psg ? (...args)=>postCommand("psgTone",args) : unavailable("Mega Drive PSG"),
     psgNoise: chip?.psg ? (mode,attenuation=0)=>{if(!Number.isInteger(mode)||mode<0||mode>7||!Number.isInteger(attenuation)||attenuation<0||attenuation>15)throw new Error("Invalid PSG noise values");psg.write(0xe0|mode);psg.write(0xf0|attenuation);} : capabilities.psg ? (...args)=>postCommand("psgNoise",args) : unavailable("Mega Drive PSG"),
@@ -688,7 +696,7 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
     chord,
     tween,
     noteToBlockFnum,
-    hzToBlockFnum,
+    hzToBlockFnum: (hz, clock) => opnPitchFromHz(hz, clock ?? fm.clock ?? CHIP_CLOCKS[capabilities.chip ?? 'ym2612'], capabilities.chip === 'ym2203' ? 72 : 144, {clamp:true}),
     noteLerp,
     presets,
   };
@@ -781,6 +789,7 @@ async function handleLifecycleMessage(message, generation = lifecycleGeneration)
     }
     const previousRun = currentRun;
     currentRun = previousRun ?? createRun(message.sourceCode, message.presets ?? {}, message.scaleIntervals ?? {}, message.capabilities ?? {}, message.timing ?? {});
+    if (!previousRun && message.bpm !== undefined) currentRun.setBpm(message.bpm);
     if (currentRun.stopped) {
       currentRun.stopped = false;
       currentRun.resumeChip();
@@ -804,6 +813,8 @@ async function handleLifecycleMessage(message, generation = lifecycleGeneration)
 
 self.onmessage = (event) => {
   const message = event.data;
+  if (message.type === 'tempo') { currentRun?.setBpm(message.bpm); return; }
+  if (message.type === 'chip-clock-state') { currentRun?.adoptChipClock(message.clock); return; }
   if (message.type === "chip-state") { currentRun?.adoptChipState(message.state); return; }
   if (message.type === "chip-port") { chipConnection?.port.close(); chipConnection={port:message.port,state:message.state}; return; }
   if (message.type === "native-fx") { nativeFXPort?.close(); nativeFXPort = message.port; return; }

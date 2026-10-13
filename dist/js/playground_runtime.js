@@ -1,3 +1,5 @@
+import {midiToOpnPitch, opnPitchFromHz} from './soundchip_pitch.js';
+import {attachChipClock, CHIP_CLOCKS} from './playground_chip_clock.js';
 import {createNesAudio} from './playground_nes_audio.js';
 import {createNesClient} from './playground_nes.js';
 import {createPWM32XAudio} from './playground_pwm_audio.js';
@@ -25,28 +27,22 @@ import {createLiveFxLifecycle} from './native_fx.js?v=live-fx-definitions-1';
  * 依存: window のイベント処理、Web Audio 対応 Synth、Worker（Worker モード時）。
  * import とブラウザー上の実行・音声初期化は別。Node.js での実再生用ではない。
  */
-import {createMidiRack, createMidiApi, validateBendRange, MIDI_SUPPORTED_CC} from './playground_midi.js?v=play-units-1';
+import {createMidiRack, createMidiApi, validateBendRange, MIDI_SUPPORTED_CC} from './playground_midi.js?v=shared-beat-clock-1';
 import {parseMidiFile} from './midi_file.js?v=readable-midi-1';
 import { createAudioScheduler } from "./playground_audio_scheduler.js";
 import {
   FM_PRESETS,
 } from "./megasynth.js?v=prepared-fx-rerun-2";
 import { createTetoricaSynth } from "./tetorica_synth.js";
-import {
-  createPitchFromMidi,
-} from "./pitch.js";
-import { createPlaygroundClock } from "./playground_clock.js?v=loop-async-tasks-1";
+import { createPlaygroundClock } from "./playground_clock.js?v=shared-beat-clock-1";
 import { executeWithPlaygroundGuards } from "./playground_execution.js";
 import { createPlaygroundLive } from "./playground_live.js?v=prepared-fx-rerun-2";
-import { createPlaygroundMusic } from "./playground_music.js?v=play-units-1";
+import { createPlaygroundMusic } from "./playground_music.js?v=shared-beat-clock-1";
 import { createPlaygroundNoiseApi } from "./playground_noise.js";
 import { createFmProxy } from "./playground_sync.js?v=dac-pcm-1";
 import { parseTfi } from "./tfi.js";
 import { parseVgi } from "./vgi.js";
 
-const REFERENCE_MIDI = 62;
-const REFERENCE_BLOCK = 4;
-const REFERENCE_FNUM = 553;
 const NOTE_TO_SEMITONE = {
   C: 0,
   "C#": 1,
@@ -179,7 +175,7 @@ export function createPlaygroundRuntime(
     options.execution ?? "main";
   const defaultLogicWorkerUrl =
     new URL(
-      "./playground_logic_worker.js?v=live-fx-definitions-1",
+      "./playground_logic_worker.js?v=shared-beat-clock-1",
       import.meta.url
     );
   defaultLogicWorkerUrl.searchParams.set(
@@ -335,7 +331,7 @@ export function createPlaygroundRuntime(
           options.onMegaDriveEvent?.(event);
           if(logicWorker && !applyingChipObserver) {
             const core=synth?.fm??synth;
-            logicWorker.postMessage({type:"chip-state",state:core?.getState?.()});
+            logicWorker.postMessage({type:"chip-state",state:{...core?.getState?.(),clock:sharedFm?.clock}});
           }
         }
       );
@@ -1090,6 +1086,12 @@ export function createPlaygroundRuntime(
 
   function handleWorkerMessage(event) {
     const message = event.data ?? {};
+    // Tempo bypasses the command queue: a queued play may still be waiting.
+    if (message.type === 'tempo') {
+      clockApi.setBpm(message.bpm);
+      megaDrive.audio?.nativeFX?.controller.syncTempo();
+      return;
+    }
     if (message.type === "command" || message.type === "request") {
       if (message.command === "keyboard.register") {
         registerWorkerKeyboardHandler(
@@ -1141,6 +1143,7 @@ export function createPlaygroundRuntime(
           applyingChipObserver=true;
           if(core) core.transport={write(port,register,value){},reset(){}};
           const {method,args}=message.event;
+          if (method === 'setClock') sharedFm?._adoptClock(args[0]);
           if(typeof synth?.[method]==="function" && !method.startsWith("_")) synth[method](...args);
         } catch(error){emitLog(`Observer: ${error.message}`);}
         finally {if(core)core.transport=transport;applyingChipObserver=false;}
@@ -1232,7 +1235,7 @@ export function createPlaygroundRuntime(
   function getMidiRack() {
     if (synth?.dac?.enabled) throw new Error('Disable DAC before using MIDI FM playback');
     if (capabilities.chip !== "ym2612") throw new Error("MIDI outputs currently require YM2612 mode");
-    return midiRack ??= createMidiRack({preset: Object.values(presets)[0],
+    return midiRack ??= createMidiRack({getClockScale:() => CHIP_CLOCKS.ym2612 / (sharedFm?.clock ?? CHIP_CLOCKS.ym2612),preset: Object.values(presets)[0],
       write: entry => entry.time === undefined ? synth.write(entry.port,entry.register,entry.value) : midiWriteBatch ? midiWriteBatch.push(entry) : audioScheduler.enqueue([entry]),
       writePsg: entry => entry.time === undefined ? megaDrive.psg.write(entry.value) : (midiWriteBatch ? midiWriteBatch.push({...entry,type:"psg-write"}) : audioScheduler.enqueue([{...entry,type:"psg-write"}])),
     });
@@ -1313,7 +1316,21 @@ export function createPlaygroundRuntime(
         "__anonymous__",
     };
     const fx = liveFxLifecycle.track(createFxApi(), evaluationState.liveFxDefinitions);
-    if (sharedFmSynth !== synth) { sharedFm = createFmProxy(synth); Object.defineProperty(sharedFm, 'id', {value: capabilities.chip ?? 'ym2612', enumerable: true}); sharedFmSynth = synth; }
+    if (sharedFmSynth !== synth) {
+      sharedFm = createFmProxy(synth);
+      if (megaDrive.node?.port) attachChipClock(sharedFm, megaDrive.node.port, CHIP_CLOCKS[capabilities.chip ?? 'ym2612'], {
+        primary:true,
+        onApplied: hz => {
+          (synth.fm ?? synth).clock = hz;
+          if (synth.ssg) synth.ssg.clock = hz / (capabilities.chip === 'ym2203' ? 2 : 4);
+          if (synth.adpcmB) synth.adpcmB.clock = hz;
+          if (synth.adpcm) synth.adpcm.clock = hz;
+          logicWorker?.postMessage({type:'chip-clock-state',clock:hz});
+        },
+      });
+      Object.defineProperty(sharedFm, 'id', {value: capabilities.chip ?? 'ym2612', enumerable: true});
+      sharedFmSynth = synth;
+    }
     const fm = sharedFm;
     const psg = megaDrive.psg;
     const musicApi =
@@ -1322,19 +1339,13 @@ export function createPlaygroundRuntime(
           NOTE_TO_SEMITONE,
         scaleIntervals:
           SCALE_INTERVALS,
-        createPitchFromMidi,
-        pitchReference: {
-          referenceMidi:
-            REFERENCE_MIDI,
-          referenceBlock:
-            REFERENCE_BLOCK,
-          referenceFnum:
-            REFERENCE_FNUM,
-        },
+        getPitch: midi => midiToOpnPitch(midi, fm.clock ?? CHIP_CLOCKS[capabilities.chip ?? 'ym2612'], capabilities.chip === 'ym2203' ? 72 : 144),
+        getFrequencyPitch: (hz, clock) => opnPitchFromHz(hz, clock ?? fm.clock ?? CHIP_CLOCKS[capabilities.chip ?? 'ym2612'], capabilities.chip === 'ym2203' ? 72 : 144, {clamp:true}),
         synth: () => synth,
         presets,
         activeNotes,
         getBpm: () => runtime.bpm,
+        waitBeats: beats => clockApi.waitForBeat(clockApi.currentBeat() + beats, runToken),
         sleep: (seconds) =>
           clockApi.sleep(
             seconds,
@@ -1444,7 +1455,7 @@ export function createPlaygroundRuntime(
       const rack=getMidiRack();
       if(method==='release')return rack.noteOff(args[0],args[1],args[2],undefined,args[3],args[4]);
       return rack[method](...args);
-    }, {now:clockApi.nowSeconds,sleep:seconds=>clockApi.sleep(seconds,runToken),bpm:()=>runtime.bpm,owner:()=>currentLoopContext?.name??null,
+    }, {now:clockApi.nowSeconds,sleep:seconds=>clockApi.sleep(seconds,runToken),waitBeats:beats=>clockApi.waitForBeat(clockApi.currentBeat()+beats,runToken),bpm:()=>runtime.bpm,owner:()=>currentLoopContext?.name??null,
       check:()=>{if(runToken!==currentRunToken)throw new DOMException('Run stopped','AbortError');}});
     midiApis.add(midi);
     const pg = {
@@ -1861,7 +1872,7 @@ export function createPlaygroundRuntime(
         const channel=new MessageChannel();
         megaDrive.node.port.postMessage({type:"attach-chip-port",port:channel.port1},[channel.port1]);
         const core=synth?.fm??synth;
-        worker.postMessage({type:"chip-port",port:channel.port2,state:core?.getState?.()},[channel.port2]);
+        worker.postMessage({type:"chip-port",port:channel.port2,state:{...core?.getState?.(),clock:sharedFm?.clock}},[channel.port2]);
       }
       const port = megaDrive.audio?.nativeFX?.workerPort();
       if (port) worker.postMessage({type: "native-fx", port}, [port]);
@@ -1872,10 +1883,11 @@ export function createPlaygroundRuntime(
       worker.postMessage({
         type: "run",
         sourceCode,
+        bpm: runtime.bpm,
         presets,
         scaleIntervals: SCALE_INTERVALS,
         capabilities,
-        timing: getTiming(),
+        timing: {...getTiming(),chipClock:sharedFm?.clock ?? CHIP_CLOCKS[capabilities.chip ?? 'ym2612']},
       });
     });
   }
@@ -2208,6 +2220,12 @@ export function createPlaygroundRuntime(
     getMasterVolume,
     setTiming,
     getTiming,
+    setBpm(value) {
+      clockApi.setBpm(value);
+      if (logicWorker) logicWorker.postMessage({type:'tempo',bpm:value});
+      else megaDrive.audio?.nativeFX?.controller.syncTempo();
+    },
+    getBpm: () => runtime.bpm,
     get presets() {
       return presets;
     },
