@@ -82,12 +82,13 @@ test('MCP retains configuration across toggles and explicitly regenerates only w
       if (el.getAttribute('aria-label') === 'Confirm action') setImmediate(() => el.children[confirmed ? 2 : 1].click());
     }}};
   let token = 'original', enabled = false, generation = 'session-1', confirmed = false;
+  let url = 'http://127.0.0.1:39127/mcp';
   const calls = [];
   const window = {confirm:() => confirmed, __TAURI_INTERNALS__:{invoke:async (cmd,args) => {
     calls.push(cmd);
-    if (cmd === 'mcp_set') { enabled = args.enabled; if (enabled) generation += '-new'; }
+    if (cmd === 'mcp_set') { enabled = args.enabled; if (enabled) { generation += '-new'; url = 'http://127.0.0.1:49281/mcp'; } }
     if (cmd === 'mcp_regenerate_token') { assert.equal(enabled,false); token = 'replacement'; }
-    return {enabled,token,generation,url:'http://127.0.0.1:39127/mcp'};
+    return {enabled,token,generation,url};
   }}};
   window.top = window;
   vm.runInNewContext(source.replace('__DESKTOP_DEV_ORIGIN__','null'), {window,document,location:new URL('tauri://localhost')});
@@ -97,8 +98,11 @@ test('MCP retains configuration across toggles and explicitly regenerates only w
   assert.equal(rotate.disabled,true);
   assert.equal(window.__tetoricaMcpGeneration,generation);
   assert.match(config.value,/original/);
+  assert.equal(JSON.parse(config.value).mcpServers['tetorica-playground'].url, url);
+  assert.doesNotMatch(config.value,/39127/);
   await mcp.click();
   assert.equal(rotate.disabled,false);
+  assert.equal(JSON.parse(config.value).mcpServers['tetorica-playground'].url, url);
   await rotate.click();
   assert.equal(calls.includes('mcp_regenerate_token'),false);
   confirmed = true;

@@ -1,5 +1,5 @@
 {
-  "archive": "hello_ymfm_wasm_noise-fix-dev_itch_playground.zip",
+  "archive": "hello_ymfm_wasm_ui-noise-fix-dev_itch_playground.zip",
   "files": {
     "LICENSE": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c",
     "THIRD_PARTY_LICENSES.txt": "172513776267c2ebcc2e664b4074eac32144c417f2136b1bd2f6afdca728d3b0",
@@ -122,7 +122,7 @@
     "js/playground_chip_port.js": "050bbc28e391f6e5bbb3e79ae54f951e35966f2ae6c143fb0b8e1976347e9d0e",
     "js/playground_clock.js": "8db4e4762af14e83d4d295e4eda381832c4d8470eb467f06388191a8ad21ce42",
     "js/playground_duration.js": "b6f1664b84569fd627d4d4e82a6c0b500edf142a3d9ced13f33ab5dc5606bfb1",
-    "js/playground_execution.js": "9c78b1cec4662817171ed7980a63de63763e2ef847ba0400f5ef3e2d6c463ae6",
+    "js/playground_execution.js": "a4178b59713536fd21af4edd367b4afe2e9efbe2fee42862f61c59cc9d80b82e",
     "js/playground_gameboy.js": "5990bdf12c9547b1d3406886f82ddf44712fc715919b379a1070b4ed3a281b54",
     "js/playground_gameboy_audio.js": "a128e7fa176b8cc3afc3ea9e6f9e1be4dbe3266ee0909004ca280b18c8e02da0",
     "js/playground_gameboy_worklet.js": "b3f2cd48a46047e2897e7f5894072cb1d1dfe35a48cf5a3375013d8736c5f160",
@@ -142,7 +142,7 @@
     "js/playground_pwm_worklet.js": "cd055c4247445dc502633d7973c62b70cfd2de5f0fe63e5748c3e7c2fcb8316c",
     "js/playground_rf5c164.js": "3b24842ce095dde0614f2eb2bb13068eb2e2d104c63a5b67dee3be4b148e3f5f",
     "js/playground_rf5c164_audio.js": "60d0fd3d548719e1449f1422d621dc75f9ad24e4dc753ad9f679fa02e4a0e8e0",
-    "js/playground_runtime.js": "3b8ee823c2b3821df707da7ac2d981fe16cefde5f1af6dba5053a0e73c9c3973",
+    "js/playground_runtime.js": "58ef5dc09d553cb07ee2eb3e896053e79b71c6a90717a8f36418b2da747d7ab6",
     "js/playground_segapsg.js": "51bee27332cd6ea6579986f6d06a5af7339adedd25acfe0274d444b4cfffdc7c",
     "js/playground_segapsg_audio.js": "22636dfd1e31a7d8795c19ceca18e91f3d71144d2deb8a619d4e058dabe69116",
     "js/playground_segapsg_worklet.js": "68c1920685bf82fe2283cf22ce983f8f97c957f564dbc6a8d287d6dc6b1bf94e",
@@ -233,9 +233,9 @@
     "licenses/nuked-opn2/LICENSE": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331",
     "licenses/nuked-opn2/README.md": "8296e38872f66aa2598ca9d17360bc65e45254ee2028320f512f131712b940aa",
     "llms.txt": "ee2ddf38b1a4dc25ff35147463bf8ee2169d280a8fa7ed8c1a711ab34ba36ce2",
-    "playground.js": "5f401b993d13704d28d19a55330c631f5d43cabfbe9eb193ff9f84a475c3dd62",
+    "playground.js": "da67f04450d50a64bf4a4e8211396dcab7e15ce2ce88503e3ec58c6d62ca3724",
     "playground_audio_monitor.js": "a03f163d0224ef9d490362f757e43341dc850ed4b9898f5d706b5665be0430c8",
-    "playground_autosave.js": "61004934111b661a634bda6f02d785e3a6b5e09ba8ea7e20c3ce9a784c1e62c7",
+    "playground_autosave.js": "34a1c421dc03eebf04e19fc5b40184eefa6574e55875e11d925b0c2cbbcf56b9",
     "playground_cassette.js": "5c5edea3a519ac27f279b1500dbf553c04f05753340efbf313948d1275f4b352",
     "playground_example_order.js": "f30531c4e11670e8d3435b04dd1d563dfc5d9b8b8f51c5ead2ad0e9d9f2a614e",
     "playground_examples.js": "2630653d009d792395ae24f939c3ea65f64ad4e925bf1b73306fab9dae39c247",
@@ -492,6 +492,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "3e45f873ae54d7fee087dc2b5e7f3de86b6c7c181db420c55e06be3a244d36ac"
   },
-  "sha256": "5deadb48c02edfd01cbef99774b127e3fc55887ea0cb7f6e58f63170a40d4f88",
-  "version": "sha256-5deadb48c02e"
+  "sha256": "610eac92d521b833b5e7fbcd3d10f21211d11fd61f7f3c6454aa6839dee145b3",
+  "version": "sha256-610eac92d521"
 }

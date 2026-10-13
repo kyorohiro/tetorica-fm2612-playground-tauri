@@ -2,6 +2,7 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     io::{Read, Write},
+    net::{Ipv4Addr, SocketAddr, TcpListener},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -12,18 +13,20 @@ use std::{
 use tauri::{Manager, WebviewWindow};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
 
-const ADDRESS: &str = "127.0.0.1:39127";
+const DEFAULT_PORT: u16 = 39127;
 const LIMIT: usize = 3 * 1024 * 1024;
 type Pending = Arc<Mutex<HashMap<String, mpsc::Sender<Value>>>>;
 pub struct Mcp {
     running: Option<Arc<AtomicBool>>,
     token: String,
     token_path: PathBuf,
+    port_path: PathBuf,
+    address: SocketAddr,
     generation: String,
     worker: Option<std::thread::JoinHandle<()>>,
     pub pending: Pending,
 }
-fn save_token(path: &Path, token: &str) -> std::io::Result<()> {
+fn save_private_text(path: &Path, text: &str) -> std::io::Result<()> {
     let temporary = path.with_extension(format!("{}.tmp", uuid::Uuid::new_v4()));
     let result = (|| {
         let mut options = std::fs::OpenOptions::new();
@@ -34,7 +37,7 @@ fn save_token(path: &Path, token: &str) -> std::io::Result<()> {
             options.mode(0o600);
         }
         let mut file = options.open(&temporary)?;
-        file.write_all(token.as_bytes())?;
+        file.write_all(text.as_bytes())?;
         file.sync_all()?;
         std::fs::rename(&temporary, path)
     })();
@@ -56,9 +59,20 @@ impl Mcp {
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 let token = uuid::Uuid::new_v4().to_string();
-                save_token(&token_path, &token)?;
+                save_private_text(&token_path, &token)?;
                 token
             }
+            Err(error) => return Err(error),
+        };
+        let port_path = directory.join("mcp-port");
+        let port = match std::fs::read_to_string(&port_path) {
+            Ok(text) => text
+                .trim()
+                .parse::<u16>()
+                .ok()
+                .filter(|port| *port != 0)
+                .unwrap_or(DEFAULT_PORT),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => DEFAULT_PORT,
             Err(error) => return Err(error),
         };
         Ok(Self {
@@ -66,6 +80,8 @@ impl Mcp {
             running: None,
             token,
             token_path,
+            port_path,
+            address: SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
             generation: uuid::Uuid::new_v4().to_string(),
             pending: Arc::default(),
         })
@@ -75,9 +91,29 @@ impl Mcp {
             return Err("Turn MCP off before regenerating its token".into());
         }
         let token = uuid::Uuid::new_v4().to_string();
-        save_token(&self.token_path, &token).map_err(|e| e.to_string())?;
+        save_private_text(&self.token_path, &token).map_err(|e| e.to_string())?;
         self.token = token;
         Ok(())
+    }
+    fn bind_server(&mut self) -> Result<Server, String> {
+        // Keep the listener open from allocation through startup: probing a port
+        // and rebinding later would race with another app instance.
+        let listener = match TcpListener::bind(self.address) {
+            Ok(listener) => listener,
+            Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+                TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+                    .map_err(|e| format!("Cannot allocate a local MCP port: {e}"))?
+            }
+            Err(error) => return Err(format!("Cannot start MCP on {}: {error}", self.address)),
+        };
+        let address = listener.local_addr().map_err(|e| e.to_string())?;
+        let server = Server::from_listener(listener, None).map_err(|e| e.to_string())?;
+        // Reuse the last successfully allocated port after Off/On or restart,
+        // keeping client configurations stable unless that port is occupied.
+        save_private_text(&self.port_path, &address.port().to_string())
+            .map_err(|e| format!("Cannot save the MCP port: {e}"))?;
+        self.address = address;
+        Ok(server)
     }
 }
 #[tauri::command]
@@ -91,7 +127,7 @@ pub fn mcp_regenerate_token(
     Ok(info(&state))
 }
 fn info(state: &Mcp) -> Value {
-    json!({"enabled":state.running.is_some(), "url":format!("http://{ADDRESS}/mcp"), "token":state.token, "generation":state.generation})
+    json!({"enabled":state.running.is_some(), "url":format!("http://{}/mcp", state.address), "token":state.token, "generation":state.generation})
 }
 #[tauri::command]
 pub fn mcp_status(
@@ -111,8 +147,7 @@ pub async fn mcp_set(
     super::allowed(&window)?;
     let mut state = state.lock().map_err(|e| e.to_string())?;
     if enabled && state.running.is_none() {
-        let server =
-            Server::http(ADDRESS).map_err(|e| format!("Cannot start MCP on {ADDRESS}: {e}"))?;
+        let server = state.bind_server()?;
         state.generation = uuid::Uuid::new_v4().to_string();
         window
             .eval(format!(
@@ -282,8 +317,8 @@ fn rpc(
     };
     Some(json!({"jsonrpc":"2.0","id":id,"result":result}))
 }
-fn gate(host: &str, origin: bool, authorization: &str, token: &str) -> bool {
-    host == ADDRESS && !origin && authorization == format!("Bearer {token}")
+fn gate(host: &str, address: &str, origin: bool, authorization: &str, token: &str) -> bool {
+    host == address && !origin && authorization == format!("Bearer {token}")
 }
 fn serve(
     server: Server,
@@ -293,12 +328,18 @@ fn serve(
     generation: String,
     running: Arc<AtomicBool>,
 ) {
+    let address = server
+        .server_addr()
+        .to_ip()
+        .expect("MCP listens on TCP")
+        .to_string();
     while running.load(Ordering::SeqCst) {
         let Ok(Some(request)) = server.recv_timeout(Duration::from_millis(100)) else {
             continue;
         };
         handle_http(
             request,
+            &address,
             &token,
             &running,
             |name, args| project(&window, &pending, name, args, &generation),
@@ -314,6 +355,7 @@ fn serve(
 }
 fn handle_http(
     mut request: tiny_http::Request,
+    address: &str,
     token: &str,
     running: &AtomicBool,
     project_handler: impl FnOnce(&str, Value) -> Result<Value, String>,
@@ -334,6 +376,7 @@ fn handle_http(
     };
     if !gate(
         &header("Host").unwrap_or_default(),
+        address,
         header("Origin").is_some(),
         &header("Authorization").unwrap_or_default(),
         &token,
@@ -395,6 +438,7 @@ fn handle_http(
 #[cfg(test)]
 mod tests {
     use super::*;
+    const ADDRESS: &str = "127.0.0.1:39127";
     fn request(method: &str, params: Value) -> Value {
         json!({"jsonrpc":"2.0","id":1,"method":method,"params":params})
     }
@@ -416,11 +460,13 @@ mod tests {
         assert_eq!(Mcp::load(&directory).unwrap().token, state.token);
         assert!(!gate(
             ADDRESS,
+            ADDRESS,
             false,
             &format!("Bearer {original}"),
             &state.token
         ));
         assert!(gate(
+            ADDRESS,
             ADDRESS,
             false,
             &format!("Bearer {}", state.token),
@@ -559,10 +605,23 @@ mod tests {
     }
     #[test]
     fn local_authenticated_clients_only() {
-        assert!(gate(ADDRESS, false, "Bearer secret", "secret"));
-        assert!(!gate("evil.example", false, "Bearer secret", "secret"));
-        assert!(!gate(ADDRESS, true, "Bearer secret", "secret"));
-        assert!(!gate(ADDRESS, false, "Bearer wrong", "secret"));
+        assert!(gate(ADDRESS, ADDRESS, false, "Bearer secret", "secret"));
+        assert!(!gate(
+            "evil.example",
+            ADDRESS,
+            false,
+            "Bearer secret",
+            "secret"
+        ));
+        assert!(!gate(ADDRESS, ADDRESS, true, "Bearer secret", "secret"));
+        assert!(!gate(ADDRESS, ADDRESS, false, "Bearer wrong", "secret"));
+        assert!(!gate(
+            "127.0.0.1:39128",
+            ADDRESS,
+            false,
+            "Bearer secret",
+            "secret"
+        ));
     }
 }
 
@@ -570,10 +629,96 @@ mod tests {
 mod transport_tests {
     use super::*;
     use std::{io::Write, net::TcpStream};
+
+    #[test]
+    fn occupied_port_uses_a_free_port_and_keeps_it_across_restart() {
+        let directory = std::env::temp_dir().join(format!("tetorica-mcp-{}", uuid::Uuid::new_v4()));
+        let occupied = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let mut state = Mcp::load(&directory).unwrap();
+        state.address = occupied.local_addr().unwrap();
+        let server = state.bind_server().unwrap();
+        let address = server.server_addr().to_ip().unwrap();
+        assert!(address.ip().is_loopback());
+        assert_ne!(address, occupied.local_addr().unwrap());
+        assert_eq!(address, state.address);
+        assert_eq!(info(&state)["url"], format!("http://{address}/mcp"));
+        assert!(TcpListener::bind(address).is_err());
+        assert_eq!(Mcp::load(&directory).unwrap().address, address);
+
+        let host = address.to_string();
+        let worker_host = host.clone();
+        let token = state.token.clone();
+        let worker_token = token.clone();
+        let stale_host = occupied.local_addr().unwrap().to_string();
+        let worker = std::thread::spawn(move || {
+            for _ in 0..2 {
+                handle_http(
+                    server
+                        .recv_timeout(Duration::from_secs(5))
+                        .unwrap()
+                        .unwrap(),
+                    &worker_host,
+                    &worker_token,
+                    &AtomicBool::new(true),
+                    |_, _| panic!("initialize does not call project tools"),
+                    |_| panic!("initialize does not read assets"),
+                );
+            }
+        });
+        for (request_host, expected_status) in [(&host, 200), (&stale_host, 403)] {
+            let body =
+                json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}).to_string();
+            let mut stream = TcpStream::connect(address).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            write!(stream, "POST /mcp HTTP/1.1\r\nHost: {request_host}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}", body.len()).unwrap();
+            let mut response = String::new();
+            stream.read_to_string(&mut response).unwrap();
+            assert!(
+                response.starts_with(&format!("HTTP/1.1 {expected_status}")),
+                "{response}"
+            );
+        }
+        worker.join().unwrap();
+        // tiny_http closes its accept thread after the server is dropped.
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            if let Ok(listener) = TcpListener::bind(address) {
+                drop(listener);
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "MCP listener was not released"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let mut restarted = Mcp::load(&directory).unwrap();
+        let server = restarted.bind_server().unwrap();
+        assert_eq!(server.server_addr().to_ip().unwrap(), address);
+        assert_eq!(info(&restarted)["url"], format!("http://{address}/mcp"));
+        drop(server);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn corrupt_port_preference_does_not_prevent_loading_mcp() {
+        let directory = std::env::temp_dir().join(format!("tetorica-mcp-{}", uuid::Uuid::new_v4()));
+        Mcp::load(&directory).unwrap();
+        for text in ["0", "65536", "not a port", "127.0.0.1:39128"] {
+            std::fs::write(directory.join("mcp-port"), text).unwrap();
+            assert_eq!(Mcp::load(&directory).unwrap().address.port(), DEFAULT_PORT);
+        }
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn http_handshake_tools_resources_and_rejections() {
         let server = Server::http("127.0.0.1:0").unwrap();
         let address = server.server_addr().to_ip().unwrap();
+        let host = address.to_string();
+        let server_host = host.clone();
         let worker = std::thread::spawn(move || {
             for _ in 0..7 {
                 let request = server
@@ -582,6 +727,7 @@ mod transport_tests {
                     .unwrap();
                 handle_http(
                     request,
+                    &server_host,
                     "test-token",
                     &AtomicBool::new(true),
                     |name, args| {
@@ -602,7 +748,7 @@ mod transport_tests {
             stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
-            write!(stream,"{method} /mcp HTTP/1.1\r\nHost: {ADDRESS}\r\nAuthorization: Bearer test-token\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nConnection: close\r\nContent-Length: {}\r\n{extra}\r\n{body}",body.len()).unwrap();
+            write!(stream,"{method} /mcp HTTP/1.1\r\nHost: {host}\r\nAuthorization: Bearer test-token\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nConnection: close\r\nContent-Length: {}\r\n{extra}\r\n{body}",body.len()).unwrap();
             let mut response = String::new();
             stream.read_to_string(&mut response).unwrap();
             response

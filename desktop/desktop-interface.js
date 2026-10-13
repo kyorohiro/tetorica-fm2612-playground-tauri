@@ -110,7 +110,7 @@
     const dialog = document.createElement('dialog');
     dialog.setAttribute('aria-label', 'MCP connection');
     const explanation = document.createElement('p');
-    explanation.textContent = 'MCP edits the open project. It does not run code. Export cassette to save. Keep this token private. It is retained across restarts. To replace it, turn MCP off and select Regenerate MCP token; then update your client configuration.';
+    explanation.textContent = 'MCP edits the open project. Export cassette to share it. Turn MCP on before copying this configuration. If the saved port is occupied, a free local port is selected automatically; update your client URL when it changes. Keep this token private. It is retained across restarts. To replace it, turn MCP off and select Regenerate MCP token; then update your client configuration.';
     const config = document.createElement('textarea');
     config.readOnly = true;
     config.rows = 12;
