@@ -67,3 +67,69 @@ The Firefox test used the matching Playwright Firefox 155.0 build.
   high-order, band-limited resampler.
 - No third-party voice banks, Dexed code, or existing Tetorica runtime dependency
   were introduced.
+
+## Object preset API — 0.2.0 (2026-10-16)
+
+- Added synchronous core setPreset/setOperator/setOperators/getPreset and
+  acknowledged Promise equivalents for the browser and Playground.
+- The selected slot and the rest of a 32-voice bank survive edits. Invalid
+  objects and batches leave both patch data and held audio unchanged.
+- Standalone Node suite: **41/41 passed**, including independent full-VCED
+  fixtures, 44.1/48 kHz SysEx/Object PCM equality, held/future-note behavior,
+  built-in-object rejection, cross-realm records and existing native comparison.
+- Parent runtime/Playground example suite: **48/48 passed**.
+- Standalone browser suite passed Chromium, WebKit and Firefox at 44.1/48 kHz:
+  setter acknowledgements, FIFO, copied state, bank selection, rejected edits,
+  pending-request disposal and source/production demo playback.
+- Playground and an isolated installed FM npm tarball passed Chromium/WebKit
+  in Main and Worker modes, with actual final PCM, mixer/FX, STOP/recreation.
+  Monaco method/field completions and typed hover also passed.
+- Standalone packed consumer passed Node PCM, strict public types and Vite
+  public export/WASM/Worklet checks. Parent npm declarations passed
+  NodeNext/Bundler and browser consumers without Node ambient types.
+- Playground itch ZIP generation verified 357 local module/asset references.
+  WASM/C++ and chip-clock behavior were unchanged. This API is packaged for
+  standalone 0.2.0 and tetorica-fm2612 0.2.15. Physical Tauri/Windows/Linux were
+  not tested.
+- Operator, envelope and algorithm changes apply to future Note On. Applying a
+  voice reconfigures the shared LFO while retaining its phase, which can affect
+  held notes. This adds no live
+  per-note operator editor, and retains upstream AM/transpose/sync limitations.
+
+## Live parameters — 0.3.0 (2026-10-16)
+
+- Operator outputLevel/mode/coarse/fine/detune and additive setFeedback affect
+  sounding notes of the edited patch, including release tails. Identities isolate
+  bank slots and replaced patches. No retrigger or phase reset; original captured
+  scaling and ordinary unedited PCM are retained.
+- **75/75 standalone tests** and **49/49 parent tests** passed. Six native/WASM
+  comparisons (including four live-edit timelines) had **max/RMS error 0**.
+- Live native probe, focused shift UBSan and ASAN lifecycle passed; native edits
+  allocate no heap memory. Extreme legal frequency shifts are now well-defined.
+- Final-engine Playwright Chromium/WebKit/Firefox at 44.1/48 kHz, actual Playground
+  Chromium/WebKit Main/Worker, Monaco, and isolated standalone/FM npm consumers
+  passed. FM checks validated 203 declarations and actual Main/Worker audio.
+- 16-note/10-second offline medians: 64.570 ms without updates, 99.995 ms at
+  60 updates/sec, 115.460 ms at 240 updates/sec. Excludes Worklet/OS scheduling.
+- Full scope, performance method, fixed regressions and limitations are recorded
+  in `issues/msfa-live-parameters/result.md`. Algorithm and general EG live edits
+  are deferred; Tauri/physical hardware/Windows/Linux remain unverified.
+- Release versions: 0.3.0 (standalone) / 0.2.16 (FM).
+
+### Abrupt-change policy clarification — 0.3.1 (2026-10-16)
+
+Frequency and feedback values apply directly with no new parameter smoothing,
+interpolation, glide, crossfade or click suppression. Their waveform
+discontinuities/clicks are accepted; non-finite input, corrupted amplitude,
+divergence and crashes are not. Existing upstream gain interpolation and output
+resampling are retained. A native/Worklet-path audit confirmed phase/EG/history
+are not reinitialized by those edits; DSP, JavaScript and WASM were unchanged.
+
+The suite now passes **77/77, skipped 0**. New 44.1/48 kHz regressions exercise
+384 abrupt ratio/fixed-frequency and feedback0/7 changes on 16 notes, irregular
+render chunks, NaN/Infinity rejection with preserved state/PCM, continuing slow
+envelopes, recovery to an AC waveform, release and panic. No click-size limit or
+new click-suppression requirement is imposed.
+
+Release versions: standalone 0.3.1 / bundled FM 0.2.17. Runtime JavaScript,
+declarations and WASM are byte-identical to 0.3.0; this release updates docs and tests.

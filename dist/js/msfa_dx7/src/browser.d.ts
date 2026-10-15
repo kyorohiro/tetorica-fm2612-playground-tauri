@@ -1,3 +1,5 @@
+import type { DX7Preset, DX7OperatorParams, DX7OperatorEntries, DX7PresetState } from './preset.js';
+
 export interface DX7NodeVoice {
   readonly index: number;
   readonly name: string;
@@ -23,6 +25,18 @@ export interface DX7Node {
   readonly selectedVoice: number;
   /** Resolves after the Worklet applies the complete bank and selects voice 0. */
   loadSysex(data: ArrayBuffer | Uint8Array): Promise<readonly DX7NodeVoice[]>;
+  /** Replace the selected patch from INIT defaults; resolve after application.
+   * Changes affect subsequent Note On events; chip-global LFO state is shared. */
+  setPreset(preset: DX7Preset): Promise<void>;
+  /** Patch OP1..OP6; level/frequency changes also affect this patch's sounding
+   * notes and release tails without retriggering. Resolve after application. */
+  setOperator(operator: 1 | 2 | 3 | 4 | 5 | 6, patch: DX7OperatorParams): Promise<void>;
+  /** Apply an ordered tuple batch atomically; an empty batch changes nothing. */
+  setOperators(entries: DX7OperatorEntries): Promise<void>;
+  /** Raw feedback 0..7 on this patch's sounding/future notes. May cause a step. */
+  setFeedback(feedback: number): Promise<void>;
+  /** Full copied state of the selected patch. Rejects when no patch is loaded. */
+  getPreset(): Promise<DX7PresetState>;
   /** Events use one ordered MessagePort and apply before the next render block. */
   selectVoice(index: number): void;
   noteOn(note: number, velocity?: number): void;
