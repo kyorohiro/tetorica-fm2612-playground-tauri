@@ -43,6 +43,17 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 - `src-tauri/src/main.rs`: ローカルのメインウィンドウに限定した最前面固定コマンド
 - `assets/app-icon.png`: 上流Playgroundアイコン。`npm run icons` でデスクトップ用を生成
 
+## DX7
+
+FILES → `examples/dx7/dx7-init-sine.js` を開いて Run すると、独立した MSFA DX7 音源で演奏できます。
+`await useSoundChip('dx7')` は音源を再利用し、`await createSoundChip('dx7', {id:'pad'})` は独立した16音の音源を作ります。
+Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音声経路を使います。
+初期音色は自作の INIT SINE です。音色バンクを FILES に読み込んだ場合は、
+`await dx7.loadSysex(await file('/presets/my-bank.syx', {type:'arrayBuffer'}))` の完了後に発音してください。
+`dx7.noteOn(60, 100)`／`dx7.noteOff(60)` はチャンネル引数を持たず、MIDI ノート番号を使います。
+内部44,100 Hz固定、AudioContext 出力44,100／48,000 Hz対応で、`setClock()` はありません。
+実装・上流の制約とライセンスは `dist/js/msfa_dx7/README.md` と `README.vendor.md` に記録しています。
+
 ## 音声出力
 
 起動時は **WebView (default)** です。Menu → **Audio output** で **Audify** を

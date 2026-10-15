@@ -5,6 +5,9 @@ Browser Git: isomorphic-git and bundled dependencies. See js/tetorica_virtual_fi
 NES APU: JSNES, Apache-2.0. See licenses/jsnes/.
 FDS: fixNES-derived, MIT. See licenses/fixnes-fds/.
 
+DX7: tetorica-msfa-dx7-wasm 0.1.0 / Google MSFA, Apache-2.0.
+See js/msfa_dx7/LICENSE, THIRD_PARTY_NOTICES.md and README.vendor.md.
+
 32X PWM: MAME-derived FIFO/timer core, BSD-3-Clause. See licenses/mame-32x-pwm/.
 
 Game Boy DMG APU: MAME adaptation, BSD-3-Clause. See licenses/mame-gameboy/.
