@@ -1,5 +1,5 @@
 {
-  "archive": "hello_ymfm_wasm_dx7-dev_itch_playground_v0.70.1.zip",
+  "archive": "hello_ymfm_wasm_sample-error-details_itch_playground.zip",
   "files": {
     "LICENSE": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c",
     "THIRD_PARTY_LICENSES.txt": "8e9d5ae5bf2c605cacae317c61292e315629ad3472ff87bea4a92c59ee449f55",
@@ -147,9 +147,9 @@
     "js/playground_gameboy.js": "5990bdf12c9547b1d3406886f82ddf44712fc715919b379a1070b4ed3a281b54",
     "js/playground_gameboy_audio.js": "a128e7fa176b8cc3afc3ea9e6f9e1be4dbe3266ee0909004ca280b18c8e02da0",
     "js/playground_gameboy_worklet.js": "b3f2cd48a46047e2897e7f5894072cb1d1dfe35a48cf5a3375013d8736c5f160",
-    "js/playground_live.js": "dd530f8c3f3ec9eb7546a3e623aca9dc5454ed1ba17b287838296b37bce85963",
+    "js/playground_live.js": "e550ff573fa80633ee9e6af3231488dddeb086eb0090bcde144597a72c2a8046",
     "js/playground_log.js": "a2a19ce457264c639b1afcb53d9758491a69dec7bee26c0a503c8a07d2a98ff6",
-    "js/playground_logic_worker.js": "814c3255e8c287b515ddd093b3aa707fda2b8b7ab402e65f64f9d38b0228d889",
+    "js/playground_logic_worker.js": "c84ab97208524b4195945c81fb8ff1cd98bdd2c14ce3697a6212ad37dec6d20e",
     "js/playground_midi.js": "719d4a242f696926c8986b8276ebeeba09faf96e8dd4e5c7b855490af1716f59",
     "js/playground_music.js": "dc51f8be5cba748eb37e3b0bb1ec12b852ec5f8d6b1020c29ed083e1599b314f",
     "js/playground_nes.js": "ea5ceee1cc3adda9702a8b4e7481159cb88564c9b2bb052d7e21909a63d07d1d",
@@ -163,7 +163,7 @@
     "js/playground_pwm_worklet.js": "cd055c4247445dc502633d7973c62b70cfd2de5f0fe63e5748c3e7c2fcb8316c",
     "js/playground_rf5c164.js": "3b24842ce095dde0614f2eb2bb13068eb2e2d104c63a5b67dee3be4b148e3f5f",
     "js/playground_rf5c164_audio.js": "60d0fd3d548719e1449f1422d621dc75f9ad24e4dc753ad9f679fa02e4a0e8e0",
-    "js/playground_runtime.js": "5570f87e175dd5c8c92a9c22c7b2b89b659894ed4bff533afe9affc2b9041199",
+    "js/playground_runtime.js": "926d0b28f2280f17db38fe701633bd764f6d48a08dd61ba0a9b8a8c0473cfc77",
     "js/playground_segapsg.js": "51bee27332cd6ea6579986f6d06a5af7339adedd25acfe0274d444b4cfffdc7c",
     "js/playground_segapsg_audio.js": "22636dfd1e31a7d8795c19ceca18e91f3d71144d2deb8a619d4e058dabe69116",
     "js/playground_segapsg_worklet.js": "68c1920685bf82fe2283cf22ce983f8f97c957f564dbc6a8d287d6dc6b1bf94e",
@@ -513,6 +513,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "3e45f873ae54d7fee087dc2b5e7f3de86b6c7c181db420c55e06be3a244d36ac"
   },
-  "sha256": "21ef34e52926845d9138edb6102dfbb2c383cef87cbda88d58fc1bf4bf6e512f",
-  "version": "sha256-21ef34e52926"
+  "sha256": "3d73e492adf2f2873a2fde4e12bb2be78ce3878a89cdb664e005a18a57805381",
+  "version": "sha256-3d73e492adf2"
 }
