@@ -6,6 +6,7 @@ import {
   createParamControl,
   displayOperatorToApiOperator,
 } from "./synth/synth_controls.js";
+import { createOperatorEnvelopeView } from './playground_operator_visual.js';
 
 const OPERATOR_NUMBERS = [1, 2, 3, 4];
 const SPECIAL_MODE_CHANNEL = 2;
@@ -258,6 +259,7 @@ export function createPlaygroundOperatorTab(
     ...GLOBAL_COMMON_STATE,
   };
   let selectedChannel = 0;
+  let selectionVersion = 0;
   let synth = null;
   let refreshBatchDepth = 0;
   let pendingSelectedRefresh =
@@ -292,6 +294,20 @@ export function createPlaygroundOperatorTab(
       </label>
     </div>
     <p id="operatorTabAlgorithmDescription" class="algo-inline"></p>
+    <details class="operator-envelope-guide" open>
+      <summary>Operator envelopes</summary>
+      <div class="operator-envelope-tools">
+        <div data-operator-envelope-legend role="group" aria-label="Edit operator envelope">
+          ${OPERATOR_NUMBERS.map(op => `<button type="button" class="op-color-${op}" data-envelope-operator="${op}" aria-pressed="${op === 4}">OP${op}</button>`).join('')}
+        </div>
+        <output data-envelope-readout></output>
+      </div>
+      <div class="operator-envelope-plot">
+        <canvas data-operator-envelope width="720" height="144" role="img" aria-label="Schematic envelopes for OP1 through OP4. Select an operator and drag its labeled points to edit."></canvas>
+        ${['attack', 'decay', 'sustain', 'release'].map(handle => `<button type="button" class="operator-envelope-handle" data-envelope-handle="${handle}" aria-label="${handle}"></button>`).join('')}
+      </div>
+      <p class="subtext">Drag points · ←/→ rate, ↑/↓ level when a point is focused. Relative time/level; pitch, RS and SSG-EG affect actual envelopes.</p>
+    </details>
     <div class="operator-stack">
       <div class="operator-header-row">
         <div class="operator-header-spacer"></div>
@@ -360,6 +376,12 @@ export function createPlaygroundOperatorTab(
     root.querySelector(
       "#operatorTabAlgorithmDescription"
     );
+  const envelopeView = createOperatorEnvelopeView({
+    root: root.querySelector('.operator-envelope-guide'),
+    getOperators: () => currentState().operators,
+    getSelectionKey: () => selectionVersion,
+    onEdit: applyOperatorParams,
+  });
 
   buildHeader(
     commonHeader,
@@ -584,6 +606,7 @@ export function createPlaygroundOperatorTab(
     }
 
     updateSpecialUi();
+    envelopeView.invalidate();
   }
 
   function updateSpecialUi() {
@@ -713,6 +736,7 @@ export function createPlaygroundOperatorTab(
   function replaceCurrentState(
     nextState
   ) {
+    selectionVersion += 1;
     stateByChannel[
       selectedChannel
     ] = cloneChannelState(
@@ -785,23 +809,24 @@ export function createPlaygroundOperatorTab(
     controlsMap: operatorControls,
     wheelAdjust: false,
     onChange(operator, id, value) {
-      currentState().operators[operator][
-        id
-      ] = value;
-      markDirty();
-      if (synth) {
-        synth.setOperator(
-          selectedChannel,
-          displayOperatorToApiOperator(
-            operator
-          ),
-          {
-            [id]: value,
-          }
-        );
-      }
+      applyOperatorParams(operator, {[id]: value});
     },
   });
+
+  function applyOperatorParams(operator, params) {
+    const state = currentState().operators[operator];
+    const changed = {};
+    for (const config of OPERATOR_PARAM_DEFS) {
+      if (params[config.id] === undefined || params[config.id] === state[config.id]) continue;
+      state[config.id] = params[config.id];
+      changed[config.id] = params[config.id];
+      operatorControls.get(operator)?.get(config.id)?.updateVisual(params[config.id]);
+    }
+    if (!Object.keys(changed).length) return;
+    envelopeView.invalidate();
+    markDirty();
+    synth?.setOperator(selectedChannel, displayOperatorToApiOperator(operator), changed);
+  }
 
   buildSpecialControls();
 
@@ -867,6 +892,7 @@ export function createPlaygroundOperatorTab(
   channelSelect.addEventListener(
     "change",
     () => {
+      selectionVersion += 1;
       selectedChannel = Number(
         channelSelect.value
       );
@@ -890,7 +916,7 @@ export function createPlaygroundOperatorTab(
         )
       );
       onStatus?.(
-        `Operator tab preset loaded for channel ${selectedChannel + 1}.`
+        `YM2612 preset loaded for channel ${selectedChannel + 1}.`
       );
     }
   );
@@ -924,14 +950,18 @@ export function createPlaygroundOperatorTab(
   }
 
   return {
+    setVisible: envelopeView.setVisible,
+    dispose: envelopeView.dispose,
     registerPresetOption,
     removePresetOption,
     selectChannel(channel) {
+      selectionVersion += 1;
       selectedChannel = Math.max(0, Math.min(channelCount - 1, Number(channel) || 0));
       channelSelect.value = String(selectedChannel);
       updateControlsUi();
     },
     selectPreset(channel, presetName) {
+      selectionVersion += 1;
       selectedChannel = Math.max(0, Math.min(channelCount - 1, Number(channel) || 0));
       channelSelect.value = String(selectedChannel);
       if (presets[presetName]) {
@@ -968,6 +998,7 @@ export function createPlaygroundOperatorTab(
       }
     },
     syncReset() {
+      selectionVersion += 1;
       for (
         let channel = 0;
         channel < channelCount;
@@ -985,6 +1016,7 @@ export function createPlaygroundOperatorTab(
       updateControlsUi();
     },
     syncPreset(channel, presetName, preset) {
+      if (channel === selectedChannel) selectionVersion += 1;
       const nextState =
         presetName &&
         presets[presetName]

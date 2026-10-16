@@ -1,6 +1,6 @@
 import {installFileExplorerResize} from './playground_file_resize.js';
 import {installFileExplorerMenu} from './playground_file_menu.js?v=file-menu-1';
-import {installPlaygroundWorkbench} from './playground_workbench.js?v=compact-shell-1';
+import {installPlaygroundWorkbench} from './playground_workbench.js?v=keyboard-helper-panel-1';
 import {installPlaygroundShell} from './playground_shell.js?v=compact-shell-1';
 import {installPlaygroundGit} from './playground_git.js';
 import {openDraftStore, createProjectAutosave} from './playground_autosave.js';
@@ -14,8 +14,8 @@ const cassetteSampleNames = new Set();
 import {exportYm2608FullVgm} from './ym2608_vgm_import.js?v=loop-async-tasks-1';
 import {prepareVgmImport, exportGameboyVgm, exportNesVgm, exportRf5c164Vgm, addVgmSoundChipSetup, exportYm2203FullVgm} from './playground_vgm_import.js?v=loop-async-tasks-1';
 import {installPlaygroundPageLifecycle} from "./playground_page_lifecycle.js";
-import {createFXMonitor} from './playground_fx_monitor.js?v=stable-select-1';
-import {createAudioMonitor} from './playground_audio_monitor.js';
+import {createFXMonitor} from './playground_fx_monitor.js?v=vertical-range-1';
+import {createAudioMonitor} from './playground_audio_monitor.js?v=vertical-range-1';
 import {installMidiImport} from './playground_midi_import.js?v=midi-sections-1';
 import {
   FM_PRESET_ORDER,
@@ -35,7 +35,8 @@ import { createVgiFromPreset, parseVgi } from "./js/vgi.js";
 import {
   createPlaygroundOperatorTab,
 } from "./playground_operator_tab.js";
-import { createPlaygroundOperatorKeyboard } from "./playground_operator_keyboard.js";
+import { createPlaygroundOperatorKeyboard } from "./playground_operator_keyboard.js?v=keyboard-controls-minimize-1";
+import { CHIP_CLOCKS } from "./js/playground_chip_clock.js";
 import { DEFAULT_CODE, EXAMPLES, EXAMPLE_FILES } from "./playground_examples.js?v=dx7-soundchip-1";
 import { initializePlaygroundMonaco } from "./playground_monaco.js?v=dx7-soundchip-1";
 import {
@@ -68,11 +69,11 @@ import { exportYm2608VgmToPlaygroundJavaScript } from "./js/ym2608vgm.js";
 import { exportYm2610BVgmToPlaygroundJavaScript } from "./js/ym2610bvgm.js";
 import {
   createPlaygroundRuntime,
-} from "./js/playground_runtime.js?v=dx7-soundchip-1";
+} from "./js/playground_runtime.js?v=run-sample-clock-1";
 import { createVgmPresetFiles } from "./playground_vgm_presets.js";
-import { createTfiFileEditor, instrumentToEditorPreset } from "./playground_tfi_editor.js";
+import { createTfiFileEditor, instrumentToEditorPreset } from "./playground_tfi_editor.js?v=audio-preview-monitor-1";
 import { renderFileTree } from "./playground_file_tree.js?v=file-menu-1";
-import { createPlaygroundUi } from "./playground_ui.js?v=fx-monitor-1";
+import { createPlaygroundUi } from "./playground_ui.js?v=keyboard-helper-panel-1";
 import {
   handleMegaSynthEvent,
 } from "./playground_sync.js";
@@ -236,6 +237,7 @@ const playgroundSearch = new URLSearchParams(
 const selectedChip = normalizeTetoricaChip(
   playgroundSearch.get("chip")
 );
+const selectedChipClock = CHIP_CLOCKS[selectedChip === 'ym2610b' ? 'ym2610' : selectedChip];
 const useNukedEngine =
   selectedChip === "ym2612" &&
   playgroundSearch.get("engine") === "nuked";
@@ -385,7 +387,7 @@ const initialProjectFiles = [
     "",
     "Bundled examples are grouped into basic, fm, midi, psg, dac, noise, samples and fx folders.",
     "Open a .js file in FILES to edit it and select it as the Run file.",
-    "Ctrl/Cmd+S syncs the displayed code file to /.tet.ss. Cassette export includes that copy.",
+    "Ctrl/Cmd+S syncs the displayed text or TFI/VGI file to /.tet.ss. Revert restores that copy. Cassette export includes it.",
     "For shared code, create a module in /lib/ and load it from your example:",
     "```js",
     "const { notes } = await import('../lib/notes.js');",
@@ -487,6 +489,14 @@ const operatorTab =
   });
 const operatorKeyboard = createPlaygroundOperatorKeyboard({
   root: operatorKeyboardRoot,
+  auditionPriority: true,
+  minimizeHost: keyboardPanel,
+  onControlsMinimizedChange: minimized => operatorPanel.classList.toggle('keyboard-controls-minimized', minimized),
+  // The opened instrument's independent preview owns computer keys while visible.
+  // The main Keyboard panel remains available for pointer auditions.
+  canHandleComputerKeys: () => !(activeTfiFilePath && !codePanel.hidden),
+  getClock: () => (megaDrive.fm?.fm ?? megaDrive.fm)?.clock ?? selectedChipClock,
+  clockDivider: selectedChip === 'ym2203' ? 72 : 144,
   getSelectedChannel: () => operatorTab.getSelectedChannel(),
   channelCount: megaDrive.capabilities.fmChannels,
   presets: playgroundPresets,
@@ -520,8 +530,11 @@ const tfiFileEditor = createTfiFileEditor({
   root: document.getElementById("tfiFileEditor"),
   operatorRoot: document.getElementById("tfiFileOperator"),
   keyboardRoot: document.getElementById("tfiFileKeyboard"),
+  minimizableKeyboard: true,
   title: document.getElementById("tfiFileTitle"),
   createAudio: () => createTetoricaSynth(synthOptions),
+  clock: selectedChipClock,
+  clockDivider: selectedChip === 'ym2203' ? 72 : 144,
   onSave(path, bytes) {
     virtualFiles.writeBinary(path, bytes);
     registerVirtualInstrumentPreset(path);
@@ -529,7 +542,10 @@ const tfiFileEditor = createTfiFileEditor({
   onStatus: message => setStatus(message),
 });
 window.addEventListener("pagehide", event => {
-  if (!event.persisted) void tfiFileEditor.dispose();
+  if (!event.persisted) {
+    operatorTab.dispose();
+    void tfiFileEditor.dispose();
+  }
 });
 
 function updateMasterVolumeUi() {
@@ -1116,14 +1132,14 @@ function setEditorValue(value) {
 
 function syncActiveEditorFile() {
   const file = virtualFiles.get(activeVirtualPath);
-  if (!isSystemVirtualPath(activeVirtualPath) && file?.type === "text" && file.data !== getEditorValue()) saveActiveVirtualFile();
+  if (!activeTfiFilePath && !isSystemVirtualPath(activeVirtualPath) && file?.type === "text" && file.data !== getEditorValue()) saveActiveVirtualFile();
   refreshCodeFileActions();
 }
 
-function editableCodePath() {
-  const path = activeVirtualPath;
-  if (codePanel.hidden || activeTfiFilePath || isHiddenVirtualPath(path) || path.split('/').includes('.git')) return null;
-  return virtualFiles.get(path)?.type === 'text' ? path : null;
+function editableCheckpointPath() {
+  const path = activeTfiFilePath ?? activeVirtualPath;
+  if (codePanel.hidden || isHiddenVirtualPath(path) || path.split('/').includes('.git')) return null;
+  return virtualFiles.get(path)?.type === (activeTfiFilePath ? 'binary' : 'text') ? path : null;
 }
 
 function codeCheckpoint(path) {
@@ -1145,7 +1161,7 @@ function clearCodeSyncFeedback() {
 }
 
 function showCodeSyncFeedback(path, sourceRevision) {
-  if (!syncCodeButton || editableCodePath() !== path || virtualFiles.getRevision(path) !== sourceRevision) return;
+  if (!syncCodeButton || editableCheckpointPath() !== path || virtualFiles.getRevision(path) !== sourceRevision) return;
   clearCodeSyncFeedback();
   codeSyncFeedback = {path, sourceRevision, checkpointRevision: virtualFiles.getRevision(CHECKPOINT_ROOT + path)};
   syncCodeButton.textContent = '✓ Synced';
@@ -1155,9 +1171,13 @@ function showCodeSyncFeedback(path, sourceRevision) {
 }
 
 function refreshCodeFileActions() {
-  const path = editableCodePath();
+  const path = editableCheckpointPath();
+  const file = path ? virtualFiles.get(path) : null;
   const saved = path ? codeCheckpoint(path) : null;
-  const modified = saved?.type === 'text' && saved.data !== getEditorValue();
+  const compatible = Boolean(saved && saved.type === file?.type);
+  const modified = compatible && (file.type === 'text'
+    ? saved.data !== getEditorValue()
+    : virtualFiles.checkpoints.isModified(path));
   if (codeSyncFeedback && (path !== codeSyncFeedback.path || modified ||
       virtualFiles.getRevision(path) !== codeSyncFeedback.sourceRevision ||
       virtualFiles.getRevision(CHECKPOINT_ROOT + path) !== codeSyncFeedback.checkpointRevision)) clearCodeSyncFeedback();
@@ -1165,17 +1185,17 @@ function refreshCodeFileActions() {
   if (syncCodeButton) syncCodeButton.disabled = !path;
   if (revertCodeButton) {
     revertCodeButton.disabled = !path || !modified;
-    revertCodeButton.title = !path ? 'Open a code file to revert' : !saved ? 'Sync this file first' :
-      saved.type !== 'text' ? 'The synced copy is not a text file' :
+    revertCodeButton.title = !path ? 'Open a file to revert' : !saved ? 'Sync this file first' :
+      !compatible ? 'The synced copy has a different file type' :
       !modified ? 'No changes since the last sync' : 'Restore the last synced version of this file';
   }
 }
 
 async function syncActiveCodeFile() {
   clearCodeSyncFeedback();
-  const path = editableCodePath();
+  const path = editableCheckpointPath();
   if (!path) {
-    setStatus('Open a code file to sync.');
+    setStatus('Open a file to sync.');
     return;
   }
   try {
@@ -1192,17 +1212,27 @@ async function syncActiveCodeFile() {
 }
 
 function revertActiveCodeFile() {
-  const path = editableCodePath();
+  const path = editableCheckpointPath();
   if (!path) return;
   try {
     const saved = virtualFiles.checkpoints.get(path);
-    if (saved?.type !== 'text') throw Error('No synced text is available for this file.');
-    // Apply an editor edit first so Monaco retains Undo. Its content listener
-    // writes back to the VFS; explicitly flush as well for the textarea fallback.
-    if (editorAdapter.replaceAll) editorAdapter.replaceAll(saved.data);
-    else editorAdapter.setValue(saved.data);
-    syncActiveEditorFile();
-    editorAdapter.focus();
+    if (!saved) throw Error('No synced copy is available for this file.');
+    if (saved.type !== virtualFiles.get(path)?.type) throw Error('The synced copy has a different file type.');
+    if (saved.type === 'binary') {
+      // Validate before changing the working file. Reload both the controls and
+      // their existing audition synth, while keeping the checkpoint intact.
+      instrumentToEditorPreset(path, saved.data);
+      const restored = virtualFiles.checkpoints.revert(path);
+      registerVirtualInstrumentPreset(path);
+      tfiFileEditor.open(path, restored.data);
+    } else {
+      // Apply an editor edit first so Monaco retains Undo. Its content listener
+      // writes back to the VFS; explicitly flush as well for the textarea fallback.
+      if (editorAdapter.replaceAll) editorAdapter.replaceAll(saved.data);
+      else editorAdapter.setValue(saved.data);
+      syncActiveEditorFile();
+      editorAdapter.focus();
+    }
     setStatus(`Reverted ${path} to the last synced version.`);
   } catch (error) {
     setStatus(`Could not revert ${path}: ${error.message ?? error}`);
@@ -1212,6 +1242,7 @@ function revertActiveCodeFile() {
 }
 
 function saveActiveVirtualFile() {
+  if (activeTfiFilePath) return;
   const file=virtualFiles.get(activeVirtualPath);
   if(file?.type!=='text'||isSystemVirtualPath(activeVirtualPath)||activeVirtualPath==='/.git'||activeVirtualPath.startsWith('/.git/'))return;
   virtualFiles.writeText(
@@ -1604,10 +1635,23 @@ if (inlineAudioMonitor) {
   audioMonitorPanel.setAttribute("aria-label", "Audio monitor");
   document.getElementById("audioMonitorTab").hidden = true;
 }
-const audioMonitor = createAudioMonitor(() => runtime.megaDrive?.audio, {
+const audioMonitor = createAudioMonitor(() => activeTfiFilePath && !codePanel.hidden
+  ? tfiFileEditor.getAudioRuntime()
+  : runtime.megaDrive?.audio, {
+  getSourceLabel: () => activeTfiFilePath && !codePanel.hidden ? 'File preview' : '',
   panel: audioMonitorPanel,
+  envelopeCanvas: document.getElementById("audioMonitorEnvelope"),
   waveCanvas: document.getElementById("audioMonitorWave"),
   spectrumCanvas: document.getElementById("audioMonitorSpectrum"),
+  modeSelect: document.getElementById("audioMonitorMode"),
+  scaleSelect: document.getElementById("audioMonitorScale"),
+  scaleControl: document.getElementById("audioMonitorScaleControl"),
+  modePanels: {
+    envelope: document.getElementById("audioMonitorEnvelopeView"),
+    waveform: document.getElementById("audioMonitorWaveView"),
+    spectrum: document.getElementById("audioMonitorSpectrumView"),
+  },
+  description: document.getElementById("audioMonitorDescription"),
   channel: document.getElementById("audioMonitorChannel"),
   status: document.getElementById("audioMonitorStatus"),
   pauseButton: document.getElementById("audioMonitorPause"),
@@ -1649,7 +1693,8 @@ const ui =
       const showAudio = tool === "audio" || (inlineAudioMonitor && primary === "code");
       if (inlineAudioMonitor) audioMonitorPanel.hidden = !showAudio;
       audioMonitor.setVisible(showAudio);
-      operatorKeyboard.setView(primary);
+      operatorTab.setVisible(primary === "operator");
+      operatorKeyboard.setView(tool === "keyboard" ? "keyboard" : primary);
       tfiFileEditor.setVisible(primary === "code" && Boolean(activeTfiFilePath));
       refreshCodeFileActions();
     },
@@ -1667,6 +1712,7 @@ function createRuntime() {
   return createPlaygroundRuntime({
     midiFileSupported: !useNukedEngine,
     megaDrive,
+    onAuditionReset: () => operatorKeyboard.releaseAll(),
     presets:
       playgroundPresets,
     onStatus(message) {
@@ -1682,7 +1728,7 @@ function createRuntime() {
     onReady(context) {
       synth = context.synth;
       operatorTab.attachSynth(synth);
-      operatorKeyboard.attachSynth(synth);
+      operatorKeyboard.attachSynth(runtime.getAuditionSynth());
       applyMasterVolume();
     },
     onMegaDriveEvent(event) {

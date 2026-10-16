@@ -9,12 +9,6 @@ import {
   setStringWindowIndex,
 } from "./synth/synth_keyboard.js";
 
-const REFERENCE = {
-  referenceMidi: 62,
-  referenceBlock: 4,
-  referenceFnum: 553,
-};
-
 export function createPlaygroundOperatorKeyboard({
   root,
   channelCount = 6,
@@ -26,13 +20,24 @@ export function createPlaygroundOperatorKeyboard({
   ensureAudioReady,
   onStatus,
   idPrefix = "",
+  getClock,
+  clockDivider = 144,
+  auditionPriority = false,
+  canHandleComputerKeys = () => true,
+  minimizeHost = null,
+  onControlsMinimizedChange,
 }) {
   const state = createFretboardState();
   let synth = null;
   let channelMode = "fixed";
   let fixedChannel = 0;
   let roundRobinChannel = 0;
-  let layout = createFretboardLayout({ state, ...REFERENCE });
+  const layoutOptions = {
+    state,
+    getClock: () => getClock?.() ?? (synth?.fm ?? synth)?.clock ?? 7670454,
+    divider: clockDivider,
+  };
+  let layout = createFretboardLayout(layoutOptions);
   const held = new Map();
   let enabled = false;
   let operatorMode = false;
@@ -46,7 +51,8 @@ export function createPlaygroundOperatorKeyboard({
   }
 
   root.innerHTML = `
-    <div class="playground-keyboard-toolbar playground-keyboard-channel-tools">
+    ${minimizeHost ? '<button id="playgroundKeyboardMinimize" class="playground-keyboard-minimize" type="button">−</button>' : ''}
+    <div id="playgroundKeyboardChannelTools" class="playground-keyboard-toolbar playground-keyboard-channel-tools">
       <label>Mo:
         <select id="playgroundKeyboardChannelMode">
           <option value="fixed">Fixed channel</option>
@@ -60,7 +66,7 @@ export function createPlaygroundOperatorKeyboard({
         <select id="playgroundKeyboardPreset"></select>
       </label>
     </div>
-    <div class="playground-keyboard-toolbar playground-keyboard-tools">
+    <div id="playgroundKeyboardFretTools" class="playground-keyboard-toolbar playground-keyboard-tools">
       <div id="playgroundKeyboardInstrument"></div>
       <div id="playgroundKeyboardPosition"></div>
       <span id="playgroundKeyboardFret"></span>
@@ -68,7 +74,9 @@ export function createPlaygroundOperatorKeyboard({
     </div>
     <div class="playground-keyboard" id="playgroundKeyboardKeys"></div>
     <p class="subtext" id="playgroundKeyboardStatus">Audio idle</p>
-    <p class="subtext">Click a key or use the number and letter rows. The selected Operator channel is used.</p>
+    <p class="subtext">Click a key or use the number and letter rows. ${auditionPriority
+      ? 'Held keys take priority on the selected channel; code resumes on its next note after release.'
+      : 'The selected YM2612 channel is used.'}</p>
   `;
 
   const keysRoot = root.querySelector("#playgroundKeyboardKeys");
@@ -127,7 +135,7 @@ export function createPlaygroundOperatorKeyboard({
 
   function rebuild() {
     releaseAll();
-    layout = createFretboardLayout({ state, ...REFERENCE });
+    layout = createFretboardLayout(layoutOptions);
     buildKeyboard({
       root: keysRoot,
       rowDefs: layout.rowDefs,
@@ -158,7 +166,7 @@ export function createPlaygroundOperatorKeyboard({
     });
   }
 
-  async function press(entry, button) {
+  async function press(entry, button, fromComputerKeys = false) {
     if (!enabled || held.has(entry.key)) return;
     const note = { button };
     held.set(entry.key, note);
@@ -175,6 +183,10 @@ export function createPlaygroundOperatorKeyboard({
       setPreparing(false);
     }
     if (!synth || !enabled || held.get(entry.key) !== note) return;
+    if (fromComputerKeys && !canHandleComputerKeys()) {
+      held.delete(entry.key);
+      return;
+    }
     const channel = channelMode === "roundRobin" ? roundRobinChannel++ % channelCount
       : operatorMode ? getSelectedChannel() : fixedChannel;
     // A channel has one voice: releasing a stolen key must not stop its replacement.
@@ -201,7 +213,7 @@ export function createPlaygroundOperatorKeyboard({
 
   function onKeyDown(event) {
     if (
-      !enabled || event.ctrlKey || event.metaKey || event.altKey ||
+      !enabled || !canHandleComputerKeys() || event.ctrlKey || event.metaKey || event.altKey ||
       event.target?.isContentEditable ||
       event.repeat ||
       (/INPUT|TEXTAREA|SELECT/.test(event.target?.tagName ?? "") &&
@@ -210,7 +222,7 @@ export function createPlaygroundOperatorKeyboard({
     const entry = findLayoutEntry(layout.entries, event.key);
     if (!entry) return;
     event.preventDefault();
-    void press(entry, keysRoot.querySelector(`[data-key="${CSS.escape(entry.key)}"]`));
+    void press(entry, keysRoot.querySelector(`[data-key="${CSS.escape(entry.key)}"]`), true);
   }
 
   function onKeyUp(event) {
@@ -229,11 +241,29 @@ export function createPlaygroundOperatorKeyboard({
   if (idPrefix) {
     for (const element of root.querySelectorAll("[id]")) element.id = idPrefix + element.id;
   }
+  if (minimizeHost) {
+    const button = root.querySelector(`#${idPrefix}playgroundKeyboardMinimize`);
+    let minimized = false;
+    const update = () => {
+      minimizeHost.classList.toggle('is-keyboard-minimized', minimized);
+      button.textContent = minimized ? 'Keys' : '−';
+      button.title = minimized ? 'Show keyboard controls' : 'Minimize keyboard controls';
+      button.setAttribute('aria-label', button.title);
+      button.setAttribute('aria-expanded', String(!minimized));
+      onControlsMinimizedChange?.(minimized);
+    };
+    button.setAttribute('aria-controls', `${idPrefix}playgroundKeyboardChannelTools ${idPrefix}playgroundKeyboardFretTools`);
+    button.addEventListener('click', () => { minimized = !minimized; update(); });
+    update();
+  }
   return {
+    releaseAll,
     setView(tabName) {
-      releaseAll();
-      enabled = tabName === "operator" || tabName === "keyboard";
-      operatorMode = tabName === "operator";
+      const nextEnabled = tabName === "operator" || tabName === "keyboard";
+      const nextOperatorMode = tabName === "operator";
+      if (enabled !== nextEnabled || operatorMode !== nextOperatorMode) releaseAll();
+      enabled = nextEnabled;
+      operatorMode = nextOperatorMode;
       root.hidden = !enabled;
       channelModeSelect.disabled = false;
       channelSelect.disabled = channelMode === "roundRobin";

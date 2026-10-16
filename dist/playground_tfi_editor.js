@@ -1,5 +1,5 @@
 import { createPlaygroundOperatorTab } from './playground_operator_tab.js';
-import { createPlaygroundOperatorKeyboard } from './playground_operator_keyboard.js';
+import { createPlaygroundOperatorKeyboard } from './playground_operator_keyboard.js?v=keyboard-controls-minimize-1';
 import { createTfiFromPreset, parseTfi } from './js/tfi.js';
 import { createVgiFromPreset, parseVgi } from './js/vgi.js';
 
@@ -27,7 +27,7 @@ export function createInstrumentFromEditorPreset(path, preset, originalB4 = pres
   return bytes;
 }
 
-export function createTfiFileEditor({ root, operatorRoot, keyboardRoot, title, createAudio, onSave, onStatus, savedLabel }) {
+export function createTfiFileEditor({ root, operatorRoot, keyboardRoot, title, createAudio, onSave, onStatus, savedLabel, clock = 7670454, clockDivider = 144, minimizableKeyboard = false }) {
   const presets = {};
   let path = null;
   let loading = false;
@@ -48,7 +48,11 @@ export function createTfiFileEditor({ root, operatorRoot, keyboardRoot, title, c
   });
   const keyboard = createPlaygroundOperatorKeyboard({
     root: keyboardRoot, channelCount: 1, getSelectedChannel: () => 0,
+    getClock: () => (audio?.fm?.fm ?? audio?.fm)?.clock ?? clock,
+    clockDivider,
     idPrefix: 'file-', onStatus,
+    minimizeHost: minimizableKeyboard ? keyboardRoot : null,
+    onControlsMinimizedChange: minimized => root.classList.toggle('keyboard-controls-minimized', minimized),
     async ensureAudioReady() {
       if (!readyPromise) {
         audio ??= createAudio();
@@ -77,19 +81,26 @@ export function createTfiFileEditor({ root, operatorRoot, keyboardRoot, title, c
         format = (bytes.byteLength ?? bytes.length) === 43 ? 'vgi' : 'tfi';
         title.textContent = nextPath;
         root.hidden = false;
+        operator.setVisible?.(true);
         keyboard.setView('operator');
       } finally { loading = false; }
     },
     setVisible(visible) {
       root.hidden = !visible;
+      operator.setVisible?.(visible);
       keyboard.setView(visible ? 'operator' : 'code');
     },
     setMasterVolume(nextVolume) {
       volume = nextVolume;
       audio?.setMasterVolume(volume);
     },
+    // Observe the existing preview without starting audio or changing its routing.
+    getAudioRuntime() {
+      return disposed ? null : audio?.audio ?? null;
+    },
     dispose() {
       disposed = true;
+      operator.dispose?.();
       keyboard.dispose();
       return audio?.close();
     },
