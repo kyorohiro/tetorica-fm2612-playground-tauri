@@ -5,13 +5,13 @@ const vm = require('node:vm');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../desktop/desktop-interface.js'), 'utf8');
 class Element {
-  constructor() { this.attributes = {}; this.listeners = {}; }
+  constructor() { this.attributes = {}; this.listeners = {}; this.style = {}; this.children = []; }
   addEventListener(name, fn) { (this.listeners[name] ??= []).push(fn); }
   setAttribute(name, value) { this.attributes[name] = value; }
   getAttribute(name) { return this.attributes[name]; }
   showModal() { this.open = true; }
   close() { this.open = false; this.listeners.close?.forEach(fn => fn()); }
-  append(...items) { this.children = items; }
+  append(...items) { this.children.push(...items); }
   remove() { this.removed = true; }
   select() {}
   focus() { this.focused = true; }
@@ -68,7 +68,7 @@ test('single click toggles despite delayed native state; failures recover inside
   assert.match(children[1].textContent,/native failure/);
   assert.equal(children[0].getAttribute('aria-pressed'),'true');
   assert.equal(children[0].disabled,false);
-  assert.equal(children.length, 5);
+  assert.equal(children.length, 3);
   assert.equal(children[0].id, 'desktop-window-top');
 });
 
@@ -93,22 +93,73 @@ test('MCP retains configuration across toggles and explicitly regenerates only w
   window.top = window;
   vm.runInNewContext(source.replace('__DESKTOP_DEV_ORIGIN__','null'), {window,document,location:new URL('tauri://localhost')});
   await settle();
-  const mcp = children[2], rotate = children[4], config = elements.find(el => el.tag === 'textarea');
+  const mcp = elements.find(el => el.id === 'desktop-mcp');
+  const rotate = elements.find(el => el.id === 'desktop-mcp-regenerate');
+  const connection = elements.find(el => el.id === 'desktop-mcp-connection');
+  const value = elements.find(el => el.id === 'desktop-mcp-value');
+  const dialog = elements.find(el => el.id === 'desktop-mcp-dialog');
+  const config = elements.find(el => el.tag === 'textarea');
+  assert.equal(children.includes(mcp), false);
+  assert.equal(children.includes(rotate), false);
+  assert.equal(children.includes(connection), true);
+  assert.equal(dialog.children.includes(mcp), true);
+  assert.equal(dialog.children.includes(rotate), true);
+  await connection.click();
+  assert.equal(dialog.open, true);
+  assert.equal(menu.open, false);
   await mcp.click();
   assert.equal(rotate.disabled,true);
+  assert.equal(value.textContent, 'On');
   assert.equal(window.__tetoricaMcpGeneration,generation);
   assert.match(config.value,/original/);
   assert.equal(JSON.parse(config.value).mcpServers['tetorica-playground'].url, url);
   assert.doesNotMatch(config.value,/39127/);
   await mcp.click();
   assert.equal(rotate.disabled,false);
+  assert.equal(value.textContent, 'Off');
   assert.equal(JSON.parse(config.value).mcpServers['tetorica-playground'].url, url);
   await rotate.click();
   assert.equal(calls.includes('mcp_regenerate_token'),false);
   confirmed = true;
   await rotate.click();
   assert.match(config.value,/replacement/);
-  assert.equal(elements.find(el => el.tag === 'dialog').open,true);
+  assert.equal(dialog.open,true);
+});
+
+test('desktop settings stay inside their menu group and Pin uses its toolbar slot', async () => {
+  const menu = new Element(), panel = new Element(), settings = new Element(), pin = new Element();
+  const summary = new Element();
+  menu.querySelector = selector => selector === ':scope > summary' ? summary : panel;
+  const elements = [];
+  const byId = {mainMenu:menu, desktopSettingsMenu:settings, desktopPinSlot:pin};
+  let focused = true;
+  const document = {readyState:'complete', getElementById:id => byId[id] ?? null,
+    activeElement:{blur(){ focused = false; }},
+    createElement:tag => { const el = new Element(); el.tag = tag; elements.push(el); return el; },
+    body:{append(){}}};
+  const window = {__TAURI_INTERNALS__:{invoke:async (cmd,args) => {
+    if (cmd === 'window_top_get') return false;
+    if (cmd === 'window_top_set') return args.enabled;
+    return {enabled:false,token:'test',generation:'session',url:'http://127.0.0.1:39127/mcp'};
+  }}};
+  window.top = window;
+  vm.runInNewContext(source.replace('__DESKTOP_DEV_ORIGIN__','null'), {window,document,location:new URL('tauri://localhost')});
+  await settle();
+  assert.equal(pin.children[0].id, 'desktop-window-top');
+  assert.equal(pin.children[0].textContent, 'Pin');
+  await pin.children[0].click();
+  assert.equal(pin.children[0].textContent, 'Unpin');
+  assert.equal(pin.children[0].getAttribute('aria-pressed'), 'true');
+  assert.equal(settings.children.length, 1);
+  assert.equal(settings.children[0].id, 'desktop-mcp-connection');
+  menu.open = true;
+  await settings.children[0].click();
+  assert.equal(menu.open, false);
+  assert.equal(focused, false);
+  const dialog = elements.find(el => el.id === 'desktop-mcp-dialog');
+  assert.equal(dialog.open, true);
+  dialog.close();
+  assert.equal(summary.focused, true);
 });
 
 test('offline reset reloads Tauri without browser cache APIs and clears only app caches when available', async () => {

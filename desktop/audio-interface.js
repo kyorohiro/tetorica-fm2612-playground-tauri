@@ -1,13 +1,23 @@
 // Appended to the pinned Playground module, where runtime and stopRun are available.
 (() => {
-  const menu=document.querySelector('#mainMenu > .toolbar-menu-panel');
+  const mainMenu=document.getElementById('mainMenu');
+  const menu=document.getElementById('desktopSettingsMenu')??document.querySelector('#mainMenu > .toolbar-menu-panel');
   if(!menu||!window.__TAURI_INTERNALS__||document.getElementById('desktop-audio-mode'))return;
   const invoke=(op,args)=>window.__TAURI_INTERNALS__.invoke('audio_request',{op,args:args??null});
   // User-code network guards replace the global constructor while loops run.
   // This connection belongs to the desktop output, not to the user script.
   const AudioSocket=globalThis.WebSocket;
+  const open=document.createElement('button');open.type='button';open.id='desktop-audio-output';
+  open.className='menu-setting-row';open.setAttribute('aria-haspopup','dialog');
+  const menuLabel=document.createElement('span');menuLabel.textContent='Audio output…';
+  const menuValue=document.createElement('small');menuValue.id='desktop-audio-value';menuValue.className='menu-value';menuValue.textContent='WebView';
+  open.append(menuLabel,menuValue);menu.append(open);
+  const dialog=document.createElement('dialog');dialog.id='desktop-audio-dialog';dialog.className='playground-settings-dialog';
+  dialog.setAttribute('aria-label','Audio output');
+  Object.assign(dialog.style,{width:'min(36rem, calc(100vw - 2rem))',boxSizing:'border-box'});
+  const heading=document.createElement('h2');heading.textContent='Audio output';
   const group=document.createElement('fieldset');
-  const title=document.createElement('legend');title.textContent='Audio output';
+  const title=document.createElement('legend');title.textContent='Output engine and device';
   const mode=document.createElement('select');mode.id='desktop-audio-mode';mode.setAttribute('aria-label','Audio output engine');
   mode.add(new Option('WebView (default)','webview'));mode.add(new Option('Audify','audify'));
   const device=document.createElement('select');device.id='desktop-audio-device';device.setAttribute('aria-label','Audio output device');
@@ -25,7 +35,17 @@
   });
   clearError.addEventListener('click',()=>{details.hidden=copyError.hidden=clearError.hidden=true;details.value='';});
   const hint=document.createElement('p');hint.textContent='Changing output stops playback. Select a device, apply, then Run.';
-  group.append(title,mode,device,refresh,apply,status,details,copyError,clearError,hint);menu.append(group);
+  group.append(title,mode,device,refresh,apply,status,details,copyError,clearError,hint);
+  const close=document.createElement('button');close.type='button';close.textContent='Close';
+  close.addEventListener('click',()=>dialog.close());
+  dialog.addEventListener('close',()=>mainMenu?.querySelector?.(':scope > summary')?.focus());
+  dialog.append(heading,group,close);document.body.append(dialog);
+  open.addEventListener('click',()=>{
+    if(mainMenu)mainMenu.open=false;
+    document.activeElement?.blur?.();
+    if(!dialog.open)dialog.showModal();
+    mode.focus();
+  });
   device.hidden=true;refresh.hidden=true;apply.hidden=true;
   let session=null,busy=false,loadedContext=null;
   const show=()=>{device.hidden=refresh.hidden=apply.hidden=mode.value!=='audify';};
@@ -36,6 +56,7 @@
     logLine('[Audify] '+description);
   }
   function detach(){
+    menuValue.textContent='WebView';open.title='Audio output: WebView';
     const old=session;session=null;if(!old)return;
     old.ws.onclose=null;old.ws.onerror=null;old.ws.close();
     old.tap.port.postMessage({type:'stop'});old.tap.port.onmessage=null;
@@ -89,6 +110,8 @@
       ws.onerror=()=>{void failed('Audio connection error');};
       ws.onclose=()=>{void failed('Audio connection closed');};
       status.textContent=`Audify → ${device.selectedOptions[0].textContent} (${info.sampleRate} Hz)`;
+      menuValue.textContent=`Audify · ${device.selectedOptions[0].textContent}`;
+      open.title=status.textContent;
     }catch(error){if(session===current)detach();throw error;}
   }
   async function change(action){

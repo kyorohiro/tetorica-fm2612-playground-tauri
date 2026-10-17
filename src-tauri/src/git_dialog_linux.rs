@@ -17,8 +17,8 @@ fn dialog(title: &str, description: &str) -> Result<gtk::Dialog> {
         .default_width(480)
         .build();
     dialog.set_transient_for(parent.as_ref());
-    dialog.add_button("キャンセル", gtk::ResponseType::Cancel);
-    dialog.add_button("実行", gtk::ResponseType::Ok);
+    dialog.add_button("Cancel", gtk::ResponseType::Cancel);
+    dialog.add_button("Continue", gtk::ResponseType::Ok);
     dialog.set_default_response(gtk::ResponseType::Ok);
     let area = dialog.content_area();
     area.set_spacing(12);
@@ -38,7 +38,7 @@ pub fn choose_token(description: String, names: Vec<String>, preferred: usize) -
     if names.is_empty() {
         return Err("No saved tokens".into());
     }
-    let dialog = dialog("Git 通信の確認", &description)?;
+    let dialog = dialog("Confirm Git connection", &description)?;
     let picker = gtk::ComboBoxText::new();
     for name in &names {
         picker.append_text(name);

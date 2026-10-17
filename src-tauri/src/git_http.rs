@@ -168,9 +168,9 @@ pub async fn git_https_begin(
         let (entries, preferred) = state.0.lock().map_err(|e| e.to_string())?.choices(&url)?;
         let index = preferred.as_ref().and_then(|id| entries.iter().position(|entry| &entry.id == id)).unwrap_or(0);
         let description = if operation == "push" {
-            format!("送信先：{}\nブランチ：{}\nコミット：{}\n\n使用するトークンを選んでください。", url, request.branch, request.commit)
+            format!("Destination: {}\nBranch: {}\nCommit: {}\n\nSelect a token to use.", url, request.branch, request.commit)
         } else {
-            format!("操作：{}\n接続先：{}\n\n使用するトークンを選んでください。", operation, url)
+            format!("Operation: {}\nDestination: {}\n\nSelect a token to use.", operation, url)
         };
         let selected = crate::git_dialog::choose_token(&app, description, entries.iter().map(|entry| entry.name.clone()).collect(), index)?;
         let mut store = state.0.lock().map_err(|e| e.to_string())?;

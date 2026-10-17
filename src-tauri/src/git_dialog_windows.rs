@@ -248,7 +248,7 @@ unsafe extern "system" fn procedure(
         let ok = control(
             hwnd,
             "BUTTON",
-            "実行",
+            "Continue",
             WS_TABSTOP | BS_DEFPUSHBUTTON as u32,
             IDOK,
             302,
@@ -259,7 +259,7 @@ unsafe extern "system" fn procedure(
         let cancel = control(
             hwnd,
             "BUTTON",
-            "キャンセル",
+            "Cancel",
             WS_TABSTOP,
             IDCANCEL,
             408,
@@ -347,7 +347,7 @@ pub fn choose_token(description: String, names: Vec<String>, preferred: usize) -
         return Err("No saved tokens".into());
     }
     match run(Context {
-        title: "Git 通信の確認".into(),
+        title: "Confirm Git connection".into(),
         description,
         mode: Mode::Choose { names, preferred },
         result: None,

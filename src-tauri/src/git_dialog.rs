@@ -45,10 +45,10 @@ pub fn choose_token(app: &AppHandle, description: String, names: Vec<String>, pr
         let mtm = MainThreadMarker::new().ok_or("Token dialog must run on the main thread")?;
         if names.is_empty() { return Err("No saved tokens".to_owned()); }
         let alert = NSAlert::new(mtm);
-        alert.setMessageText(&NSString::from_str("Git 通信の確認"));
+        alert.setMessageText(&NSString::from_str("Confirm Git connection"));
         alert.setInformativeText(&NSString::from_str(&description));
-        alert.addButtonWithTitle(&NSString::from_str("実行"));
-        alert.addButtonWithTitle(&NSString::from_str("キャンセル"));
+        alert.addButtonWithTitle(&NSString::from_str("Continue"));
+        alert.addButtonWithTitle(&NSString::from_str("Cancel"));
         let picker = NSPopUpButton::new(mtm);
         picker.setFrame(NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(360.0, 30.0)));
         for name in &names { picker.addItemWithTitle(&NSString::from_str(name)); }
