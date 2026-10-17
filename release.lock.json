@@ -1,5 +1,5 @@
 {
-  "archive": "hello_ymfm_wasm_chip-tabs-dev_itch_playground.zip",
+  "archive": "hello_ymfm_wasm_dev_itch_playground_v0.80.2.zip",
   "files": {
     "LICENSE": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c",
     "THIRD_PARTY_LICENSES.txt": "8e9d5ae5bf2c605cacae317c61292e315629ad3472ff87bea4a92c59ee449f55",
@@ -541,6 +541,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "3e45f873ae54d7fee087dc2b5e7f3de86b6c7c181db420c55e06be3a244d36ac"
   },
-  "sha256": "ceb4e9b88fd91f04e3aac34275668bbcba0d436e68168e35ef165edfbf3ef152",
-  "version": "sha256-ceb4e9b88fd9"
+  "sha256": "ec0e9123bc17f3336743b4dabf33a692d3ed413899f7f926dd9457d2c5fe5380",
+  "version": "sha256-ec0e9123bc17"
 }
