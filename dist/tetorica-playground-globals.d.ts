@@ -785,6 +785,20 @@ declare function write(register: number, value: number): void;
 declare function write(port: number, register: number, value: number): void;
 /** Wait for a number of seconds. */
 declare function sleep(seconds: number): Promise<void>;
+interface PlaygroundSecondsTimeline {
+  /**
+   * Wait for elapsed seconds from createTimeline(), independent of BPM.
+   * Positions must be finite, nonnegative and nondecreasing. Late waits yield
+   * without adding the lateness to later positions. Stop cancels the wait.
+   */
+  waitUntil(seconds: number): Promise<void>;
+}
+/**
+ * Anchor a new elapsed-seconds timeline now. Create it after loading resources.
+ * Main uses the audio clock; Worker uses its monotonic clock. This resumes
+ * JavaScript and is not a sample-accurate audio reservation.
+ */
+declare function createTimeline(): PlaygroundSecondsTimeline;
 /** Wait for VGM-style sample units. Default sampleRate is 44100. */
 declare function sleepSamples(samples: number, sampleRate?: number): Promise<void>;
 /**
@@ -974,6 +988,7 @@ type PlaygroundAPI = {
     (port: number, register: number, value: number): void;
   };
   sleep: (seconds: number) => Promise<void>;
+  createTimeline: typeof createTimeline;
   sleepSamples: (samples: number, sampleRate?: number) => Promise<void>;
   /** Shared 44100-Hz timeline cursor; a newly started loop may begin at a nonzero value. */
   beginSampleSchedule: () => number;
@@ -1395,6 +1410,172 @@ interface PlaygroundDx7 {
   getState(): Promise<PlaygroundDx7State>;
   dispose(): void;
 }
+type PlaygroundSnesChannel = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
+/** Raw BRR has no tuning metadata. Declare the note/frequency at basePitch.
+ * Native DSP rate is fixed at 32,000 Hz. Loop positions are native sample indices.
+ */
+type PlaygroundSnesBrrOptions = ({rootNote:string | number; baseFrequencyHz?:never} | {baseFrequencyHz:number; rootNote?:never}) & {
+  /** Hardware PITCH at the declared root, default 4096 (one source sample/frame). */
+  basePitch?:number;
+  /** Required for looping BRR, on a 16-sample BRR block boundary. */
+  loopStartSamples?:number;
+};
+interface PlaygroundSnesSample {
+  id:number; startAddress:number; loopAddress:number; byteLength:number; frames:number;
+  rootNote:string | number | null; rootFrequencyHz:number; basePitch:number;
+  loop:boolean; loopStartSamples:number | null;
+}
+interface PlaygroundSnesChannelState {
+  sample:number | null;
+  /** Hardware register values 0..255; ADSR1 bit7 enables ADSR, otherwise GAIN. */
+  adsr1:number; adsr2:number; gain:number;
+  /** Signed hardware volume -128..127, including phase inversion. */
+  volumeLeft:number; volumeRight:number;
+  /** Hardware PITCH 0..16383; not a frequency in Hz. */
+  pitch:number;
+}
+type PlaygroundSnesPreset = Partial<Omit<PlaygroundSnesChannelState, 'sample'>> & {sample?:number | PlaygroundSnesSample};
+interface PlaygroundSnesState {
+  /** Fixed internal DSP sample rate, 32,000 Hz. */
+  sampleRate:number;
+  samples:PlaygroundSnesSample[]; channels:PlaygroundSnesChannelState[]; nextAddress:number;
+}
+/** Recorded original DSP execution, including RAM/BRR changes. Independent of
+ * BPM. Four words per event: effective DSP clock, kind (0 DSP / 1 RAM), address,
+ * byte value. Preserve nondecreasing clocks and same-clock event order.
+ * These are 1,024,000-Hz execution clocks, not output frames or VGM samples.
+ */
+interface PlaygroundSnesTimeline {
+  version:1;
+  clockRate:1024000;
+  /** Complete 32,000-Hz frames; maximum 600 seconds. */
+  durationClocks:number;
+  initialState:{ram:Uint8Array; dsp:Uint8Array; outputDelayFrames:4};
+  /** At most 1,000,000 packed events. RAM addresses 0..65535; DSP 0..127. */
+  events:Uint32Array | number[];
+}
+interface PlaygroundSnesTimelineState {
+  loaded:boolean; playing:boolean; ended:boolean;
+  /** Native 32,000-Hz frames from the prepared timeline's origin. */
+  positionFrames:number;
+  totalFrames:number;
+}
+/** Independent CPU-free S-DSP, eight fixed physical voices, no automatic allocator.
+ * BRR uploads, tuning and voice configuration are explicit. Routes through mixer/FX.
+ * Worker performance commands follow Worker lookahead; STOP disposes this instance.
+ * Echo writes are off by default. Raw DSP edits must respect sample/directory RAM.
+ */
+interface PlaygroundSnes {
+  /** AudioContext output sample rate in Hz, independent of nativeSampleRate. */
+  readonly sampleRate:number;
+  readonly nativeSampleRate:32000;
+  loadBRR(bytes:ArrayBuffer | ArrayBufferView, options:PlaygroundSnesBrrOptions):Promise<PlaygroundSnesSample>;
+  /** Upload original RAM/DSP state and timed writes, without playback. This
+   * replaces the authored instrument state; use reset() before BRR/note editing.
+   */
+  prepareTimeline(timeline:PlaygroundSnesTimeline):Promise<PlaygroundSnesTimelineState>;
+  /** Restart the prepared interval; resolves when audio finishes. Worker
+   * lookahead delays the start once. Stop, disposal or owner removal rejects
+   * with AbortError. No JS sleep is needed to keep playback alive.
+   */
+  playTimeline():Promise<PlaygroundSnesTimelineState>;
+  /** Silence a timeline and reject any pending playTimeline() wait. */
+  stopTimeline():Promise<PlaygroundSnesTimelineState>;
+  getTimelineState():Promise<PlaygroundSnesTimelineState>;
+  setPreset(channel:PlaygroundSnesChannel, preset:PlaygroundSnesPreset):void;
+  setChannel(channel:PlaygroundSnesChannel, params:PlaygroundSnesPreset):void;
+  getPreset(channel:PlaygroundSnesChannel):Promise<PlaygroundSnesChannelState>;
+  /** Musical fundamental Hz using the assigned BRR sample's declared tuning. */
+  setFrequency(channel:PlaygroundSnesChannel, hz:number):void;
+  setNote(channel:PlaygroundSnesChannel, note:string | number):void;
+  /** Raw hardware PITCH 0..16383; 4096 means unity source playback rate. */
+  setPitch(channel:PlaygroundSnesChannel, pitch:number):void;
+  keyOn(channel:PlaygroundSnesChannel):void;
+  keyOff(channel:PlaygroundSnesChannel):void;
+  noteOn(channel:PlaygroundSnesChannel, note?:string | number):void;
+  noteOff(channel:PlaygroundSnesChannel):void;
+  allNotesOff():void;
+  /** Reset registers and release voices, retaining uploaded sample IDs/data.
+   * After prepareTimeline(), clears raw timeline mode and returns to BRR editing.
+   */
+  reset():void;
+  writeDsp(register:number, value:number):void;
+  readDsp(register:number):Promise<number>;
+  /** Applied state; future reserved Worker commands may not yet be reflected. */
+  getState():Promise<PlaygroundSnesState>;
+  /** Atomic 64KiB RAM and 128-byte DSP register copy; analysis, not a full checkpoint. */
+  snapshot():Promise<{ram:Uint8Array; dsp:Uint8Array; nativeFrames:number}>;
+  dispose():void;
+}
+interface PlaygroundSpcState {
+  ready:boolean; loaded:boolean; playing:boolean; paused:boolean; muteMask:number;
+  /** Elapsed media seconds from the loaded SPC snapshot, independent of BPM. */
+  positionSeconds:number;
+  playbackNativeFrames:number; renderedNativeFrames:number;
+  nativeSampleRate:32000; sampleRate?:number; closed?:boolean;
+}
+/** Captured S-DSP registers; raw PITCH and envelope bytes, not MIDI or seconds. */
+interface PlaygroundSpcEventPreset {
+  sourceNumber:number;
+  /** Raw PITCH 0..16383; 4096 is unity BRR playback rate. */
+  pitch:number;
+  adsr1:number; adsr2:number; gain:number;
+  /** Signed register values -128..127, including phase inversion. */
+  volumeLeft:number; volumeRight:number;
+}
+type PlaygroundSpcEventType = 'noteOn' | 'noteOff' | 'pitch' | 'volume' | 'instrument' | 'dsp';
+/** Source clocks from the SPC origin, at 1,024,000 Hz (32 clocks/native frame).
+ * Callback delivery occurs later, in Main or the script Worker, not in audio.
+ */
+type PlaygroundSpcEvent =
+  | (PlaygroundSpcEventPreset & {type:'noteOn'; clock:number; channel:PlaygroundSnesChannel;
+      preset:PlaygroundSpcEventPreset; reason:'kon' | 'initial';
+      /** The persistent KOFF bit was asserted when KON requested this note. */
+      keyOffHeld:boolean;
+      /** Initial state is inferred from KON/ENVX/OUTX, not original key history. */
+      inferred?:true})
+  | {type:'noteOff'; clock:number; channel:PlaygroundSnesChannel; sourceNumber:number; reason:'koff' | 'initial'; inferred?:true}
+  | {type:'pitch'; clock:number; channel:PlaygroundSnesChannel; pitch:number}
+  | {type:'volume'; clock:number; channel:PlaygroundSnesChannel; volumeLeft:number; volumeRight:number}
+  | {type:'instrument'; clock:number; channel:PlaygroundSnesChannel; sourceNumber:number; adsr1:number; adsr2:number; gain:number; preset:PlaygroundSpcEventPreset}
+  | {type:'dsp'; clock:number; channel?:never; register:number; value:number}
+  | {type:'overflow'; clock:number; channel?:never; droppedWrites:number; message:string};
+interface PlaygroundSpcEventOptions {
+  /** Physical voices 0..7. Global DSP writes remain available via type 'dsp'. */
+  voices?:PlaygroundSnesChannel[];
+  types?:PlaygroundSpcEventType[];
+  /** Delivery batching interval 16..1000 ms, default 16; not a timing quantizer. */
+  intervalMs?:number;
+}
+/** SPC700 program + S-DSP file player. This is not the CPU-free SNES instrument API.
+ * Runs the saved program after play(); optional onEvent observes musical requests.
+ * The SPC clock is independent of BPM and Worker lookahead. STOP disposes the player.
+ */
+interface PlaygroundSpc {
+  readonly sampleRate:number;
+  readonly nativeSampleRate:32000;
+  loadSPC(bytes:Uint8Array | ArrayBuffer):Promise<PlaygroundSpcState>;
+  play():Promise<PlaygroundSpcState>;
+  pause():Promise<PlaygroundSpcState>;
+  /** Reload the original saved state and rewind to zero. */
+  stop():Promise<PlaygroundSpcState>;
+  /** Replay from the original snapshot to elapsed seconds (0..3600); no seek cache. */
+  seek(seconds:number):Promise<PlaygroundSpcState>;
+  getState():Promise<PlaygroundSpcState>;
+  /** Bit0..7 mute the eight voices; their internal musical state still advances. */
+  setMuteMask(mask:number):Promise<PlaygroundSpcState>;
+  /** Opt-in musical observations: key requests, distinct PITCH/volume/instrument
+   * changes and raw global DSP writes. No smoothing or note-name inference.
+   * Same-clock PITCH low/high writes are combined; repeated KON still retriggers.
+   * Returns an unsubscribe function. Load/seek reset the inferred initial state;
+   * Stop/dispose remove queued delivery. An overflow diagnostic bypasses filters
+   * and reports that chronology was lost; the decoder then resynchronizes.
+   */
+  onEvent(callback:(event:PlaygroundSpcEvent)=>void | Promise<void>, options?:PlaygroundSpcEventOptions):()=>void;
+  /** Current RAM/DSP capture, not a complete resumable checkpoint. */
+  snapshot():Promise<{ram:Uint8Array; dsp:Uint8Array; nativeFrames:number; playbackNativeFrames:number; positionSeconds:number; nativeSampleRate:32000; muteMask:number}>;
+  dispose():void;
+}
 type PlaygroundSoundChipMap = {
   ym2612: TetoricaSelectedChip extends 'ym2612' ? FMApi : PlaygroundCreatedFm;
   ym2203: TetoricaSelectedChip extends 'ym2203' ? PlaygroundOPNFm<0 | 1 | 2> : PlaygroundCreatedYm2203;
@@ -1407,9 +1588,11 @@ type PlaygroundSoundChipMap = {
   nes: PlaygroundNes;
   pwm: PlaygroundPWM32X;
   dx7: PlaygroundDx7;
+  snes: PlaygroundSnes;
+  spc: PlaygroundSpc;
 };
 type PlaygroundUseSoundChipOptions = { [key: string]: never };
-type PlaygroundSoundChipClient<Name extends keyof PlaygroundSoundChipMap> = Name extends 'dx7'
+type PlaygroundSoundChipClient<Name extends keyof PlaygroundSoundChipMap> = Name extends 'dx7' | 'snes' | 'spc'
   ? PlaygroundSoundChipMap[Name] & {readonly id: string}
   : PlaygroundSoundChipMap[Name] & PlaygroundChipClock & {readonly id: string};
 /** Reuse one instance of this instrument until STOP. For independent instances use createSoundChip. */
@@ -1417,6 +1600,10 @@ declare function useSoundChip<Name extends keyof PlaygroundSoundChipMap>(name: N
 
 /** Create an independent DX7 with its own 16 voices and SysEx bank. */
 declare function createSoundChip(name: 'dx7', options?: PlaygroundCreateSoundChipOptions): Promise<PlaygroundDx7 & {readonly id: string}>;
+/** Independent CPU-free S-DSP with separate RAM and eight physical voices. */
+declare function createSoundChip(name:'snes', options?:PlaygroundCreateSoundChipOptions):Promise<PlaygroundSnes & {readonly id:string}>;
+/** Independent SPC file player; use 'snes' for BRR instrument programming. */
+declare function createSoundChip(name:'spc', options?:PlaygroundCreateSoundChipOptions):Promise<PlaygroundSpc & {readonly id:string}>;
 
 /** Independent chips. Global play/write still target the default Playground chip. */
 type PlaygroundCreatedFm = Omit<FMApi, 'dac' | 'scheduleWrites' | 'read' | 'readStatus' | 'getIrq'> & {dispose(): void};

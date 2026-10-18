@@ -1,4 +1,6 @@
-import {createPerformanceSender} from './playground_performance_sender.js?v=worker-lookahead-500-1';
+import {createSpcClient} from './playground_spc.js?v=spc-events-1';
+import {createSnesClient} from './playground_snes.js?v=spc-song-js-1';
+import {createPerformanceSender} from './playground_performance_sender.js?v=spc-events-1';
 import {midiToOpnPitch, opnPitchFromHz} from './soundchip_pitch.js';
 import {CHIP_CLOCKS} from './playground_chip_clock.js';
 import {createNesClient} from './playground_nes.js';
@@ -10,7 +12,7 @@ import {resolvePlaySeconds,resolvePlayDuration} from './playground_duration.js?v
 import {createLoopAsyncTasks} from './playground_async_tasks.js';
 import {createCycle} from './playground_music.js?v=cycle-parity-1';
 import {createOpnClient} from './playground_opn.js';
-import {createSoundChipRegistry} from './playground_soundchips.js';
+import {createSoundChipRegistry} from './playground_soundchips.js?v=spc-import-1';
 import {createGameboyClient} from './playground_gameboy.js';
 import {createYm2608Client} from './playground_ym2608.js?v=loop-async-tasks-1';
 import {createRf5c164Client} from './playground_rf5c164.js?v=chip-tabs-2';
@@ -27,7 +29,7 @@ import {createWorkerDac} from './playground_worker_dac.js';
 import {createWorkerChip} from './playground_worker_chip.js?v=dac-pcm-1';
 import {createMidiApi, createMidiRack} from './playground_midi.js?v=shared-beat-clock-1';
 import { hzToBlockFnum } from "./pitch.js";
-import {createDeadlineScheduler,createBeatClock,runTween} from './playground_clock.js?v=shared-beat-clock-1';
+import {createDeadlineScheduler,createBeatClock,createSecondsTimeline,runTween} from './playground_clock.js?v=spc-song-timing-1';
 
 import {createNativeFXController,createLiveFxLifecycle} from "./native_fx.js?v=live-fx-definitions-1";
 let nativeFXPort = null;
@@ -639,9 +641,12 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
       if (name === 'nes' && options.fds !== undefined && typeof options.fds !== 'boolean') throw new TypeError('fds must be boolean');
       const response=await request('pcm.create',[name, options],run.currentLoop);
       // Older test/host shims may return a bare port; production returns its allocated ID.
-      const port=performanceTransport.port(response.port ?? response, 'independent');
+      const port=performanceTransport.port(response.port ?? response, name === 'spc' ? 'spc' : 'independent');
       const mixerId=response.id ?? options.id ?? `${name}:${++pcmSequence}`;
-      const pcm=name === 'dx7' ? createDx7Client(port, response) : name === 'nes' ? createNesClient(port, response) : name === 'pwm' ? createPWM32XClient(port) : ['ym2612', 'ym2203', 'ym2610'].includes(name) ? createOpnClient(name, port) : name === 'ym2151' ? createYm2151Client(port) : name === 'segapsg' ? createSegaPsgClient(port) : name === 'gameboy' ? createGameboyClient(port) : name === 'ym2608' ? createYm2608Client(port) : createRf5c164Client(port,source=>request('pcm.decode',[source]));
+      const pcm=name === 'spc' ? createSpcClient(port, response, {
+        captureContext:()=>run.currentLoop,restoreContext:loop=>{run.currentLoop=loop;},
+        invokeEvent:(callback,event)=>executeWithWorkerGuards(()=>callback(event)),
+      }) : name === 'snes' ? createSnesClient(port, response) : name === 'dx7' ? createDx7Client(port, response) : name === 'nes' ? createNesClient(port, response) : name === 'pwm' ? createPWM32XClient(port) : ['ym2612', 'ym2203', 'ym2610'].includes(name) ? createOpnClient(name, port) : name === 'ym2151' ? createYm2151Client(port) : name === 'segapsg' ? createSegaPsgClient(port) : name === 'gameboy' ? createGameboyClient(port) : name === 'ym2608' ? createYm2608Client(port) : createRf5c164Client(port,source=>request('pcm.decode',[source]));
       if(run.stopped || token!==run.token){pcm.dispose();throw new Error('Run stopped');}
       Object.defineProperty(pcm, 'id', {value: mixerId, enumerable: true});
       const dispose=pcm.dispose.bind(pcm); let disposed=false;
@@ -699,6 +704,14 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
     scheduleWritesSamples: (start, entries) => workerDac ? workerDac.schedule(start, entries) : postCommand("scheduleWritesSamples", [start, entries]),
     control: (voice, options) => nativeNoise ? controlNativeNoise(voice,options) : postCommand("noise.control", [handleId(voice), options]),
     sleep: clock.sleep,
+    createTimeline() {
+      const token = run.token;
+      return createSecondsTimeline({
+        now: () => performance.now() / 1000,
+        sleep: clock.sleep,
+        check: () => { if (run.stopped || token !== run.token) throw new DOMException('Run stopped', 'AbortError'); },
+      });
+    },
     sleepSamples: clock.sleepSamples,
     beat: clock.beat,
     nextBeat: clock.nextBeat,

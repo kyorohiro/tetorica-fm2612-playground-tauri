@@ -1,6 +1,10 @@
+import {createSpcAudio} from './playground_spc_audio.js?v=spc-events-1';
+import {createSpcClient} from './playground_spc.js?v=spc-events-1';
+import {createSnesAudio} from './playground_snes_audio.js?v=spc-song-js-1';
+import {createSnesClient} from './playground_snes.js?v=spc-song-js-1';
 import {createChipInspector} from './playground_chip_inspector.js?v=chip-tabs-2';
-import {createPerformanceHost} from './playground_performance_host.js';
-import {DEFAULT_WORKER_LOOKAHEAD_SECONDS, validateWorkerLookahead} from './playground_performance_sender.js?v=worker-lookahead-500-1';
+import {createPerformanceHost} from './playground_performance_host.js?v=spc-events-1';
+import {DEFAULT_WORKER_LOOKAHEAD_SECONDS, validateWorkerLookahead} from './playground_performance_sender.js?v=spc-events-1';
 import {midiToOpnPitch, opnPitchFromHz} from './soundchip_pitch.js';
 import {attachChipClock, CHIP_CLOCKS} from './playground_chip_clock.js';
 import {createNesAudio} from './playground_nes_audio.js';
@@ -16,7 +20,7 @@ import {createSegaPsgClient} from './playground_segapsg.js';
 import {createLoopAsyncTasks} from './playground_async_tasks.js';
 import {createOpnAudio} from './playground_opn_audio.js';
 import {createOpnClient} from './playground_opn.js';
-import {createSoundChipRegistry} from './playground_soundchips.js';
+import {createSoundChipRegistry} from './playground_soundchips.js?v=spc-import-1';
 import {createGameboyAudio} from './playground_gameboy_audio.js';
 import {createGameboyClient} from './playground_gameboy.js';
 import {createYm2608Audio} from './playground_ym2608_audio.js?v=loop-async-tasks-1';
@@ -39,7 +43,7 @@ import {
   FM_PRESETS,
 } from "./megasynth.js?v=chip-tabs-2";
 import { createTetoricaSynth } from "./tetorica_synth.js?v=chip-tabs-2";
-import { createPlaygroundClock } from "./playground_clock.js?v=run-sample-clock-1";
+import { createPlaygroundClock, createSecondsTimeline } from "./playground_clock.js?v=spc-song-timing-1";
 import { capturePlaygroundNativeIpc, executeWithPlaygroundGuards } from "./playground_execution.js";
 import { createPlaygroundLive } from "./playground_live.js?v=run-sample-clock-1";
 import { createPlaygroundMusic } from "./playground_music.js?v=shared-beat-clock-1";
@@ -191,7 +195,7 @@ export function createPlaygroundRuntime(
     options.execution ?? "main";
   const defaultLogicWorkerUrl =
     new URL(
-      "./playground_logic_worker.js?v=chip-tabs-2",
+      "./playground_logic_worker.js?v=spc-song-timing-1",
       import.meta.url
     );
   defaultLogicWorkerUrl.searchParams.set(
@@ -239,6 +243,14 @@ export function createPlaygroundRuntime(
   const performanceHost = createPerformanceHost({getContext: () => megaDrive.audioContext,
     onSuspended: () => { stop(); emitStatus('Audio suspended. Press Run to start again.'); }});
   const pcmDevices = new Set();
+  const spcLoopOwners = new WeakMap();
+  let spcOwnerSequence = 0;
+  function spcOwner(loop, token) {
+    if (token !== currentRunToken || loop?.stopped) throw new DOMException('Run stopped', 'AbortError');
+    if (!loop) return {session:token,owner:'script'};
+    if (!spcLoopOwners.has(loop)) spcLoopOwners.set(loop, {session:token,owner:`spc-loop:${++spcOwnerSequence}`});
+    return spcLoopOwners.get(loop);
+  }
   const pendingPcmIds = new Set();
   const pendingPcmDisposals = new Map();
   let pcmSequence = 0;
@@ -301,7 +313,7 @@ export function createPlaygroundRuntime(
   async function openPcm(name, token = currentRunToken, options = {}) {
     if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(k => !['id', ...(name === 'nes' ? ['fds', 'clock'] : [])].includes(k))) throw new TypeError('createSoundChip supports {id}, and {fds, clock} for NES');
     if (name === 'nes' && options.fds !== undefined && typeof options.fds !== 'boolean') throw new TypeError('fds must be boolean');
-    if(!['ym2612', 'ym2203', 'ym2610', 'rf5c164', 'ym2608', 'gameboy', 'segapsg', 'ym2151', 'pwm', 'nes', 'dx7'].includes(name)) throw new Error('Unsupported Playground sound chip: ' + name);
+    if(!['ym2612', 'ym2203', 'ym2610', 'rf5c164', 'ym2608', 'gameboy', 'segapsg', 'ym2151', 'pwm', 'nes', 'dx7', 'snes', 'spc'].includes(name)) throw new Error('Unsupported Playground sound chip: ' + name);
     // A Worker can retire a logical source at its future lookahead position,
     // then immediately request that same cached source again. Reconnect only
     // after the old endpoint is actually released, never into a different chip.
@@ -313,7 +325,7 @@ export function createPlaygroundRuntime(
     if (mixerId === undefined) do {mixerId = `${name}:${++pcmSequence}`;} while (occupied(mixerId));
     if (typeof mixerId !== 'string' || !mixerId.trim()) throw new TypeError('Mixer id must be a nonempty string');
     if (occupied(mixerId)) {reservation?.release(); throw new Error(`Mixer id is already connected: ${mixerId}`);}
-    const createAudio = name === 'dx7' ? createDx7Audio : name === 'nes' ? (context, destination) => createNesAudio(context, destination, options) : name === 'pwm' ? createPWM32XAudio : ['ym2612', 'ym2203', 'ym2610'].includes(name) ? (context, destination) => createOpnAudio(context, destination, name) : name === 'ym2151' ? createYm2151Audio : name === 'segapsg' ? createSegaPsgAudio : name === 'gameboy' ? createGameboyAudio : name === 'ym2608' ? createYm2608Audio : createRf5c164Audio;
+    const createAudio = name === 'spc' ? createSpcAudio : name === 'snes' ? createSnesAudio : name === 'dx7' ? createDx7Audio : name === 'nes' ? (context, destination) => createNesAudio(context, destination, options) : name === 'pwm' ? createPWM32XAudio : ['ym2612', 'ym2203', 'ym2610'].includes(name) ? (context, destination) => createOpnAudio(context, destination, name) : name === 'ym2151' ? createYm2151Audio : name === 'segapsg' ? createSegaPsgAudio : name === 'gameboy' ? createGameboyAudio : name === 'ym2608' ? createYm2608Audio : createRf5c164Audio;
     pendingPcmIds.add(mixerId);
     let device;
     try {device = await createAudio(megaDrive.audioContext, megaDrive.audio.masterInputNode);}
@@ -666,7 +678,13 @@ export function createPlaygroundRuntime(
       executeCallback: executeUserCallback,
       finishTasks: loop => loopTasks.finish(loop),
       releaseTasks: loop => loopTasks.release(loop),
-      cancelWaits: state => {loopTasks.release(state);for (const api of midiApis) api.cancelOwner(state.name);clockApi.cancelWaits(state);},
+      cancelWaits: state => {
+        const owner = spcLoopOwners.get(state);
+        if (owner) for (const device of pcmDevices) if (device.chipName === 'spc') {
+          device.node.port.postMessage({type:'performance-cancel-owner',...owner});
+        }
+        loopTasks.release(state);for (const api of midiApis) api.cancelOwner(state.name);clockApi.cancelWaits(state);
+      },
     });
 
   function psgTone(
@@ -1585,7 +1603,11 @@ export function createPlaygroundRuntime(
       },
       createSoundChip: async (name, options = {}) => {
         const device=await openPcm(name,runToken,options);
-        const client=name === 'dx7' ? createDx7Client(device.port, device) : name === 'nes' ? createNesClient(device.port, device) : name === 'pwm' ? createPWM32XClient(device.port) : ['ym2612', 'ym2203', 'ym2610'].includes(name) ? createOpnClient(name, device.port) : name === 'ym2151' ? createYm2151Client(device.port) : name === 'segapsg' ? createSegaPsgClient(device.port) : name === 'gameboy' ? createGameboyClient(device.port) : name === 'ym2608' ? createYm2608Client(device.port) : createRf5c164Client(device.port,decodePcm);
+        const client=name === 'spc' ? createSpcClient(device.port, device, {
+          getOwner:()=>spcOwner(currentLoopContext,currentRunToken), captureContext:()=>currentLoopContext,
+          restoreContext:loop=>{currentLoopContext=loop;},
+          invokeEvent:(callback,event)=>executeUserCallback(()=>callback(event)),
+        }) : name === 'snes' ? createSnesClient(device.port, device) : name === 'dx7' ? createDx7Client(device.port, device) : name === 'nes' ? createNesClient(device.port, device) : name === 'pwm' ? createPWM32XClient(device.port) : ['ym2612', 'ym2203', 'ym2610'].includes(name) ? createOpnClient(name, device.port) : name === 'ym2151' ? createYm2151Client(device.port) : name === 'segapsg' ? createSegaPsgClient(device.port) : name === 'gameboy' ? createGameboyClient(device.port) : name === 'ym2608' ? createYm2608Client(device.port) : createRf5c164Client(device.port,decodePcm);
         Object.defineProperty(client, 'id', {value: device.mixerId, enumerable: true});
         const dispose=device.dispose, disposeClient=client.dispose.bind(client); let disposed=false;
         client.dispose=()=>{if(disposed)return;disposed=true;try{disposeClient();}finally{dispose();}};
@@ -1655,6 +1677,18 @@ export function createPlaygroundRuntime(
           seconds,
           runToken
         ),
+      createTimeline() {
+        const loop = currentLoopContext;
+        const token = loop?.runToken ?? runToken;
+        return createSecondsTimeline({
+          now: clockApi.nowSeconds,
+          sleep: seconds => clockApi.sleep(seconds, runToken),
+          check: () => {
+            if (loop?.interruptError && !loop.stopped) throw loop.interruptError;
+            if (loop?.stopped || token !== (loop?.runToken ?? currentRunToken)) throw new Error('Run stopped');
+          },
+        });
+      },
       sleepSamples: (
         samples,
         sampleRate = 44100
@@ -1776,6 +1810,7 @@ export function createPlaygroundRuntime(
           pg.scheduleWritesSamples(start, entries),
         sleep: (seconds) =>
           pg.sleep(seconds),
+        createTimeline: pg.createTimeline,
         sleepSamples: (
           samples,
           sampleRate

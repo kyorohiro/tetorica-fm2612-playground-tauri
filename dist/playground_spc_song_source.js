@@ -1,0 +1,176 @@
+// Source generation for editable SPC re-performance; emulation stays in Worker.
+import {noteToHz} from './js/soundchip_pitch.js';
+
+const ASSIGNED_TUNING = {rootNote:'C4',basePitch:4096};
+const ASSIGNED_MIDI = 69 + 12 * Math.log2(noteToHz(ASSIGNED_TUNING.rootNote) / 440);
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const json = value => JSON.stringify(value, null, 2) + '\n';
+const quote = value => JSON.stringify(value);
+const hex = value => `0x${value.toString(16).padStart(2,'0')}`;
+const number = value => Number(value.toFixed(9)).toString();
+const GLOBAL_LABELS = new Map([[0x0c,'Master volume L'],[0x1c,'Master volume R'],
+  [0x2d,'Pitch modulation mask'],[0x3d,'Noise mask'],[0x6c,'Noise clock / flags; echo disabled']]);
+const PRESET_KEYS = ['adsr1','adsr2','gain','volumeLeft','volumeRight'];
+
+function validate(performance) {
+  if (performance?.version !== 1 || performance.clockRate !== 1024000
+    || !Number.isSafeInteger(performance.durationClocks) || performance.durationClocks < 102400
+    || performance.durationClocks > 600 * 1024000 || !(performance.initialDsp instanceof Uint8Array)
+    || performance.initialDsp.length !== 128 || !Array.isArray(performance.events)
+    || performance.events.length > 20000 || !Array.isArray(performance.samples)
+    || performance.samples.length > 256 || !Array.isArray(performance.warnings)) throw new TypeError('Invalid readable SPC performance');
+  let previous = 0, total = 0;
+  for (const [id,sample] of performance.samples.entries()) {
+    if (sample.id !== id || !(sample.brr instanceof Uint8Array) || !sample.brr.length
+      || sample.brr.length % 9 || (sample.loop && (!Number.isInteger(sample.loopStartSamples)
+        || sample.loopStartSamples < 0 || sample.loopStartSamples % 16
+        || sample.loopStartSamples >= sample.brr.length / 9 * 16))) throw new TypeError('Invalid readable SPC BRR asset');
+    total += sample.brr.length;
+  }
+  if (total > 64512) throw new RangeError('Readable SPC assets exceed SNES sample RAM');
+  for (const event of performance.events) {
+    if (!Number.isSafeInteger(event.clock) || event.clock < previous || event.clock > performance.durationClocks
+      || !['noteOn','noteOff','pitch','volume','instrument','dsp'].includes(event.type)
+      || (event.type !== 'dsp' && (!Number.isInteger(event.channel) || event.channel < 0 || event.channel > 7))
+      || (event.sampleId !== undefined && !performance.samples[event.sampleId])) throw new TypeError('Invalid readable SPC event');
+    previous = event.clock;
+  }
+}
+
+function validateAnnotations(annotations, samples) {
+  if (!Array.isArray(annotations) || annotations.length > samples.length) {
+    throw new TypeError('SPC note annotations must be an array with at most one entry per sample');
+  }
+  const bySample = new Map();
+  for (const annotation of annotations) {
+    if (!annotation || !Number.isInteger(annotation.sampleId) || annotation.sampleId < 0
+      || !samples[annotation.sampleId] || !Number.isFinite(annotation.referenceHz) || annotation.referenceHz <= 0
+      || !['estimated','manual'].includes(annotation.kind)
+      || (annotation.confidence !== undefined && !['high','low','none'].includes(annotation.confidence))) {
+      throw new TypeError('Invalid SPC note annotation: expected a known sampleId, positive finite referenceHz and estimated/manual kind');
+    }
+    if (bySample.has(annotation.sampleId)) throw new TypeError('Duplicate SPC note annotation sampleId');
+    bySample.set(annotation.sampleId,annotation);
+  }
+  return bySample;
+}
+
+/** Return source and assets without changing Virtual Files. A single physical
+ * eight-voice SNES instance keeps channel overlap; all samples are loaded first.
+ * This is an editable approximation, not an exact SPC/DSP timeline export.
+ * Optional annotations give each sample's fundamental at 32,000 Hz / PITCH 4096
+ * for both loadBRR tuning and note comments. Resolve manual overrides before
+ * calling: duplicate sample IDs are rejected. Raw PITCH, BRR bytes, presets and
+ * event timing stay unchanged; no note-name playback calls are generated.
+ */
+export function buildSpcSongSource(performance, directory, {annotations = []} = {}) {
+  validate(performance);
+  const annotationsBySample = validateAnnotations(annotations,performance.samples);
+  const files = [], presets = [], presetNames = new Map();
+  function getPreset(event) {
+    const values = Object.fromEntries(PRESET_KEYS.map(key => [key,event.preset[key]]));
+    const key = JSON.stringify(values);
+    if (presetNames.has(key)) return presetNames.get(key);
+    const id = presets.length; presets.push(values); presetNames.set(key,id); return id;
+  }
+  for (const event of performance.events) if (event.type === 'noteOn' && !event.keyOffHeld) getPreset(event);
+  const lines = [
+    '// Editable SPC song: approximate re-performance, not identical SPC playback.',
+    '// One SNES instance, physical voices 0..7. Times are elapsed seconds, independent of BPM.',
+    '// waitUntil targets the song timeline: late JavaScript catches up instead of slowing every following note.',
+    '// PITCH 4096 plays at the BRR source rate (32,000 Hz); BRR contains no musical root-note metadata.',
+    `// Provisional note comments use assigned ${ASSIGNED_TUNING.rootNote} at PITCH ${ASSIGNED_TUNING.basePitch}, not a detected BRR fundamental or audible note.`,
+    '// Relative intervals within one sample are meaningful; different samples may have different actual tuning.',
+    '// Comments describe the reference at import time; editing rootNote/baseFrequencyHz/basePitch does not recalculate them.',
+    ...(annotations.length ? [
+      '// loadBRR tuning and estimated/reference note comments share the reference chosen during import at PITCH 4096.',
+      '// Estimates may be wrong, especially for percussion, noise or inharmonic samples.',
+      '// The song keeps raw setPitch calls. References calibrate later setNote/setFrequency edits without retuning this playback.',
+    ] : []),
+    '// ADSR1/ADSR2/GAIN and signed volumes are raw DSP values, not durations.',
+    `// Controls keep the last value per ${performance.controlStepMs} ms interval (0 = every distinct value). Key times are retained.`,
+    ...performance.warnings.map(warning => `// ${String(warning).replace(/[\r\n]/g,' ')}`),
+    'const snes = await createSoundChip(\'snes\');',
+    'try {',
+  ];
+  for (const sample of performance.samples) {
+    const label = `sample-${String(sample.id).padStart(3,'0')}-srcn-${String(sample.sourceNumber).padStart(3,'0')}`;
+    files.push({path:`${directory}/samples/${label}.brr`,type:'binary',data:sample.brr.slice()});
+    const {brr,...metadata} = sample;
+    const annotation = annotationsBySample.get(sample.id);
+    files.push({path:`${directory}/samples/${label}.metadata.json`,type:'text',data:json({
+      ...metadata,assignedBasePitch:ASSIGNED_TUNING.basePitch,
+      ...(annotation ? {baseFrequencyHz:annotation.referenceHz,referenceKind:annotation.kind,
+        tuning:'Import reference shared by loadBRR tuning and note comments; raw song PITCH is preserved.'}
+        : {assignedReferenceNote:ASSIGNED_TUNING.rootNote,
+          tuning:'Assigned reference only; no original note or fundamental is inferred.'})})});
+    if (annotation) {
+      const midi = 69 + 12 * Math.log2(annotation.referenceHz / 440), nearest = Math.round(midi);
+      const cents = Number(((midi - nearest) * 100).toFixed(2));
+      const note = Number.isFinite(midi) && nearest >= 0 && nearest <= 127
+        ? ` (${NOTE_NAMES[nearest % 12]}${Math.floor(nearest / 12) - 1}${cents ? ` ${cents > 0 ? '+' : ''}${cents}c` : ''})` : '';
+      lines.push(`  // sample${sample.id} / SRCN ${sample.sourceNumber}: ${annotation.kind === 'manual' ? 'manual reference' : 'estimated fundamental'} ${annotation.referenceHz} Hz${note} at PITCH 4096; shared tuning and note reference.`);
+    }
+    lines.push(`  const sample${sample.id} = await snes.loadBRR(await file(${quote(`./samples/${label}.brr`)}, {type:'arrayBuffer'}), {`,
+      `    ${annotation ? `baseFrequencyHz: ${annotation.referenceHz}` : `rootNote: ${quote(ASSIGNED_TUNING.rootNote)}`}, basePitch: ${ASSIGNED_TUNING.basePitch}${sample.loop ? `, loopStartSamples: ${sample.loopStartSamples}` : ''}`, '  });');
+  }
+  for (const [id,preset] of presets.entries()) {
+    const path = `./presets/voice-${String(id).padStart(3,'0')}.json`;
+    files.push({path:`${directory}/${path.slice(2)}`,type:'text',data:json(preset)});
+    lines.push("  /** @type {Omit<PlaygroundSnesChannelState, 'sample'>} */",
+      `  const preset${id} = await file(${quote(path)}, {type:'json'});`);
+  }
+  for (const [register,label] of GLOBAL_LABELS) {
+    const value = register === 0x6c ? performance.initialDsp[register] | 0x20 : performance.initialDsp[register];
+    lines.push(`  snes.writeDsp(${hex(register)}, ${hex(value)}); // ${label}`);
+  }
+  lines.push('  const timeline = createTimeline(); // Start after all samples and presets have loaded.');
+  const channelSamples = Array(8).fill(null);
+  let noiseMask = performance.initialDsp[0x3d], modulationMask = performance.initialDsp[0x2d];
+  function pitchComment(channel, pitch) {
+    if (noiseMask & (1 << channel)) return '// noise voice: PITCH is not the noise frequency';
+    if (channelSamples[channel] === null) return '// no BRR assigned: no note label';
+    if (pitch === 0) return '// PITCH 0: no note name';
+    const annotation = annotationsBySample.get(channelSamples[channel]);
+    const referenceMidi = annotation ? 69 + 12 * Math.log2(annotation.referenceHz / 440) : ASSIGNED_MIDI;
+    const label = annotation ? annotation.kind === 'manual' ? 'reference' : 'estimated' : 'provisional';
+    const midi = referenceMidi + 12 * Math.log2(pitch / ASSIGNED_TUNING.basePitch);
+    const nearest = Math.round(midi);
+    if (!Number.isFinite(midi) || nearest < 0 || nearest > 127) return `// ${annotation ? label : 'assigned'} pitch outside MIDI note range`;
+    const note = NOTE_NAMES[nearest % 12] + (Math.floor(nearest / 12) - 1);
+    const cents = Math.round((midi - nearest) * 100);
+    return `// ${label} ${note}${cents ? ` ${cents > 0 ? '+' : ''}${cents}c` : ''}${channel > 0 && (modulationMask & (1 << channel)) ? ' (before pitch modulation)' : ''}`;
+  }
+  let clock = 0;
+  for (const event of performance.events) {
+    if (event.clock > clock) lines.push(`  await timeline.waitUntil(${number(event.clock / performance.clockRate)});`);
+    clock = event.clock;
+    const channel = event.channel;
+    if (event.type === 'noteOn') {
+      if (event.keyOffHeld) {
+        lines.push(`  // Voice ${channel + 1}: KON while KOFF is held; no sustained note is started.`); continue;
+      }
+      channelSamples[channel] = event.sampleId;
+      lines.push(`  // ${number(clock / performance.clockRate)} s · Voice ${channel + 1} · SRCN ${event.sourceNumber}${event.inferred ? ' · inferred initial note (envelope restarts)' : ''}`,
+        `  snes.setPreset(${channel}, {...preset${getPreset(event)}, sample: sample${event.sampleId}});`,
+        `  snes.setPitch(${channel}, ${event.pitch}); ${pitchComment(channel,event.pitch)}`, `  snes.keyOn(${channel});`);
+    } else if (event.type === 'noteOff') lines.push(`  snes.keyOff(${channel});`);
+    else if (event.type === 'pitch') lines.push(`  snes.setPitch(${channel}, ${event.pitch}); ${pitchComment(channel,event.pitch)}`);
+    else if (event.type === 'volume') lines.push(`  snes.setChannel(${channel}, {volumeLeft: ${event.volumeLeft}, volumeRight: ${event.volumeRight}});`);
+    else if (event.type === 'instrument') {
+      if (event.sampleId !== undefined) channelSamples[channel] = event.sampleId;
+      lines.push(`  snes.setChannel(${channel}, {adsr1: ${event.adsr1}, adsr2: ${event.adsr2}, gain: ${event.gain}${event.sampleId !== undefined ? `, sample: sample${event.sampleId}` : ''}});`);
+    } else if (GLOBAL_LABELS.has(event.register)) {
+      lines.push(`  snes.writeDsp(${hex(event.register)}, ${hex(event.register === 0x6c ? event.value | 0x20 : event.value)}); // ${GLOBAL_LABELS.get(event.register)}`);
+      if (event.register === 0x3d) noiseMask = event.value;
+      if (event.register === 0x2d) modulationMask = event.value;
+    }
+  }
+  if (clock < performance.durationClocks) lines.push(`  await timeline.waitUntil(${number(performance.durationClocks / performance.clockRate)});`);
+  lines.push('  snes.allNotesOff();', '} finally {', '  snes.dispose();', '}', '');
+  return {files,source:lines.join('\n'),conversion:{kind:'readable',version:1,
+    clockRate:performance.clockRate,durationClocks:performance.durationClocks,
+    durationSeconds:performance.durationClocks / performance.clockRate,nativeSampleRate:32000,timing:'elapsed-seconds-from-start',
+    ...performance.statistics,eventCount:performance.events.length,controlStepMs:performance.controlStepMs,
+    warnings:[...performance.warnings]}};
+}

@@ -9,13 +9,16 @@ export function definitionSource(text, position, chip = 'ym2612') {
   const prefix = lines.slice(0, position?.startLineNumber ?? position?.lineNumber ?? 1).join('\n');
   const owners = [...prefix.matchAll(/^(?:declare\s+)?(?:interface|type)\s+(\w+)/gm)];
   const owner = owners.at(-1)?.[1] ?? '';
-  if (['useSoundChip', 'createSoundChip', 'setBpm', 'beat', 'nextBeat', 'sleep', 'sleepSamples', 'tween'].includes(symbol)) return {file:'playground_runtime.js', symbol};
+  if (['useSoundChip', 'createSoundChip', 'setBpm', 'beat', 'nextBeat', 'sleep', 'sleepSamples', 'tween', 'createTimeline'].includes(symbol)) return {file:'playground_runtime.js', symbol};
+  if (owner === 'PlaygroundSecondsTimeline') return {file:'playground_clock.js',symbol};
   if (['hzToBlockFnum', 'createPitchFromMidi'].includes(symbol)) return {file:'pitch.js', symbol};
   if (['noteToBlockFnum', 'play', 'scale', 'chord', 'noteLerp'].includes(symbol)) return {file:'playground_music.js', symbol};
   if (/^PlaygroundNes$/.test(owner)) return {file:'nesapusynth.js', symbol};
   if (/^PlaygroundGameboy$/.test(owner)) return {file:'gameboysynth.js', symbol};
   if (/^PlaygroundYm2151$/.test(owner)) return {file:'playground_ym2151.js', symbol};
   if (/^PlaygroundDx7$/.test(owner)) return {file:'playground_dx7.js', symbol};
+  if (/^PlaygroundSnes$/.test(owner)) return {file:'playground_snes.js', symbol};
+  if (/^PlaygroundSpc$/.test(owner)) return {file:'playground_spc.js', symbol};
   if (/^PlaygroundYm2608$/.test(owner)) return {file:'ym2608synth.js', symbol};
   if (/^PlaygroundRf5c164$/.test(owner)) return {file:'rf5c164synth.js', symbol};
   if (/^PlaygroundSegaPsg$/.test(owner)) return {file:'segapsgsynth.js', symbol};

@@ -22,7 +22,7 @@ function immediate(command, kind) {
       'sample-writes', 'sample-dac-bank'].includes(command.type);
   }
   if (kind === 'fx') return command.op === 'sample' && command.action === 'load';
-  return ['loadSysex', 'memory', 'rom', 'loadMemory', 'prepareTimeline', 'getState',
+  return ['stopTimeline', 'getTimelineState', 'loadBRR', 'readDsp', 'snapshot', 'loadSysex', 'memory', 'rom', 'loadMemory', 'prepareTimeline', 'getState',
     'getPreset', 'read', 'status', 'getIrq'].includes(command.method);
 }
 
@@ -47,6 +47,9 @@ export function createPerformanceSender({getLoop = () => null, restoreLoop = () 
     configuration = {...next}; stopped = false; canceled.clear();
   }
   function send(port, kind, data, transfer) {
+    // Return observation storage even after an owner is cancelled. This carries
+    // no audio command; the SPC Worklet checks its epoch/sequence separately.
+    if (kind === 'spc' && data?.method === 'eventAck') {port.postMessage(data,transfer); return;}
     if (bypass || !configuration) { port.postMessage(data, transfer); return; }
     const loop = getLoop(), owner = loop?.performanceOwner ?? 'script';
     let commands = Array.isArray(data) ? data : [data];
@@ -54,6 +57,13 @@ export function createPerformanceSender({getLoop = () => null, restoreLoop = () 
       // Worklet owner cancellation releases only that owner's audible voices.
       // A late finally must not release a newer performance's replacement note.
       if (commands.some(command => command.id !== undefined)) throw new DOMException('Run stopped', 'AbortError');
+      return;
+    }
+    // An SPC runs its own song driver. Keep its transport immediate while still
+    // carrying the lease used by Stop and live-loop owner cancellation.
+    if (kind === 'spc') {
+      if (Array.isArray(data)) throw new TypeError('SPC controls must be individual commands');
+      port.postMessage({...data, spcPerformance: {session:configuration.session, owner}}, transfer);
       return;
     }
     const {time} = timestamp();
@@ -103,7 +113,7 @@ export function createPerformanceSender({getLoop = () => null, restoreLoop = () 
         get onmessageerror() { return port.onmessageerror; }, set onmessageerror(fn) { port.onmessageerror = fn; },
         start: () => port.start?.(), close: () => {
           if (closeTimer !== null) return;
-          if (!configuration || stopped) { close(); return; }
+          if (!configuration || stopped || kind === 'spc') { close(); return; }
           // Clients dispose synchronously, but their final audio commands are
           // still reserved. Keep this control lease until those commands render
           // so a removed loop can cancel them without waiting for Main's UI.
