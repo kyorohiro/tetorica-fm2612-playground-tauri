@@ -2,8 +2,9 @@
 export const DEFAULT_CODE = "setBpm(120);\n\nfm.setPreset(CH1, FM_PRESETS[\"one-op-basic\"]);\n\nliveFx(\"distortion\", {\n  context: { gain: 60.0, drive: 0.03 },\n  process(input, output, state, context) {\n    for (let ch = 0; ch < input.length; ch++) {\n      for (let i = 0; i < input[ch].length; i++) {\n        output[ch][i] = Math.tanh(input[ch][i] * context.gain) * context.drive;\n      }\n    }\n  },\n});\n\nliveLoop(\"lead\", async () => {\n  const notes = scale(\"E3\", \"minorPentatonic\", 2);\n  //await nextBeat();\n  await play(choose(notes), {\n    channel: CH1,\n    duration: 0.08,\n  });\n  await beat(cycle([0.04, 0.04, 0.08]));\n});\n";
 export const MODE_DEFAULT_CODES = {
   "genesis": "setBpm(120);\n\nfm.setPreset(CH1, FM_PRESETS[\"one-op-basic\"]);\n\nliveFx(\"distortion\", {\n  context: { gain: 60.0, drive: 0.03 },\n  process(input, output, state, context) {\n    for (let ch = 0; ch < input.length; ch++) {\n      for (let i = 0; i < input[ch].length; i++) {\n        output[ch][i] = Math.tanh(input[ch][i] * context.gain) * context.drive;\n      }\n    }\n  },\n});\n\nliveLoop(\"lead\", async () => {\n  const notes = scale(\"E3\", \"minorPentatonic\", 2);\n  //await nextBeat();\n  await play(choose(notes), {\n    channel: CH1,\n    duration: 0.08,\n  });\n  await beat(cycle([0.04, 0.04, 0.08]));\n});\n",
-  "genesis-full": "// Select Mode: Genesis, Genesis Full, or either Nuked mode.\n// The built-in FM and PSG play together; no extra chip is needed.\nsetBpm(120);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\n\nliveLoop('fm-and-psg', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    psg.tone(PSG1, {note, attenuation: 10});\n    await play(note, {channel: CH1, beats: 0.4});\n    psg.off(PSG1);\n    await beat(0.1);\n  }\n});\n",
-  "genesis-full-nuked": "// Select Mode: Genesis, Genesis Full, or either Nuked mode.\n// The built-in FM and PSG play together; no extra chip is needed.\nsetBpm(120);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\n\nliveLoop('fm-and-psg', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    psg.tone(PSG1, {note, attenuation: 10});\n    await play(note, {channel: CH1, beats: 0.4});\n    psg.off(PSG1);\n    await beat(0.1);\n  }\n});\n",
+  "mega-cd": "// Mega CD: FM and a short bass sample in the built-in PCM RAM.\n// Try examples/mega-cd/megacd-sampler.js to turn your own audio into a keyboard instrument.\nconst pcm = await useSoundChip('rf5c164');\nconst sampleRate = 16000;\nconst rootNote = 48; // C3; the bass pattern uses this note or higher.\nconst rootHz = 440 * 2 ** ((rootNote - 69) / 12);\nconst samples = new Float32Array(Math.round(sampleRate * 0.35));\nconst attackFrames = Math.round(sampleRate * 0.005);\nconst releaseFrames = Math.round(sampleRate * 0.03);\nfor (let i = 0; i < samples.length; i++) {\n  const ramp = Math.min(1, i / attackFrames, (samples.length - 1 - i) / releaseFrames);\n  const envelope = (1 - Math.cos(Math.PI * ramp)) / 2;\n  samples[i] = 0.75 * Math.sin(2 * Math.PI * rootHz * i / sampleRate) * envelope;\n}\n// With no loopStart, loadSample returns a silent tail after the finite sample.\nconst wave = await pcm.loadSample({channels: [samples], sampleRate});\nawait pcm.setChannel(0, {...wave, volume: 100, pan: {left: 15, right: 15}});\nconst stepFor = midi => Math.round(wave.step * 2 ** ((midi - rootNote) / 12));\nsetBpm(120);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\n\nliveLoop('fm-and-pcm', async () => {\n  for (const [note, midi] of [['C4', 48], ['E4', 52], ['G4', 55], ['B4', 59]]) {\n    await pcm.setPitch(0, stepFor(midi));\n    await pcm.keyOn(0);\n    await play(note, {channel: CH1, beats: 0.8});\n    // The 350 ms sample (or a faster note) has faded out before this 400 ms gate.\n    await pcm.keyOff(0);\n    await beat(0.2);\n  }\n});\n",
+  "genesis-full": "// Select Mode: Genesis, Mega CD, 32X, or 32X Nuked.\n// The built-in FM and PSG play together; no extra chip is needed.\nsetBpm(120);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\n\nliveLoop('fm-and-psg', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    psg.tone(PSG1, {note, attenuation: 10});\n    await play(note, {channel: CH1, beats: 0.4});\n    psg.off(PSG1);\n    await beat(0.1);\n  }\n});\n",
+  "genesis-full-nuked": "// Select Mode: Genesis, Mega CD, 32X, or 32X Nuked.\n// The built-in FM and PSG play together; no extra chip is needed.\nsetBpm(120);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\n\nliveLoop('fm-and-psg', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    psg.tone(PSG1, {note, attenuation: 10});\n    await play(note, {channel: CH1, beats: 0.4});\n    psg.off(PSG1);\n    await beat(0.1);\n  }\n});\n",
   "pc98-26": "// Select Mode: PC-98 (YM2203 / OPN).\n// FM and SSG share one mono YM2203, sent equally to left and right.\nsetBpm(120);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\nssg.setMixer(0, {tone: true, noise: false});\nssg.setVolume(0, 8);\n\nliveLoop('opn-melody', async () => {\n  const lead = ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4'];\n  const bass = ['C3', 'C3', 'G2', 'G2', 'A2', 'A2', 'G2', 'G2'];\n  for (let step = 0; step < lead.length; step++) {\n    ssg.noteOn(0, bass[step]);\n    await play(lead[step], {channel: CH1, beats: 0.4});\n    ssg.keyOff(0);\n    await beat(0.1);\n  }\n});\n",
   "pc98": "// Select Mode: PC-98 (YM2608 / OPNA).\n// Built-in FM, SSG and rhythm; bundled synthetic drums need no ROM upload.\nsetBpm(120);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\nssg.setMixer(0, {tone: true, noise: false});\nssg.setVolume(0, 8);\nrhythm.setVolume(48);\nfor (const voice of ['bassDrum', 'snare', 'hiHat']) {\n  rhythm.setVoice(voice, {volume: 24, left: true, right: true});\n}\n\nliveLoop('opna-groove', async () => {\n  const lead = ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4'];\n  for (let step = 0; step < lead.length; step++) {\n    rhythm.keyOn([step % 2 ? 'snare' : 'bassDrum', 'hiHat']);\n    ssg.noteOn(0, step < 4 ? 'C3' : 'G2');\n    await play(lead[step], {channel: CH1, beats: 0.4});\n    ssg.keyOff(0);\n    await beat(0.1);\n  }\n});\n",
   "neogeo": "// Select Mode: Neo Geo (YM2610) or Neo Geo (YM2610B).\n// FM and SSG use the standard chip; ADPCM sections are available separately.\nsetBpm(120);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\nssg.setMixer(0, {tone: true, noise: false});\nssg.setVolume(0, 8);\n\nliveLoop('opnb-duet', async () => {\n  const lead = ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4'];\n  for (let step = 0; step < lead.length; step++) {\n    ssg.noteOn(0, step < 4 ? 'C3' : 'G2');\n    await play(lead[step], {channel: CH1, beats: 0.4});\n    ssg.keyOff(0);\n    await beat(0.1);\n  }\n});\n",
@@ -13,6 +14,8 @@ export const MODE_DEFAULT_CODES = {
   "snes": "// Select Mode: SNES. CPU-free S-DSP; original BRR, no game files needed.\nsetBpm(120);\nconst leadSample = await livePrepare('snes-mode-lead-brr', async () => {\n  const brrBytes = new Uint8Array([0xc3, 0x13, 0x57, 0x75, 0x31, 0xfd, 0xb9, 0x9b, 0xdf]);\n  // One looping block = 16 samples at native 32,000 Hz: base frequency 2,000 Hz.\n  return snes.loadBRR(brrBytes, {baseFrequencyHz:2000, loopStartSamples:0});\n});\nsnes.setPreset(0, {\n  sample:leadSample, adsr1:0x8e, adsr2:0xe0, gain:127, // Short hardware attack avoids an abrupt onset.\n  volumeLeft:80, volumeRight:80,\n});\n\nliveLoop('snes-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    snes.noteOn(0, note);\n    await beat(0.4);\n    snes.noteOff(0);\n    await beat(0.1);\n  }\n});\n\n// Eight physical voices, numbered 0..7. Assign a BRR sample before setting pitch.\n",
   "x68000": "// Select Mode: X68000. Built-in YM2151, channels 0..7; operators M1/C1/M2/C2.\nsetBpm(120);\nopm.setAlgo(0, 7);\nopm.setPan(0, true, true);\nopm.setOperator(0, 3, {mul:1, tl:32, ar:31, d1r:0, d2r:0, d1l:0, rr:15});\n\nliveLoop('x68000-opm-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    opm.setNote(0, note);\n    opm.keyOn(0, 8); // Only C2, one of algorithm 7's four parallel carriers.\n    await beat(0.4);\n    opm.keyOff(0);\n    await beat(0.1);\n  }\n});\n\n// The built-in adpcm device is the X68000's mono OKIM6258.\n",
   "pc-engine": "// Select Mode: PC Engine. Six 32-entry, five-bit wavetable voices.\nsetBpm(120);\npce.setWaveform(0, Array.from({length:32}, (_, index) =>\n  Math.round(15.5 + 15.5 * Math.sin(index * Math.PI / 16))));\npce.setVolume(0, 26); // Hardware volume 0..31.\npce.setPan(0, 15, 15); // Independent left/right balances 0..15.\n\nliveLoop('pce-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    // Keep the waveform running between notes; hard key cuts can click.\n    pce.noteOn(0, note);\n    await beat(0.5);\n  }\n});\n\n// Uploading a waveform stops its channel. Channels 4/5 can also generate noise.\n",
+  "game-gear": "// Select Mode: Game Gear. Three PSG tones and one noise voice, with stereo routing.\nsetBpm(120);\npsg.setStereo(0xff); // All four voices reach both speakers.\n\nliveLoop('gg-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    psg.tone(PSG1, {note, attenuation: 9});\n    await beat(0.4);\n    psg.off(PSG1);\n    await beat(0.1);\n  }\n});\n\nliveLoop('gg-rhythm', async () => {\n  psg.noise({type: 'white', rate: 'high', attenuation: 12});\n  await beat(0.1);\n  psg.noiseOff();\n  await beat(0.9);\n});\n",
+  "master-system": "// Select Mode: Master System. Three PSG tones and one noise voice, in mono.\nsetBpm(120);\n\nliveLoop('sms-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    psg.tone(PSG1, {note, attenuation: 9});\n    await beat(0.4);\n    psg.off(PSG1);\n    await beat(0.1);\n  }\n});\n\nliveLoop('sms-rhythm', async () => {\n  psg.noise({type: 'white', rate: 'high', attenuation: 12});\n  await beat(0.1);\n  psg.noiseOff();\n  await beat(0.9);\n});\n",
   "genesis-nuked": "setBpm(120);\n\nfm.setPreset(CH1, FM_PRESETS[\"one-op-basic\"]);\n\nliveFx(\"distortion\", {\n  context: { gain: 60.0, drive: 0.03 },\n  process(input, output, state, context) {\n    for (let ch = 0; ch < input.length; ch++) {\n      for (let i = 0; i < input[ch].length; i++) {\n        output[ch][i] = Math.tanh(input[ch][i] * context.gain) * context.drive;\n      }\n    }\n  },\n});\n\nliveLoop(\"lead\", async () => {\n  const notes = scale(\"E3\", \"minorPentatonic\", 2);\n  //await nextBeat();\n  await play(choose(notes), {\n    channel: CH1,\n    duration: 0.08,\n  });\n  await beat(cycle([0.04, 0.04, 0.08]));\n});\n"
 };
 export const MODE_DEFAULT_HISTORY = {
@@ -30,6 +33,15 @@ export const MODE_DEFAULT_HISTORY = {
   ],
   "pc-engine": [
     "// Select Mode: PC Engine. Six 32-entry, five-bit wavetable voices.\nsetBpm(120);\npce.setWaveform(0, Array.from({length:32}, (_, index) =>\n  Math.round(15.5 + 15.5 * Math.sin(index * Math.PI / 16))));\npce.setVolume(0, 26); // Hardware volume 0..31.\npce.setPan(0, 15, 15); // Independent left/right balances 0..15.\n\nliveLoop('pce-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    pce.noteOn(0, note);\n    await beat(0.4);\n    pce.keyOff(0);\n    await beat(0.1);\n  }\n});\n\n// Uploading a waveform stops its channel. Channels 4/5 can also generate noise.\n"
+  ],
+  "genesis-full": [
+    "// Select Mode: Genesis, Genesis Full, or either Nuked mode.\n// The built-in FM and PSG play together; no extra chip is needed.\nsetBpm(120);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\n\nliveLoop('fm-and-psg', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    psg.tone(PSG1, {note, attenuation: 10});\n    await play(note, {channel: CH1, beats: 0.4});\n    psg.off(PSG1);\n    await beat(0.1);\n  }\n});\n"
+  ],
+  "genesis-full-nuked": [
+    "// Select Mode: Genesis, Genesis Full, or either Nuked mode.\n// The built-in FM and PSG play together; no extra chip is needed.\nsetBpm(120);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\n\nliveLoop('fm-and-psg', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    psg.tone(PSG1, {note, attenuation: 10});\n    await play(note, {channel: CH1, beats: 0.4});\n    psg.off(PSG1);\n    await beat(0.1);\n  }\n});\n"
+  ],
+  "mega-cd": [
+    "// Mega-CD / Sega CD: FM and a short bass sample in the built-in PCM RAM.\n// Try examples/mega-cd/megacd-sampler.js to turn your own audio into a keyboard instrument.\nconst pcm = await useSoundChip('rf5c164');\nconst sampleRate = 16000;\nconst rootNote = 48; // C3; the bass pattern uses this note or higher.\nconst rootHz = 440 * 2 ** ((rootNote - 69) / 12);\nconst samples = new Float32Array(Math.round(sampleRate * 0.35));\nconst attackFrames = Math.round(sampleRate * 0.005);\nconst releaseFrames = Math.round(sampleRate * 0.03);\nfor (let i = 0; i < samples.length; i++) {\n  const ramp = Math.min(1, i / attackFrames, (samples.length - 1 - i) / releaseFrames);\n  const envelope = (1 - Math.cos(Math.PI * ramp)) / 2;\n  samples[i] = 0.75 * Math.sin(2 * Math.PI * rootHz * i / sampleRate) * envelope;\n}\n// With no loopStart, loadSample returns a silent tail after the finite sample.\nconst wave = await pcm.loadSample({channels: [samples], sampleRate});\nawait pcm.setChannel(0, {...wave, volume: 100, pan: {left: 15, right: 15}});\nconst stepFor = midi => Math.round(wave.step * 2 ** ((midi - rootNote) / 12));\nsetBpm(120);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\n\nliveLoop('fm-and-pcm', async () => {\n  for (const [note, midi] of [['C4', 48], ['E4', 52], ['G4', 55], ['B4', 59]]) {\n    await pcm.setPitch(0, stepFor(midi));\n    await pcm.keyOn(0);\n    await play(note, {channel: CH1, beats: 0.8});\n    // The 350 ms sample (or a faster note) has faded out before this 400 ms gate.\n    await pcm.keyOff(0);\n    await beat(0.2);\n  }\n});\n"
   ]
 };
 export const EXAMPLE_FILES = [
@@ -221,7 +233,7 @@ export const EXAMPLE_FILES = [
   {
     "path": "/examples/genesis/genesis-mode-duet.js",
     "name": "genesis-mode-duet",
-    "data": "// Select Mode: Genesis, Genesis Full, or either Nuked mode.\n// The built-in FM and PSG play together; no extra chip is needed.\nsetBpm(120);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\n\nliveLoop('fm-and-psg', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    psg.tone(PSG1, {note, attenuation: 10});\n    await play(note, {channel: CH1, beats: 0.4});\n    psg.off(PSG1);\n    await beat(0.1);\n  }\n});\n"
+    "data": "// Select Mode: Genesis, Mega CD, 32X, or 32X Nuked.\n// The built-in FM and PSG play together; no extra chip is needed.\nsetBpm(120);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\n\nliveLoop('fm-and-psg', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    psg.tone(PSG1, {note, attenuation: 10});\n    await play(note, {channel: CH1, beats: 0.4});\n    psg.off(PSG1);\n    await beat(0.1);\n  }\n});\n"
   },
   {
     "path": "/examples/genesis/mixer-chip-balance.js",
@@ -239,6 +251,46 @@ export const EXAMPLE_FILES = [
     "data": "// Independent Sega PSG: works with any selected Playground chip.\nconst chip = await useSoundChip('segapsg');\ntry {\n  for (const note of ['C4', 'E4', 'G4', 'C5']) {\n    chip.tone(0, {note, attenuation: 4});\n    await sleep(0.2);\n  }\n  chip.off(0);\n  chip.noise({type: 'white', rate: 'medium', attenuation: 8});\n  await sleep(0.2);\n  chip.noiseOff();\n} finally { chip.dispose(); }\n"
   },
   {
+    "path": "/examples/mega-cd/megacd-fm-pcm.js",
+    "name": "megacd-fm-pcm",
+    "data": "// Mega CD mode: Genesis FM + PSG, with the CD expansion's PCM bass.\nconst pcm = await useSoundChip('rf5c164');\nconst length = 128;\nconst wave = new Uint8Array(length + 1);\nfor (let i = 0; i < length; i++) {\n  const phase = 2 * Math.PI * i / length;\n  const value = (Math.sin(phase) + 0.2 * Math.sin(phase * 2)) / 1.2;\n  wave[i] = Math.round(Math.abs(value) * 100) | (value >= 0 ? 0x80 : 0);\n}\nwave[length] = 0xff;\nawait pcm.loadMemory(wave);\nawait pcm.setChannel(0, {start: 0, loopStart: 0, volume: 130, pan: {left: 15, right: 15}});\nconst stepFor = midi => Math.round(440 * 2 ** ((midi - 69) / 12) * length * 384 * 2048 / pcm.clock);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\nsetBpm(120);\n\nliveLoop('fm-psg-pcm', async () => {\n  for (const [note, bass] of [['C4', 36], ['E4', 40], ['G4', 43], ['D4', 38]]) {\n    await pcm.setPitch(0, stepFor(bass));\n    await pcm.keyOn(0);\n    psg.tone(PSG1, {note, attenuation: 12});\n    await play(note, {channel: CH1, beats: 0.75});\n    psg.off(PSG1);\n    await pcm.keyOff(0);\n    await beat(0.25);\n  }\n});\n"
+  },
+  {
+    "path": "/examples/mega-cd/megacd-pcm-loop.js",
+    "name": "megacd-pcm-loop",
+    "data": "// Mega CD mode: one 128-byte waveform, eight physical PCM voices.\n// Change the waveform below; all voices reuse the same RAM with their own pitch and pan.\nconst pcm = await useSoundChip('rf5c164');\nconst length = 128;\nconst wave = new Uint8Array(length + 32);\nfor (let i = 0; i < length; i++) {\n  const phase = 2 * Math.PI * i / length;\n  const value = (Math.sin(phase) + 0.3 * Math.sin(phase * 3)) / 1.3;\n  wave[i] = Math.round(Math.abs(value) * 100) | (value >= 0 ? 0x80 : 0);\n}\n// A pitch step can skip bytes. Pad all 32 bytes a 16-bit step can cross,\n// so the chip always reads an end marker and returns to loopStart.\nwave.fill(0xff, length);\nawait pcm.loadMemory(wave);\nconst stepFor = midi => Math.round(440 * 2 ** ((midi - 69) / 12) * length * 384 * 2048 / pcm.clock);\nfor (let voice = 0; voice < 8; voice++) {\n  await pcm.setChannel(voice, {\n    start: 0, loopStart: 0, volume: 100,\n    pan: {left: 15 - voice * 2, right: 1 + voice * 2},\n  });\n}\nsetBpm(120);\nliveLoop('eight-pcm-voices', async () => {\n  const notes = [48, 52, 55, 59, 60, 64, 67, 71];\n  for (let voice = 0; voice < 8; voice++) {\n    await pcm.setPitch(voice, stepFor(notes[voice]));\n    await pcm.keyOn(voice);\n    await beat(0.25);\n  }\n  await beat(1);\n  for (let voice = 0; voice < 8; voice++) await pcm.keyOff(voice);\n  await beat(1);\n});\n"
+  },
+  {
+    "path": "/examples/mega-cd/megacd-sampler.js",
+    "name": "megacd-sampler",
+    "data": "// Edit /samples/sampler.sample.json in Sample Editor, then Run → open Keyboard.\n// Sample Editor で音声を録音／読み込み・編集して、Keyboard で演奏します。\n// RF5C164: eight voices, 8-bit PCM and 64 KiB shared sample RAM.\nconst audio = await inputAudio({asset: '/samples/sampler.sample.json', edit: false});\nif (audio) {\n  keyboard.bind('sampler', await createSampleInstrument(audio));\n  log('Sampler ready. Open Keyboard to play. Edit /samples/sampler.sample.json to change the sound.');\n}\n"
+  },
+  {
+    "path": "/examples/game-gear/gg-mode-melody.js",
+    "name": "gg-mode-melody",
+    "data": "// Select Mode: Game Gear. A square-wave melody with a separate bass voice.\nsetBpm(120);\npsg.setStereo(0xff);\n\nliveLoop('gg-two-tone', async () => {\n  const melody = ['C4', 'E4', 'G4', 'C5', 'B4', 'G4', 'E4', 'D4'];\n  const bass = ['C3', 'C3', 'C3', 'C3', 'G3', 'G3', 'G3', 'G3'];\n  for (let step = 0; step < melody.length; step++) {\n    psg.tone(PSG1, {note: melody[step], attenuation: 9});\n    psg.tone(PSG2, {note: bass[step], attenuation: 12});\n    await beat(0.4);\n    psg.off(PSG1);\n    psg.off(PSG2);\n    await beat(0.1);\n  }\n});\n"
+  },
+  {
+    "path": "/examples/game-gear/gg-mode-noise.js",
+    "name": "gg-mode-noise",
+    "data": "// Select Mode: Game Gear. The fourth PSG voice supplies short noise percussion.\nsetBpm(120);\npsg.setStereo(0xff);\n\nliveLoop('gg-noise-drums', async () => {\n  for (let step = 0; step < 8; step++) {\n    psg.noise({\n      type: 'white',\n      rate: step % 2 ? 'high' : 'low',\n      attenuation: step % 2 ? 13 : 10,\n    });\n    await beat(0.1);\n    psg.noiseOff();\n    await beat(0.4);\n  }\n});\n"
+  },
+  {
+    "path": "/examples/game-gear/gg-mode-stereo.js",
+    "name": "gg-mode-stereo",
+    "data": "// Select Mode: Game Gear. Route PSG1 left, then right, one note at a time.\n// Bits 4..7 enable the left speaker; bits 0..3 enable the right speaker.\nsetBpm(120);\npsg.setStereo(0xff);\n\nliveLoop('gg-stereo-melody', async () => {\n  const notes = ['C4', 'E4', 'G4', 'C5', 'B4', 'G4', 'E4', 'D4'];\n  for (let step = 0; step < notes.length; step++) {\n    psg.setStereo(step % 2 ? 0xef : 0xfe); // PSG1 right only / left only.\n    psg.tone(PSG1, {note: notes[step], attenuation: 9});\n    await beat(0.4);\n    psg.off(PSG1);\n    await beat(0.1);\n  }\n  psg.setStereo(0xff);\n});\n"
+  },
+  {
+    "path": "/examples/master-system/sms-mode-melody.js",
+    "name": "sms-mode-melody",
+    "data": "// Select Mode: Master System. A square-wave melody with a separate bass voice.\nsetBpm(120);\n\nliveLoop('sms-two-tone', async () => {\n  const melody = ['C4', 'E4', 'G4', 'C5', 'B4', 'G4', 'E4', 'D4'];\n  const bass = ['C3', 'C3', 'C3', 'C3', 'G3', 'G3', 'G3', 'G3'];\n  for (let step = 0; step < melody.length; step++) {\n    psg.tone(PSG1, {note: melody[step], attenuation: 9});\n    psg.tone(PSG2, {note: bass[step], attenuation: 12});\n    await beat(0.4);\n    psg.off(PSG1);\n    psg.off(PSG2);\n    await beat(0.1);\n  }\n});\n"
+  },
+  {
+    "path": "/examples/master-system/sms-mode-noise.js",
+    "name": "sms-mode-noise",
+    "data": "// Select Mode: Master System. The fourth PSG voice supplies short noise percussion.\nsetBpm(120);\n\nliveLoop('sms-noise-drums', async () => {\n  for (let step = 0; step < 8; step++) {\n    psg.noise({\n      type: 'white',\n      rate: step % 2 ? 'high' : 'low',\n      attenuation: step % 2 ? 13 : 10,\n    });\n    await beat(0.1);\n    psg.noiseOff();\n    await beat(0.4);\n  }\n});\n"
+  },
+  {
     "path": "/examples/gameboy/gameboy-mode-noise.js",
     "name": "gameboy-mode-noise",
     "data": "// Select Mode: Game Boy. Shape percussion with the built-in noise channel.\nsetBpm(120);\n\nliveLoop('noise-drums', async () => {\n  for (let step = 0; step < 8; step++) {\n    gameboy.noise.setVoice({\n      volume: step % 2 ? 7 : 10,\n      envelope: {direction: 'down', period: 1},\n      divisor: step % 2 ? 1 : 4,\n      shift: step % 2 ? 2 : 5,\n      width: 15,\n    });\n    gameboy.noise.keyOn();\n    await beat(0.2);\n    gameboy.noise.keyOff();\n    await beat(0.3);\n  }\n});\n"
@@ -252,6 +304,11 @@ export const EXAMPLE_FILES = [
     "path": "/examples/gameboy/gameboy-mode-wave.js",
     "name": "gameboy-mode-wave",
     "data": "// Select Mode: Game Boy. Use the built-in 32-sample, four-bit wave channel.\nsetBpm(120);\ngameboy.wave.stopAndSetWaveform(\n  Array.from({length: 32}, (_, i) => i < 16 ? i : 31 - i),\n);\ngameboy.wave.setLevel(0.5);\n\nliveLoop('wave-bass', async () => {\n  for (const note of ['C3', 'C3', 'G2', 'G2', 'A2', 'A2', 'F2', 'G2']) {\n    gameboy.wave.noteOn(note);\n    await beat(0.4);\n    gameboy.wave.keyOff();\n    await beat(0.1);\n  }\n});\n"
+  },
+  {
+    "path": "/examples/gameboy/gameboy-sampler.js",
+    "name": "gameboy-sampler",
+    "data": "// Select one cycle in Sample Editor; Game Boy stores 32 four-bit wave samples.\n// Sample Editor で1周期を選択して、Run → Keyboard で演奏します。wave RAM は同時1音です。\nconst audio = await inputAudio({asset: '/samples/sampler.sample.json', edit: false});\nif (audio) {\n  keyboard.bind('sampler', await createSampleInstrument(audio));\n  log('Wave RAM ready. Open Keyboard to play. Edit /samples/sampler.sample.json to redraw the wave.');\n}\n"
   },
   {
     "path": "/examples/gameboy/gameboy-saw-noise.js",
@@ -329,6 +386,11 @@ export const EXAMPLE_FILES = [
     "data": "// Select Mode: PC-98 (YM2608 / OPNA). Works in Main and Worker.\n// fm, ssg, rhythm and adpcm share the default YM2608; no useSoundChip needed.\nsetBpm(120);\n\n// FM: one operator sine.\nfm.setPreset(0, FM_PRESETS['one-op-basic']);\nawait play('C4', {channel: CH1, beats: 1});\n\n// SSG: tone, then shared noise on channel 0.\nssg.tone(0, {frequency: 440, volume: 10});\nawait beat(1);\nssg.noise(0, {period: 16, volume: 8});\nawait beat(1);\nssg.keyOff(0);\n\n// Rhythm: the bundled synthetic sounds are ready to use.\nrhythm.setVolume(48);\nfor (const voice of ['bassDrum', 'snare', 'hiHat']) {\n  rhythm.setVoice(voice, {volume: 24, left: true, right: true});\n}\nfor (let step = 0; step < 8; step++) {\n  rhythm.keyOn([step % 2 ? 'snare' : 'bassDrum', 'hiHat']);\n  await beat(0.5);\n}\n\n// ADPCM-B: encode and upload an original PCM tone before starting playback.\nconst sampleRate = 8000;\nconst wave = new Float32Array(4000);\nfor (let i = 0; i < wave.length; i++) {\n  const fade = Math.min(1, i / 80, (wave.length - 1 - i) / 80);\n  wave[i] = 0.6 * fade * Math.sin(2 * Math.PI * 330 * i / sampleRate);\n}\nconst adpcmSample = await adpcm.loadSample({channels: [wave], sampleRate});\nadpcm.setVolume(180);\nadpcm.setPan(true, true);\nadpcm.keyOn();\nawait sleep(adpcmSample.duration + 0.05);\nadpcm.keyOff();\n"
   },
   {
+    "path": "/examples/pc98/pc98-sampler.js",
+    "name": "pc98-sampler",
+    "data": "// Edit /samples/sampler.sample.json in Sample Editor, then Run → open Keyboard.\n// YM2608 ADPCM-B: one PCM voice with variable pitch and whole-sample repeat.\nconst audio = await inputAudio({asset: '/samples/sampler.sample.json', edit: false});\nif (audio) {\n  keyboard.bind('sampler', await createSampleInstrument(audio));\n  log('ADPCM-B sampler ready. Open Keyboard to play. Edit /samples/sampler.sample.json to change the sound.');\n}\n"
+  },
+  {
     "path": "/examples/pc98/ym2608-adpcm-load-sample.js",
     "name": "ym2608-adpcm-load-sample",
     "data": "// Independent YM2608: works with any chip selected in the Playground UI.\n// loadSample accepts decoded PCM here, and converts it to Yamaha ADPCM-B.\nconst ym2608 = await useSoundChip('ym2608');\ntry {\n  const sampleRate = 8000;\n  const frames = 4000;\n  const wave = new Float32Array(frames);\n  for (let i = 0; i < frames; i++) {\n    // Original 440 Hz tone with 10 ms fades. No external file or ROM needed.\n    const fade = Math.min(1, i / 80, (frames - 1 - i) / 80);\n    wave[i] = 0.6 * fade * Math.sin(i * 2 * Math.PI * 440 / sampleRate);\n  }\n\n  // Mix PCM to mono, encode ADPCM-B, upload it and set the sample range/rate.\n  // address must be 32-byte aligned. Loading does not start playback.\n  const sample = await ym2608.adpcm.loadSample(\n    {channels: [wave], sampleRate},\n    {address: 0},\n  );\n  ym2608.adpcm.setVolume(180);\n  ym2608.adpcm.setPan(true, true);\n  ym2608.adpcm.keyOn();\n  await sleep(sample.duration + 0.05);\n  ym2608.adpcm.keyOff();\n\n  // Reuse the same memory at 1.5x speed: higher pitch, shorter duration.\n  ym2608.adpcm.setPlaybackRate(sample.sampleRate * 1.5);\n  ym2608.adpcm.keyOn();\n  await sleep(sample.duration / 1.5 + 0.05);\n  ym2608.adpcm.keyOff();\n\n  // For a PCM/Float WAV imported into FILES, the loading step can instead be:\n  // const wav = await file('./samples/voice.wav', {type: 'arrayBuffer'});\n  // const sample = await ym2608.adpcm.loadSample(wav, {address: 0});\n  // loadMemory() is for already-encoded ADPCM-B bytes, not WAV/Float32 PCM.\n} finally {\n  ym2608.dispose();\n}\n"
@@ -357,6 +419,11 @@ export const EXAMPLE_FILES = [
     "path": "/examples/neogeo/neogeo-opnb-sections.js",
     "name": "neogeo-opnb-sections",
     "data": "// Select Mode: Neo Geo (FM 4ch) or Neo Geo (YM2610B, FM 6ch).\n// Main / Worker: all sections share the default chip. No extra chip is needed.\nsetBpm(120);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\nawait play('C4', {channel: CH1, beats: 1});\n// In YM2610B mode, CH5 and CH6 are available as well.\n\nssg.tone(0, {frequency: 440, volume: 10});\nawait beat(1);\nssg.noise(0, {period: 16, volume: 8});\nawait beat(1);\nssg.keyOff(0);\n\n// Original test patterns of encoded ADPCM nibbles; no external ROM or WAV.\n// A and B have separate memories and use 256-byte aligned sample ranges.\nawait adpcmA.loadMemory(new Uint8Array(256).fill(0x17));\nadpcmA.setVolume(48);\nfor (let voice = 0; voice < 6; voice++) {\n  adpcmA.setSample(voice, {start: 0, end: 256});\n  adpcmA.setVoice(voice, {volume: 24, left: true, right: true});\n  adpcmA.keyOn(voice);\n  await beat(0.5);\n}\nadpcmA.keyOff([0, 1, 2, 3, 4, 5]);\n\n// ADPCM-B: adjustable rate and whole-sample repeat. adpcm === adpcmB.\nawait adpcmB.loadMemory(new Uint8Array(256).fill(0x17));\nadpcmB.setSample({start: 0, end: 256});\nadpcmB.setPlaybackRate(8000);\nadpcmB.setVolume(160);\nadpcmB.setPan(true, true);\nadpcmB.keyOn({repeat: true});\nawait beat(2);\nadpcmB.keyOff();\n"
+  },
+  {
+    "path": "/examples/neogeo/neogeo-sampler.js",
+    "name": "neogeo-sampler",
+    "data": "// Edit /samples/sampler.sample.json in Sample Editor, then Run → open Keyboard.\n// YM2610/B ADPCM-B: one pitched PCM voice. Memory ranges use 256-byte units.\nconst audio = await inputAudio({asset: '/samples/sampler.sample.json', edit: false});\nif (audio) {\n  keyboard.bind('sampler', await createSampleInstrument(audio));\n  log('ADPCM-B sampler ready. Open Keyboard to play. Edit /samples/sampler.sample.json to change the sound.');\n}\n"
   },
   {
     "path": "/examples/x68000/x68000-mode-adpcm.js",
@@ -481,6 +548,11 @@ export const MODE_EXAMPLE_FILES = Object.fromEntries(Object.entries({
     "/examples/dx7/dx7-object-preset.js",
     "/examples/snes/snes-brr-melody.js"
   ],
+  "mega-cd": [
+    "/examples/mega-cd/megacd-pcm-loop.js",
+    "/examples/mega-cd/megacd-fm-pcm.js",
+    "/examples/mega-cd/megacd-sampler.js"
+  ],
   "genesis-full": [
     "/examples/genesis/genesis-mode-duet.js",
     "/examples/genesis/rf5c164-sine.js",
@@ -497,21 +569,23 @@ export const MODE_EXAMPLE_FILES = Object.fromEntries(Object.entries({
   ],
   "pc98": [
     "/examples/pc98/pc98-opna-groove.js",
-    "/examples/pc98/pc98-opna-sections.js"
+    "/examples/pc98/pc98-opna-sections.js",
+    "/examples/pc98/pc98-sampler.js"
   ],
   "neogeo": [
     "/examples/neogeo/neogeo-opnb-duet.js",
-    "/examples/neogeo/neogeo-opnb-sections.js"
+    "/examples/neogeo/neogeo-opnb-sections.js",
+    "/examples/neogeo/neogeo-sampler.js"
   ],
   "neogeo-b": [
-    "/examples/neogeo/neogeo-opnb-duet.js",
     "/examples/neogeo/neogeo-opnb-sections.js",
-    "/examples/neogeo/neogeo-b-six-channel.js"
+    "/examples/neogeo/neogeo-b-six-channel.js",
+    "/examples/neogeo/neogeo-sampler.js"
   ],
   "gameboy": [
     "/examples/gameboy/gameboy-mode-pulse.js",
     "/examples/gameboy/gameboy-mode-wave.js",
-    "/examples/gameboy/gameboy-mode-noise.js"
+    "/examples/gameboy/gameboy-sampler.js"
   ],
   "nes": [
     "/examples/nes/nes-mode-pulse.js",
@@ -530,6 +604,15 @@ export const MODE_EXAMPLE_FILES = Object.fromEntries(Object.entries({
     "/examples/pc-engine/pce-mode-wave.js",
     "/examples/pc-engine/pce-mode-stereo.js",
     "/examples/pc-engine/pce-mode-noise.js"
+  ],
+  "game-gear": [
+    "/examples/game-gear/gg-mode-melody.js",
+    "/examples/game-gear/gg-mode-noise.js",
+    "/examples/game-gear/gg-mode-stereo.js"
+  ],
+  "master-system": [
+    "/examples/master-system/sms-mode-melody.js",
+    "/examples/master-system/sms-mode-noise.js"
   ],
   "genesis-nuked": [
     "/examples/basic/8-bit-arcade-sweep.js",
