@@ -1,6 +1,6 @@
 import {
   FM_PRESETS,
-} from "./js/megasynth.js";
+} from "./js/megasynth.js?v=audio-stability-2";
 
 const SCALE_NAMES = [
   "major",
@@ -265,193 +265,35 @@ const YM2612_REGISTER_CANDIDATES = [
   { value: "0xb4", description: "Pan / AMS / PMS base" },
 ];
 
-function createPropertySuggestions(
-  names,
-  kind,
-  range,
-  documentation
-) {
-  return names.map((name) => ({
-    label: name,
-    kind: kind.Property,
-    insertText: name,
-    documentation:
-      typeof documentation ===
-      "function"
-        ? documentation(name)
-        : documentation,
-    range,
-  }));
+const FM_COMPLETION_CAPABILITIES = {
+  ym2612: {channels: [0, 1, 2, 3, 4, 5], dac: true, pan: true, lfo: true},
+  ym2203: {channels: [0, 1, 2], dac: false, pan: false, lfo: false},
+  ym2608: {channels: [0, 1, 2, 3, 4, 5], dac: false, pan: true, lfo: true},
+  ym2610: {channels: [1, 2, 4, 5], dac: false, pan: true, lfo: true},
+  ...Object.fromEntries(['gameboy','nes','snes','x68000','huc6280'].map(chip => [chip,{channels:[],dac:false,pan:false,lfo:false}])),
+};
+
+function fmCompletionCapabilities(chip) {
+  return FM_COMPLETION_CAPABILITIES[chip] ?? FM_COMPLETION_CAPABILITIES.ym2612;
 }
 
-function createMethodSuggestions(
-  names,
-  kind,
-  range,
-  documentation
-) {
-  return names.map((name) => ({
-    label: name,
-    kind: kind.Method,
-    insertText: name,
-    documentation:
-      typeof documentation ===
-      "function"
-        ? documentation(name)
-        : documentation,
-    range,
-  }));
+function isAvailableFmRegister(register, chip) {
+  const capabilities = fmCompletionCapabilities(chip);
+  if (!capabilities.channels.length) return false;
+  if (["0x2a", "0x2b"].includes(register)) return capabilities.dac;
+  if (register === "0x22") return capabilities.lfo;
+  if (register === "0xb4") return capabilities.pan;
+  return true;
 }
 
-function createKnownObjectSuggestions(
-  objectName,
-  kind,
-  range
-) {
-  if (objectName === "pg") {
-    return [
-      ...createPropertySuggestions(
-        [
-          "fm",
-          "fx",
-          "psg",
-          "context",
-          "sample",
-          "stream",
-          "presets",
-          "CH1",
-          "CH2",
-          "CH3",
-          "CH4",
-          "CH5",
-          "CH6",
-          "CH7",
-          "CH8",
-          "CH9",
-          "CH10",
-          "CH11",
-          "CH12",
-          "CH13",
-          "CH14",
-          "CH15",
-          "CH16",
-          "OP1",
-          "OP2",
-          "OP3",
-          "OP4",
-        ],
-        kind,
-        range,
-        "Playground helper property."
-      ),
-      ...createMethodSuggestions(
-        [
-          "play",
-          "sleep",
-          "createTimeline",
-          "beat",
-          "nextBeat",
-          "tween",
-          "setBpm",
-          "liveLoop",
-          "livePrepare",
-          "scale",
-          "chord",
-          "noteToBlockFnum",
-          "hzToBlockFnum",
-          "noteLerp",
-          "choose",
-          "cycle",
-          "rand",
-          "rrange",
-          "randInt",
-          "lerp",
-          "psgTone",
-          "psgNoise",
-          "stopLoop",
-          "stopAllLoops",
-          "stopAll",
-          "setMasterVolume",
-          "getMasterVolume",
-          "log",
-        ],
-        kind,
-        range,
-        "Playground helper method."
-      ),
-    ];
-  }
-
-  if (objectName === "sample") {
-    return [
-      ...createMethodSuggestions(
-        [
-          "load",
-          "play",
-          "stop",
-          "stopAll",
-          "unload",
-          "isLoaded",
-          "get",
-          "list",
-        ],
-        kind,
-        range,
-        "Sample helper method."
-      ),
-    ];
-  }
-
-  if (objectName === "stream") {
-    return [
-      ...createMethodSuggestions(
-        [
-          "load",
-          "play",
-          "pause",
-          "stop",
-          "unload",
-          "isLoaded",
-          "get",
-          "list",
-        ],
-        kind,
-        range,
-        "Stream helper method."
-      ),
-    ];
-  }
-
-  if (objectName === "fx") {
-    return [
-      ...createMethodSuggestions(
-        [
-          "gain",
-          "eq",
-          "bitcrusher",
-          "filter",
-          "delay",
-          "distortion",
-          "compressor",
-          "gate",
-          "wobble",
-          "flanger",
-          "chorus",
-          "reverb",
-          "branch",
-          "parallel",
-          "slicer",
-          "setChain",
-          "clear",
-        ],
-        kind,
-        range,
-        "FX helper method."
-      ),
-    ];
-  }
-
-  return null;
+// A local fm may be an independently created chip. Its inferred type belongs
+// to Monaco; selected-mode hints only describe the known global receiver.
+function primaryFmCompletionChip(linePrefix, analysis, chip) {
+  const receiver = /(?:^|[^\w$.])((?:pg\.)?fm)\.(?:write|writeAddress|setOperator)\([^()]*$/.exec(linePrefix)?.[1];
+  const root = receiver === "pg.fm" ? "pg" : receiver;
+  return root && !analysis.declaredVariableNames.has(root) &&
+    !analysis.parameterNames.has(root) && !analysis.functionNames.has(root)
+    ? chip : "ym2612";
 }
 
 function extractFxUnitVariables(
@@ -793,7 +635,8 @@ function createFmOperatorParamSuggestions(
 function createPlayOptionsSuggestions(
   kind,
   snippet,
-  range
+  range,
+  chip
 ) {
   return [
     {
@@ -802,7 +645,7 @@ function createPlayOptionsSuggestions(
       insertText: "channel: ${1:0},",
       insertTextRules: snippet,
       documentation:
-        "YM2612 channel number 0..5.",
+        `${chip.toUpperCase()} FM channel number 0..${fmCompletionCapabilities(chip).channels.length - 1}.`,
       range,
     },
     {
@@ -1093,9 +936,10 @@ function createStringLiteralSuggestions(
 
 function createRegisterSuggestions(
   kind,
-  range
+  range,
+  chip
 ) {
-  return YM2612_REGISTER_CANDIDATES.map(
+  return YM2612_REGISTER_CANDIDATES.filter(({value}) => isAvailableFmRegister(value, chip)).map(
     ({ value, description }) => ({
       label: `${value} ${description}`,
       kind: kind.Value,
@@ -1109,8 +953,10 @@ function createRegisterSuggestions(
 function createRegisterValueSuggestions(
   registerValue,
   kind,
-  range
+  range,
+  chip
 ) {
+  if (!isAvailableFmRegister(registerValue, chip)) return [];
   const definitions = {
     "0x22": [
       { value: "0x00", description: "LFO off" },
@@ -1150,7 +996,9 @@ function createRegisterValueSuggestions(
     ],
   };
 
-  return (definitions[registerValue] ?? []).map(
+  const keyChannels = fmCompletionCapabilities(chip).channels.map(channel => channel < 3 ? channel : channel + 1);
+  return (definitions[registerValue] ?? [])
+    .filter(({value}) => registerValue !== "0x28" || keyChannels.includes(Number(value) & 7)).map(
     ({ value, description }) => ({
       label: `${value} ${description}`,
       kind: kind.Value,
@@ -1352,12 +1200,12 @@ function isInsideCallObject(
  * Register Tetorica-specific Monaco completion behavior for the playground.
  *
  * This attaches one JavaScript CompletionItemProvider and keeps the custom
- * suggestions for YM2612/FM learning use-cases in one place.
+ * suggestions for OPN/FM learning use-cases in one place.
  *
  * Intended scope:
- * - pg / fm / fx helper API suggestions
+ * - FX helper suggestions (general pg / fm members come from declarations)
  * - note / scale suggestions
- * - YM2612 register and register-value suggestions
+ * - selected OPN register and register-value suggestions
  * - lightweight argument-context suggestions such as setBpm(...)
  *
  * This layer is intentionally separate from the global `.d.ts` type
@@ -1365,12 +1213,13 @@ function isInsideCallObject(
  * TypeScript engine, while this function adds playground-specific guidance.
  *
  * @param {typeof import("monaco-editor")} monaco Monaco runtime object.
+ * @param {{listVirtualFiles?: () => Array<{path: string, type: string}>, chip?: string}} [options] Project files and selected primary chip.
  * @returns {void}
  */
 
 export function registerMonacoCompletions(
   monaco,
-  { listVirtualFiles = () => [] } = {}
+  { listVirtualFiles = () => [], chip = "ym2612" } = {}
 ) {
   const kind =
     monaco.languages
@@ -1484,7 +1333,7 @@ export function registerMonacoCompletions(
           analysis.livePrepareObjects;
 
         if (
-          isInsidePresetString(
+          fmCompletionCapabilities(chip).channels.length > 0 && isInsidePresetString(
             linePrefix
           )
         ) {
@@ -1532,7 +1381,7 @@ export function registerMonacoCompletions(
         }
 
         if (
-          isAtPlayFirstArgument(
+          fmCompletionCapabilities(chip).channels.length > 0 && isAtPlayFirstArgument(
             linePrefix
           )
         ) {
@@ -1586,7 +1435,7 @@ export function registerMonacoCompletions(
         }
 
         if (
-          isInsideNoteString(
+          (fmCompletionCapabilities(chip).channels.length > 0 || /(?:^|[^\w$])(?:pg\.)?scale\(/.test(linePrefix)) && isInsideNoteString(
             linePrefix
           )
         ) {
@@ -1622,7 +1471,8 @@ export function registerMonacoCompletions(
           suggestions.push(
             ...createRegisterSuggestions(
               kind,
-              range
+              range,
+              primaryFmCompletionChip(linePrefix, analysis, chip)
             )
           );
         }
@@ -1636,13 +1486,14 @@ export function registerMonacoCompletions(
             ...createRegisterValueSuggestions(
               registerValueContext,
               kind,
-              range
+              range,
+              primaryFmCompletionChip(linePrefix, analysis, chip)
             )
           );
         }
 
         if (
-          isInsideCallObject(
+          fmCompletionCapabilities(primaryFmCompletionChip(linePrefix, analysis, chip)).channels.length > 0 && isInsideCallObject(
             sourceBeforeCursor,
             ["fm.setOperator("]
           )
@@ -1657,7 +1508,7 @@ export function registerMonacoCompletions(
         }
 
         if (
-          isInsideCallObject(
+          fmCompletionCapabilities(chip).channels.length > 0 && isInsideCallObject(
             sourceBeforeCursor,
             ["play(", "pg.play("]
           )
@@ -1666,7 +1517,8 @@ export function registerMonacoCompletions(
             ...createPlayOptionsSuggestions(
               kind,
               snippet,
-              range
+              range,
+              chip
             )
           );
         }

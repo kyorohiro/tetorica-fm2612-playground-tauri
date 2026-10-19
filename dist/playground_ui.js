@@ -130,24 +130,35 @@ export function createPlaygroundUi(
     },
   ];
 
+  const chipTabNames = new Set(['operator', 'segapsg', 'rf5c164', 'pwm']);
+  const visibleChipTabs = new Set(options.chipTabs ?? chipTabNames);
+  for (const tab of bottomTabs) {
+    tab.available = (!chipTabNames.has(tab.name) || visibleChipTabs.has(tab.name)) &&
+      !(tab.name === 'keyboard' && options.fmKeyboard === false);
+    if ((chipTabNames.has(tab.name) || tab.name === 'keyboard') && tab.button) tab.button.hidden = !tab.available;
+    if (!tab.available && tab.panel) tab.panel.hidden = true;
+  }
+
   const auxiliaryTabs = new Set(["audio", "fxMonitor", "console", "shell", "keyboard", "helpers", "mixer"]);
   let primaryTab = "code";
-  let bottomTab = options.initialBottomTab ?? "console";
+  let bottomTab = bottomTabs.some(tab => tab.name === options.initialBottomTab && tab.available)
+    ? options.initialBottomTab : "console";
   let dockOpen = options.initialDockOpen ?? true;
 
   function setBottomTab(tabName) {
+    if (bottomTabs.find(tab => tab.name === tabName)?.available === false) return;
     if (options.dockedPanels) {
       if (auxiliaryTabs.has(tabName)) { bottomTab = tabName; dockOpen = true; }
       else primaryTab = tabName;
     }
-    const keyboardVisible = options.dockedPanels
+    const keyboardVisible = options.fmKeyboard !== false && (options.dockedPanels
       ? primaryTab === "operator" || (dockOpen && bottomTab === "keyboard")
-      : tabName === "operator" || tabName === "keyboard";
+      : tabName === "operator" || tabName === "keyboard");
     for (const tab of bottomTabs) {
-      const isSelected =
+      const isSelected = tab.available && (
         options.dockedPanels
           ? tab.name === (auxiliaryTabs.has(tab.name) ? bottomTab : primaryTab)
-          : tab.name === tabName;
+          : tab.name === tabName);
       tab.button?.setAttribute(
         "aria-selected",
         isSelected ? "true" : "false"
@@ -172,7 +183,8 @@ export function createPlaygroundUi(
   ) {
     const activeName = bottomTabs.find(tab => tab.button === activeTab)?.name;
     const tabs = bottomTabs.filter(
-      (tab) => Boolean(tab.button) && (!options.dockedPanels || auxiliaryTabs.has(tab.name) === auxiliaryTabs.has(activeName))
+      (tab) => tab.available && Boolean(tab.button) && !tab.button.hidden &&
+        (!options.dockedPanels || auxiliaryTabs.has(tab.name) === auxiliaryTabs.has(activeName))
     );
     const currentIndex = tabs.findIndex(
       (tab) => tab.button === activeTab
@@ -192,7 +204,8 @@ export function createPlaygroundUi(
   }
 
   function installBottomTabHandlers() {
-    for (const { name, button } of bottomTabs) {
+    for (const { name, button, available } of bottomTabs) {
+      if (!available) continue;
       const tabButton = button;
       tabButton?.addEventListener(
         "click",

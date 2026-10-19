@@ -13,6 +13,9 @@ See js/msfa_dx7/LICENSE, THIRD_PARTY_NOTICES.md and README.vendor.md.
 
 Game Boy DMG APU: MAME adaptation, BSD-3-Clause. See licenses/mame-gameboy/.
 
+PC Engine HuC6280 PSG: MAME adaptation by Charles MacDonald, BSD-3-Clause. See licenses/mame-huc6280/.
+X68000 OKIM6258 ADPCM: MAME adaptation by Barry Rodewald, BSD-3-Clause. See licenses/mame-okim6258/.
+
 RF5C164: MAME adaptation, BSD-3-Clause.
 See ./licenses/mame-rf5c164/LICENSE and README.md.
 

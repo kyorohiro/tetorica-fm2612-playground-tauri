@@ -4,21 +4,94 @@ FILES の `examples/` を開き、フォルダー内の `.js` を選択して Ru
 ファイルを選ぶとエディターと Run file の両方が切り替わる。
 サンプルはプロジェクト内で編集でき、Cassette Export にも保存される。
 
+各 mode は `../defaults/<mode ID>/index.js` を初期コードとして持つ。
+初期の `/index.js` と `/examples/` は、選択した mode の API でそのまま実行できる構成にする。
+Genesis（互換用の `genesis-nuked` を含む）は従来の豊富なサンプルを残し、
+それ以外の mode は代表的なサンプルを2〜3個に絞る。
+表示対象は `../playground_mode_examples.js` で定義する。このフォルダーには、
+表示対象以外の独立音源・共通機能サンプルの原本も保持する。
+
+mode を切り替えると、ダイアログでコードの扱いを選べる。
+
+- **Start with initial code**：切り替え先の初期コードを `/index.js` に入れ、開くファイルと
+  Run file も `/index.js` にする。編集済みの元の index は、重複しない `/index-<元 mode ID>.js` に退避する。
+- **Keep current code**：初期コードを編集していなくても、現在のコード・開いているファイル・Run file を維持する。
+- **Cancel**：mode を変更せず、再生や編集中の内容を維持する。Escape でもキャンセルできる。
+
+使用中でない未編集の同梱 examples は切り替え先の組み合わせに整理する。
+編集済みの examples、自作・移動済みのファイル、バイナリ、チェックポイントは保持する。
+追加先にファイルやフォルダーがあれば上書きしない。下書きや Cassette の復元も、保存されたコードを自動で初期コードに置き換えない。
+
+同じ mode の初期状態からやり直す場合は、**Menu → New Cassette** を使う。
+確認ダイアログで作成を選ぶと、現在のプロジェクトをその mode の初期コード・ファイル構成に戻す。
+
+以下は原本のフォルダー構成。FILES に最初から入るサンプルは mode ごとに異なる。
+
 | Folder | 内容 |
 | --- | --- |
 | basic | グローバル fm・psg・dac と、liveLoop・context・FX・MIDI・noise・samples |
 | chip-raw | 音源レジスタを直接操作する例 |
 | genesis | 独立 Sega PSG・Mega CD PCM（RF5C164） |
-| gameboy | pulse・wave・noise・複数音源の設定 |
+| gameboy | Game Boy mode の標準 pulse、独立音源の wave・noise・複数音源の設定 |
 | nes | NES APU の pulse・triangle・noise、FDS 波形と変調、DMC サンプル |
-| pc98 | 独立 YM2608 の SSG・rhythm・ADPCM-B（PCM からの loadSample を含む） |
-| x68000 | 独立 YM2151 の FM |
+| snes | SNES mode の BRR サンプル、8ch の演奏とステレオ配置、独立 S-DSP の例 |
+| pc98 | PC-98 OPN の FM・SSG、OPNA の FM・SSG・rhythm・ADPCM-B と、独立 YM2608 の例 |
+| neogeo | Neo Geo / YM2610B mode の標準 FM・SSG tone/noise・ADPCM-A/B |
+| x68000 | X68000 mode の標準 OPM・OKIM6258 ADPCM と、独立 YM2151 の FM |
+| pc-engine | PC Engine mode の6ch Wave、ステレオ、Noise |
 | dx7 | MSFA DX7 の16音発音、Object での音作りと SysEx 音色の読み込み |
 
 FILES ではこの順に表示します。機種別のサンプルは各フォルダーに直接置きます。`basic/` 内の共通機能サンプルは機能別に分類しています。
 `chip-raw` は直接レジスタを書く入口として残しています。
 `basic/fm`・`basic/psg`・`basic/dac` は選択中の音源や Playground のグローバル API を使います。
-機種別フォルダーには `useSoundChip()` / `createSoundChip()` で独立した音源を取得する例を置きます。
+機種別フォルダーには、その mode の標準音源や `useSoundChip()` / `createSoundChip()` で取得する独立音源の例を置きます。
+
+`Game Boy` mode の初期コードは `../defaults/gameboy/index.js`。
+`gameboy/gameboy-mode-pulse.js`・`gameboy-mode-wave.js`・`gameboy-mode-noise.js` を同梱します。
+標準の `gameboy.pulse` を `beat()`・`liveLoop()` と組み合わせて鳴らします。
+`gameboy.wave`・`gameboy.noise` も同じ APU を操作します。`pg.gameboy` と
+`livePrepare(({gameboy}) => ...)` でも同じ音源を使えます。
+Game Boy mode の演奏は音源ごとの API で行い、グローバルの `play()` は OPN mode の FM 用です。
+`gameboy-saw-*.js` と `gameboy-synth.js` は独立音源を作る例です。
+
+`NES + FDS` mode は `../defaults/nes/index.js` と、`nes-mode-pulse.js`・
+`nes-mode-fds.js`・`nes-mode-rhythm.js` を使います。標準の `nes` は FDS を有効にしています。
+`nes.pulse`・`triangle`・`noise`・`dmc`・`fds` を演奏できます。
+
+`SNES` mode は `../defaults/snes/index.js` と、`snes-mode-brr.js`・`snes-mode-stereo.js` を使います。
+標準の `snes` は CPU を使わない8音の S-DSP です。BRR の読み込みを `await` し、
+`setPreset()` でサンプルを割り当てて `noteOn()` で演奏します。内部 PCM は 32,000 Hz 固定です。
+SPC ファイル再生は、独立した `useSoundChip('spc')` の API を使います。
+
+`X68000` mode は `../defaults/x68000/index.js` と、`x68000-mode-opm.js`・`x68000-mode-adpcm.js` を使います。
+`opm` は4 MHz の YM2151、`adpcm` は8 MHz の OKIM6258 です。
+ADPCM の例はコード内で PCM を作り、`await adpcm.loadSample()` で OKI ADPCM4 に変換します。
+`adpcm.play()` / `stop()` は PC-98 の ADPCM-B 用 API と異なります。
+
+`PC Engine` mode は `../defaults/pc-engine/index.js` と、`pce-mode-wave.js`・
+`pce-mode-stereo.js`・`pce-mode-noise.js` を使います。
+`pce` の0..5 の6ch に32個の 0..31 の波形値を設定し、`noteOn()` / `keyOff()` で演奏します。
+Noise はチャンネル4・5で使えます。独立音源の作成名は `huc6280` です。
+
+これらの mode と Game Boy は `pg`・`livePrepare()` にも同じ標準音源を公開します。
+共通の `beat()`・`sleep()`・`liveLoop()` と組み合わせ、グローバルの `play()`・`fm`・
+OPN の音程変換・FM 定数は使いません。`useSoundChip()` で標準音源を取得しても
+同じ音源を再利用し、`createSoundChip()` では独立した追加音源を作ります。
+
+`pc98/pc98-opn-ssg.js` は Mode を `PC-98 (YM2203 / OPN)` にして実行します。
+標準の `fm` と `ssg` で、FM・SSG のトーン・ノイズ・エンベロープを順番に鳴らします。
+SSG は3ch、音程計算にはマスタークロックの1/2を使います。
+
+`pc98/pc98-opna-sections.js` は Mode を `PC-98 (YM2608 / OPNA)` にして実行します。
+標準の `fm`・`ssg`・`rhythm`・`adpcm` で、同じ YM2608 の各機能を順番に鳴らします。
+Main / Worker の両方で使え、ADPCM 用の音声もコード内で作るため外部ファイルは不要です。
+他の `pc98/ym2608-*.js` は独立音源を使うため、どの mode でも実行できます。
+
+`neogeo/neogeo-opnb-sections.js` は `Neo Geo` または `Neo Geo (YM2610B)` mode 用です。
+同じチップの FM・SSG のトーンとノイズ・6音の ADPCM-A・ADPCM-B を順番に鳴らします。
+ADPCM はコード内で作るテスト用の符号化済みパターンを使い、外部 ROM は不要です。
+`adpcm` と `adpcmB` は同じ API です。A/B の `loadMemory()` は、それぞれに対応した
+符号化済みデータを受け取り、WAV / PCM の直接読み込みは行いません。
 
 `basic/fm/soundchip-tone-controls.js` は共通の音程・発音操作の例です。
 `setFrequency(ch, hz)`、`setNote(ch, note)`、`keyOn(ch)`、`keyOff(ch)`、`noteOn(ch, note)` を使います。
@@ -71,12 +144,14 @@ msfa の AM・transpose 等の制約は [DX7 ライブラリの README](../../js
 
 ## サンプルを追加・修正する場合
 
-このフォルダーの JavaScript が原本。サンプル名（拡張子を除くファイル名）は重複させない。
+このフォルダーの JavaScript がサンプルの原本。サンプル名（拡張子を除くファイル名）は重複させない。
+初期コードは `../defaults/<mode ID>/index.js` を編集し、同梱するサンプルを変える場合は
+`../playground_mode_examples.js` も更新する。`../defaults/index.js` は旧初期コードの識別用に残す。
 
 ```sh
 node scripts/build_playground_examples.mjs
 node scripts/build_playground_examples.mjs --check
 ```
 
-生成された `playground_examples.js` は、コードを実行せず文字列として配布するためのバンドル。
+生成された `playground_examples.js` は、各 mode の初期コードとサンプルを実行せず文字列として配布するためのバンドル。
 直接編集しない。itch.io パッケージ生成時にも更新する。

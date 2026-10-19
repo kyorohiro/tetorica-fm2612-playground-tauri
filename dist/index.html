@@ -232,6 +232,11 @@
         box-shadow: 0 10px 22px rgba(55, 64, 61, 0.18);
       }
 
+      /* Keep closed nested menus out of layout as well as painting in WebKit. */
+      .toolbar-menu:not([open]) > .toolbar-menu-panel {
+        display: none;
+      }
+
       .toolbar-menu-panel button,
       .toolbar-menu-panel .link-button {
         width: 100%;
@@ -284,10 +289,16 @@
         width: min(300px, calc(100vw - 24px));
         max-height: calc(100dvh - 68px);
         overflow-y: auto;
+        /* Isolate the overlay from the editor and meters underneath it. */
+        contain: layout paint;
+        transform: translateZ(0);
+        box-shadow: 0 2px 6px rgba(55, 64, 61, 0.15);
       }
       .toolbar-menu-panel hr { width: 100%; margin: 5px 0; border: 0; border-top: 1px solid var(--line); }
       .toolbar-menu-panel #desktopSettingsMenu { display: grid; }
       .toolbar-menu-panel .menu-setting-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+      #playgroundMode { min-width: 0; max-width: 230px; flex: 1; }
+      #playgroundModeDetails { margin: 4px 0 12px; font-variant-numeric: tabular-nums; }
       .menu-value { min-width: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #526467; font-size: .75rem; font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
       #desktopPinSlot:empty { display: none; }
       #desktopPinSlot { display: inline-flex; }
@@ -306,6 +317,11 @@
       .playground-settings-dialog input[type="number"] { width: 8em; padding: 7px; font: inherit; border: 1px solid var(--line); border-radius: 6px; }
       .settings-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
       .settings-dialog-actions button[type="submit"] { background: var(--accent-dark); color: white; }
+      .mode-code-choices { display: grid; gap: 10px; margin-top: 16px; }
+      .mode-code-choice { display: grid; gap: 5px; text-align: left; padding: 14px; color: var(--ink); background: white; box-shadow: none; }
+      .mode-code-choice:hover { background: rgba(17, 154, 167, .08); }
+      .mode-code-choice span { font-size: .82rem; font-weight: normal; line-height: 1.5; }
+      #modeChoiceCancel { color: var(--ink); background: transparent; box-shadow: none; }
       .spc-import-dialog { width: min(1050px, calc(100vw - 32px)); }
       .spc-import-dialog fieldset { margin: 12px 0; min-width: 0; border: 1px solid var(--line); border-radius: 8px; }
       .spc-import-dialog [hidden] { display: none; }
@@ -885,6 +901,7 @@
         border-color: var(--line);
         box-shadow: inset 0 3px 0 var(--accent);
       }
+      .tab-button[hidden] { display: none; }
 
       #codePanel .section-heading {
         display: none;
@@ -1660,10 +1677,10 @@
     <nav class="app-bar" aria-label="Playground navigation">
       <div class="app-bar-leading">
         <div class="app-bar-brand">
-          <h1 id="pageTitle">Tetorica FM2612 Playground</h1>
+          <h1 id="pageTitle">Tetorica Genesis Playground</h1>
           <p class="subtext">
             Write a few lines of JavaScript, run them in the browser, then
-            drop down to raw YM2612 control when you want to.
+            drop down to raw sound chip control when you want to.
           </p>
         </div>
       </div>
@@ -1695,6 +1712,11 @@
                 </div>
               </details>
               <hr>
+              <label class="menu-setting-row" for="playgroundMode">
+                <span>Mode</span>
+                <select id="playgroundMode" aria-label="Playground mode"></select>
+              </label>
+              <p id="playgroundModeDetails" class="subtext"></p>
               <button id="workerLookaheadButton" class="menu-setting-row" type="button" aria-haspopup="dialog" aria-controls="workerLookaheadDialog">
                 <span>Worker lookahead…</span><small id="workerLookaheadValue" class="menu-value">500 ms</small>
               </button>
@@ -1871,6 +1893,25 @@
                 <button value="new" type="submit">New Cassette</button>
               </form>
             </dialog>
+        <dialog id="changeModeDialog" class="playground-settings-dialog" aria-labelledby="changeModeTitle" aria-describedby="changeModeHint">
+          <form method="dialog">
+            <h2 id="changeModeTitle">Switch to <span id="changeModeTarget"></span>?</h2>
+            <p id="changeModeHint">Choose which code to use in the new mode.</p>
+            <div class="mode-code-choices">
+              <button id="modeChoiceInitial" class="mode-code-choice" type="submit" value="initial">
+                <strong>Start with initial code</strong>
+                <span>Open the new mode's initial code in index.js. Edited index.js is saved separately. Your other files are kept.</span>
+              </button>
+              <button id="modeChoiceKeep" class="mode-code-choice" type="submit" value="keep">
+                <strong>Keep current code</strong>
+                <span>Keep your code and selected Run file. The available sound chips and APIs change to the new mode.</span>
+              </button>
+            </div>
+            <div class="settings-dialog-actions">
+              <button id="modeChoiceCancel" type="submit" value="cancel" autofocus>Cancel</button>
+            </div>
+          </form>
+        </dialog>
         <dialog id="workerLookaheadDialog" class="playground-settings-dialog" aria-labelledby="workerLookaheadTitle" aria-describedby="workerLookaheadHint">
           <form method="dialog" id="workerLookaheadForm">
             <h2 id="workerLookaheadTitle">Worker lookahead</h2>
@@ -1920,9 +1961,9 @@
             >
               YM2612
             </button>
-            <button id="segapsgTab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="segapsgPanel">Sega PSG</button>
-            <button id="rf5c164Tab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="rf5c164Panel">RF5C164</button>
-            <button id="pwmTab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="pwmPanel">32X PWM</button>
+            <button id="segapsgTab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="segapsgPanel" hidden>Sega PSG</button>
+            <button id="rf5c164Tab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="rf5c164Panel" hidden>RF5C164</button>
+            <button id="pwmTab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="pwmPanel" hidden>32X PWM</button>
             <button id="mixerTab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="mixerPanel">Mixer</button>
             <button id="keyboardTab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="keyboardPanel">
               Keyboard
@@ -2051,7 +2092,7 @@
             <h2>pg</h2>
             <ul class="helper-list">
               <li><code>pg</code> is the main playground helper namespace</li>
-              <li><code>pg.play("C4", { channel: CH1, duration: 0.2 })</code> plays one note</li>
+              <li data-opn-helper><code>pg.play("C4", { channel: CH1, duration: 0.2 })</code> plays one note</li>
               <li><code>pg.sleep(0.25)</code> waits in seconds</li>
               <li><code>sleepSamples(735)</code> waits in VGM-style 44.1kHz sample units</li>
               <li><code>pg.liveLoop("bass", async () =&gt; {})</code> keeps a named loop alive</li>
@@ -2059,16 +2100,29 @@
               <li><code>pg.setMasterVolume(1.5)</code>, <code>pg.getMasterVolume()</code></li>
               <li><code>await pg.livePrepare("main-fx", async ({ fx }) =&gt; ...)</code> reuses prepared live state across runs</li>
               <li><code>pg.scale("Eb2", "majorPentatonic", 2)</code>, <code>pg.chord("B2", "minor")</code></li>
-              <li><code>pg.noteToBlockFnum("C4")</code>, <code>pg.noteLerp("B2", "E3", 0.5)</code>, <code>pg.lerp(0, 100, 0.5)</code></li>
-              <li><code>hzToBlockFnum(440)</code> / <code>pg.hzToBlockFnum(440)</code> converts Hz to <code>{block, fnum}</code> for <code>fm.setFrequency(channel, block, fnum)</code>. Optional second argument: chip clock in Hz (default 7670454), not the audio sample rate.</li>
+              <li><code>pg.lerp(0, 100, 0.5)</code> interpolates between two numbers</li>
+              <li data-opn-helper><code>pg.noteToBlockFnum("C4")</code>, <code>pg.noteLerp("B2", "E3", 0.5)</code> convert FM pitch</li>
+              <li data-opn-helper><code>hzToBlockFnum(440)</code> / <code>pg.hzToBlockFnum(440)</code> converts Hz to <code>{block, fnum}</code> for <code>fm.setFrequency(channel, block, fnum)</code>. Optional second argument: chip clock in Hz (default 7670454), not the audio sample rate.</li>
               <li><code>pg.choose(array)</code>, <code>pg.cycle(array)</code>, <code>pg.cycle("bass", array)</code></li>
               <li><code>pg.rand()</code>, <code>pg.rrange(0.2, 0.8)</code>, <code>pg.randInt(0, 7)</code></li>
               <li><code>pg.stopLoop(name)</code>, <code>pg.stopAllLoops()</code>, <code>pg.stopAll()</code></li>
             </ul>
 
             <p class="subtext">Go to Definition (F12 / Ctrl or Cmd + click) opens library declarations read-only. View implementation opens the corresponding JavaScript source.</p>
-            <h2 style="margin-top: 14px;">midi (YM2612 mode)</h2>
-            <ul class="helper-list">
+            <h2 data-gameboy-helper hidden style="margin-top: 14px;">Game Boy</h2>
+            <ul data-gameboy-helper hidden class="helper-list">
+              <li><code>gameboy</code> is the primary Game Boy APU, also available through <code>pg.gameboy</code> and <code>livePrepare(({gameboy}) =&gt; ...)</code>. It is initialized when audio starts.</li>
+              <li><code>gameboy.pulse.setVoice(0, {duty: 0.25, volume: 9})</code>, <code>gameboy.pulse.noteOn(0, "C4")</code>, <code>gameboy.pulse.keyOff(0)</code>. Pulse channels are <code>0</code> and <code>1</code>.</li>
+              <li><code>gameboy.wave.stopAndSetWaveform(samples)</code> loads 32 four-bit samples. Choose <code>setLevel(0.5)</code>, then <code>noteOn("C3")</code> / <code>keyOff()</code>.</li>
+              <li><code>gameboy.noise.setVoice({volume: 8, divisor: 3, shift: 4, width: 15})</code>, <code>gameboy.noise.keyOn()</code>, <code>gameboy.noise.keyOff()</code>.</li>
+              <li><code>gameboy.setPan(channel, left, right)</code> routes APU channels <code>0..3</code>. Time notes with <code>beat()</code> / <code>sleep()</code> and use <code>liveLoop()</code> for repeated patterns. See <code>examples/gameboy/gameboy-mode-pulse.js</code>.</li>
+            </ul>
+            <p data-native-helper="nes" hidden><code>nes.pulse</code>, <code>nes.triangle</code>, <code>nes.noise</code>, <code>nes.dmc</code> and <code>nes.fds</code> control the primary NES + FDS. Use <code>nes.pulse.noteOn(0, "C4")</code>, <code>await beat(0.5)</code>, then <code>nes.pulse.keyOff(0)</code>.</p>
+            <p data-native-helper="snes" hidden><code>snes.loadBRR(bytes, {rootNote:"C4", loopStartSamples:0})</code> prepares a BRR instrument. Assign it with <code>snes.setPreset(0, {sample:tone})</code>, then use <code>snes.noteOn(0, "C4")</code> / <code>snes.keyOff(0)</code>. Channels are <code>0..7</code>.</p>
+            <p data-native-helper="x68000" hidden><code>opm</code> controls the eight YM2151 FM channels. <code>adpcm</code> controls the OKIM6258: <code>await adpcm.loadSample({channels:[pcm], sampleRate:15625})</code>, then <code>adpcm.play()</code> / <code>adpcm.stop()</code>.</p>
+            <p data-native-helper="huc6280" hidden><code>pce.setWaveform(0, wave)</code> loads 32 samples in <code>0..31</code>. Use <code>pce.setVolume(0, 20)</code>, <code>pce.noteOn(0, "C4")</code> and <code>pce.keyOff(0)</code>. Channels are <code>0..5</code>; noise is available on <code>4</code> and <code>5</code>.</p>
+            <h2 data-opn-helper style="margin-top: 14px;">midi (YM2612 mode)</h2>
+            <ul data-opn-helper class="helper-list">
               <li><code>midi.output("tetorica-ym2612", { channel: CH1 })</code> creates an FM part; <code>"tetorica-sega-psg"</code> uses the three PSG tone voices (not noise). These are internal outputs, not external Web MIDI ports.</li>
               <li><code>channel</code> is a MIDI part: numeric <code>0..15</code> or <code>CH1..CH16</code>. Omitted channel defaults to CH1. By default the engine shares six FM voices or three PSG tone voices automatically; a MIDI channel does not pin a physical voice.</li>
               <li><code>await midi.enableSoundChip("tetorica-ym2612", { roundRobin: false })</code> selects fixed FM voices: CH1..CH6 map to physical CH1..CH6, one note each; CH7..CH16 do not sound. <code>roundRobin: true</code> restores automatic allocation. Changing mode stops FM notes. Specify the mode at the start of your script; this option is YM2612-only.</li>
@@ -2099,12 +2153,15 @@
               <li><code>liveFx(name, {context, process(input, output, state, context), resetState?})</code> registers JavaScript FX after native FX. Same-name Apply preserves state; Stop removes it. Input/output are arrays of channel Float32Arrays. The synchronous process runs in AudioWorklet: use context instead of captured variables, and avoid unbounded loops. Exceptions/non-finite output bypass that effect.</li>
               <li><code>fx.updateContext(name, patch)</code> sends a context update; <code>fx.removeLiveFx(name)</code> removes it. Commands are queued, not sample-timestamped. See <code>examples/basic/livefx/live-fx-distortion.js</code>.</li>
               <li><code>log(value)</code>, <code>console.log(value)</code>, <code>console.warn(value)</code>, and <code>console.error(value)</code> write to the Console tab</li>
-              <li><code>tfiToPreset(await file("./bass.tfi", { type: "arrayBuffer" }))</code> converts a 42-byte TFI file for <code>fm.setPreset()</code></li>
-              <li><code>vgiToPreset(await file("./bass.vgi", { type: "arrayBuffer" }))</code> converts a 43-byte VGI file for <code>fm.setPreset()</code> (binary files require <code>type: "arrayBuffer"</code>)</li>
+              <li data-opn-helper><code>tfiToPreset(await file("./bass.tfi", { type: "arrayBuffer" }))</code> converts a 42-byte TFI file for <code>fm.setPreset()</code></li>
+              <li data-opn-helper><code>vgiToPreset(await file("./bass.vgi", { type: "arrayBuffer" }))</code> converts a 43-byte VGI file for <code>fm.setPreset()</code> (binary files require <code>type: "arrayBuffer"</code>)</li>
             </ul>
 
             <h2 style="margin-top: 14px;">Sound chips</h2>
             <ul class="helper-list">
+              <li>In PC-98 (YM2203 / OPN) mode, <code>fm</code> and <code>ssg</code> control the same default YM2203. SSG offers three tone/noise/envelope channels in Main and Worker, also through <code>pg.ssg</code> and <code>livePrepare()</code>. See <code>examples/pc98/pc98-opn-ssg.js</code>.</li>
+              <li>In PC-98 (YM2608 / OPNA) mode, <code>fm</code>, <code>ssg</code>, <code>rhythm</code> and <code>adpcm</code> control the same default YM2608 in Main and Worker. Also available through <code>pg</code> and <code>livePrepare()</code>. See <code>examples/pc98/pc98-opna-sections.js</code>.</li>
+              <li>Neo Geo (YM2610, four FM channels) and Neo Geo (YM2610B, six FM channels) expose <code>ssg</code> (tone/noise/envelope), <code>adpcmA</code> (six voices) and <code>adpcmB</code> on the default chip. <code>adpcm</code> aliases <code>adpcmB</code>. Main, Worker, <code>pg</code> and <code>livePrepare()</code> share these APIs. Upload encoded A/B data with <code>await loadMemory()</code>; see <code>examples/neogeo/neogeo-opnb-sections.js</code>.</li>
               <li><code>const chip = await useSoundChip(name)</code> reuses a chip until Stop. For YM2612, YM2203, and YM2610, it returns the default chip when selected; otherwise it creates an independent chip.</li>
               <li><code>const chip = await createSoundChip(name)</code> creates a fresh independent chip routed through master FX.</li>
               <li><code>createSoundChip("nes", {fds: true})</code> enables FDS. Use <code>chip.pulse</code>, <code>chip.triangle</code>, <code>chip.noise</code>, <code>chip.dmc</code>, and <code>chip.fds</code>; see <code>examples/nes/</code>.</li>
@@ -2112,7 +2169,8 @@
               <li><code>const snes = await useSoundChip("snes")</code> creates an independent, CPU-free S-DSP with eight voices (0..7). Load BRR with explicit tuning, then call <code>snes.setPreset(0, {sample})</code> and <code>snes.noteOn(0, "C4")</code>. Native audio is 32,000 Hz; there is no <code>setClock()</code>. See <code>examples/snes/snes-brr-melody.js</code>.</li>
               <li><code>const dx7 = await useSoundChip("dx7")</code> creates a 16-voice MSFA DX7 with the self-authored INIT SINE voice. Use <code>dx7.noteOn(60, 100)</code> and <code>dx7.noteOff(60)</code> with MIDI note numbers, without a channel argument.</li>
               <li>Import a DX7 SysEx file into FILES, then <code>await dx7.loadSysex(await file("/presets/my-bank.syx", {type:"arrayBuffer"}))</code>. Choose <code>dx7.selectVoice(0)</code> from <code>dx7.voices</code>. The internal rate is fixed at 44,100 Hz; there is no <code>setClock()</code>. See <code>examples/dx7/dx7-init-sine.js</code>.</li>
-              <li>Control additional chips through the returned object. Global <code>play()</code> and <code>write()</code> target the default chip; Stop disposes additional chips.</li>
+              <li>Control additional chips through the returned object. Stop disposes additional chips.</li>
+              <li data-opn-helper>Global <code>play()</code> and <code>write()</code> target the default FM chip.</li>
               <li>Concurrent <code>useSoundChip()</code> requests share initialization. Options other than an empty object are not supported.</li>
             </ul>
 
@@ -2164,8 +2222,8 @@
               <li>Open <code>examples/genesis/rf5c164-sine.js</code> in FILES for an example.</li>
             </ul>
 
-            <h2 style="margin-top: 14px;">dac (YM2612 mode)</h2>
-            <ul class="helper-list">
+            <h2 data-opn-helper style="margin-top: 14px;">dac (YM2612 mode)</h2>
+            <ul data-opn-helper class="helper-list">
               <li>DAC plays unsigned 8-bit PCM through physical CH6, replacing its FM output while enabled. Values are <code>0..255</code>; <code>128</code> is the neutral level.</li>
               <li><code>fm.setPan(CH6, true, true)</code> routes CH6 to both speakers. <code>fm.setDacEnabled(true)</code> enables DAC; <code>fm.writeDac(128)</code> writes one value; <code>fm.setDacEnabled(false)</code> restores FM output.</li>
               <li><code>const start = beginSampleSchedule()</code> gets the current loop cycle start in 44,100 Hz sample units. <code>dac.schedule(start, entries)</code> queues <code>[offsetSamples, value]</code> pairs relative to that start. Use <code>/** @type {Array&lt;[number, number]&gt;} */</code> for an initially empty entries array.</li>
@@ -2199,12 +2257,12 @@
               <li>Output passes through the master FX by default. Playback controls remain on the main thread, including in Worker mode. This API is separate from <code>dac.playStream()</code>.</li>
             </ul>
 
-            <h2 style="margin-top: 14px;">fm</h2>
-            <ul class="helper-list">
-              <li><code>fm</code> is the raw <code>YM2612Synth</code> layer</li>
+            <h2 data-opn-helper style="margin-top: 14px;">fm</h2>
+            <ul data-opn-helper class="helper-list">
+              <li><code>fm</code> controls the selected mode's primary FM chip</li>
               <li><code>await play("C4")</code> plays one note</li>
-              <li><code>pg.fm</code> points to the same YM2612 layer</li>
-              <li>Channels are <code>CH1</code> through <code>CH6</code>; logical operators are <code>OP1</code> through <code>OP4</code></li>
+              <li><code>pg.fm</code> points to the same primary FM chip</li>
+              <li>FM channels: 3 on YM2203, 4 on Neo Geo YM2610, 6 on YM2612/YM2608. Logical operators are <code>OP1</code> through <code>OP4</code>.</li>
               <li><code>fm.setPreset(CH1, pg.presets["one-op-basic"])</code> applies one preset</li>
               <li><code>fm.setOperators(CH1, [[OP1, { tl: 20 }], [OP3, { tl: 24 }]])</code> applies partial settings in array order (YM2612). Repeated operators are allowed. Fields within each entry follow <code>setOperator()</code>'s register order.</li>
               <li><code>fm.setOperator(CH1, OP1, { multi: 1, tl: 20, ar: 24, d1r: 8, d2r: 4, sl: 6, rr: 8 })</code></li>
@@ -2219,8 +2277,8 @@
               <li><code>fm.read(offset)</code>, <code>fm.readStatus()</code>, <code>fm.getIrq()</code> expose low-level chip state where available</li>
             </ul>
 
-            <h2 style="margin-top: 14px;">psg</h2>
-            <ul class="helper-list">
+            <h2 data-opn-helper style="margin-top: 14px;">psg</h2>
+            <ul data-opn-helper class="helper-list">
               <li><code>psg</code> is the raw Sega PSG (SN76489-compatible) layer, mixed into the same output as <code>fm</code></li>
               <li><code>pg.psg</code> points to the same PSG layer</li>
               <li><code>pg.psgTone(channel, period, attenuation)</code> writes one PSG tone note helper for channel <code>0..2</code></li>
@@ -2329,7 +2387,7 @@
       })();
     </script>
     <script type="module">
-      import('./playground.js?v=spc-reference-tuning-1').catch(error => window.__playgroundStartup.fail(error));
+      import('./playground.js?v=vgm-frequency-order-2').catch(error => window.__playgroundStartup.fail(error));
     </script>
   </body>
 </html>
