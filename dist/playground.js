@@ -5,10 +5,10 @@ import {createPlaygroundMixer} from './playground_mixer.js?v=chip-tabs-2';
 import {createPlaygroundChipTabs} from './playground_chip_tabs.js?v=chip-tabs-2';
 import {installPlaygroundShell} from './playground_shell.js?v=compact-shell-1';
 import {installPlaygroundGit} from './playground_git.js';
-import {openDraftStore, createProjectAutosave} from './playground_autosave.js?v=opn-modes-1';
+import {openDraftStore, createProjectAutosave} from './playground_autosave.js?v=mode-handoff-1';
 import {PLAYGROUND_MODES, resolvePlaygroundMode, createModeSynthOptions,
   createPlaygroundModeUrl, isSimplePlaygroundLayout} from './playground_mode.js?v=audio-stability-2';
-import {saveModeProject, consumeModeProject} from './playground_mode_project.js';
+import {saveModeProject, consumeModeProject} from './playground_mode_project.js?v=mode-handoff-1';
 import {reconcileModeProject} from './playground_mode_starters.js?v=mode-choice-1';
 let desktopAutosave = null;
 let playgroundShell = null;
@@ -2679,6 +2679,9 @@ async function changePlaygroundMode(id) {
     const token = await saveModeProject(window.indexedDB, id, prepareModeProject(captureProjectSnapshot(), id, codeChoice));
     url.searchParams.set('modeProject', token);
     await runtime.finalize();
+    // The draft was flushed above. Close its connection before the next
+    // WebView opens IndexedDB, and prevent pagehide from starting another save.
+    desktopAutosave?.dispose();
     window.location.assign(url.href);
   } catch (error) {
     if (switching) {

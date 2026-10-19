@@ -1,5 +1,5 @@
 {
-  "archive": "hello_ymfm_wasm_dev_itch_playground_v0.83.3.zip",
+  "archive": "hello_ymfm_wasm_tauri-mode-handoff-check-20261019_itch_playground.zip",
   "files": {
     "LICENSE": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c",
     "THIRD_PARTY_LICENSES.txt": "7bf779445f04ef54e7b512cf0d511621dcf1ad416c642b4f005b219367ca4cf0",
@@ -125,7 +125,7 @@
     "generated/ym2610b_wasm.wasm": "2b14473809584320dfd30f3cf89079171b5f0119ee91cd96fe1c047682956635",
     "generated/ym2612_wasm.js": "f32abf7d979325d195d9fcf89c12bd69911db854576685e642cc0a73a46a4667",
     "generated/ym2612_wasm.wasm": "5184f6440860c438fb424fae60255f666358657571810e51a0f8e147cc8b8b13",
-    "index.html": "32d564fddca696a6ef2999a471cab16796d6d10d9a6c07b1e503acdc03f05d61",
+    "index.html": "67a260ade6d049f71fd149432efade36058ed9aededaeac56f7f3753766cdcde",
     "js/adpcm_b_sample.js": "6cd2346c09713427384f14c152c03b2334928f10e618184a521790a7e9815f93",
     "js/bitcrusher-worklet.js": "782a8c0f015770792f7226f3d6a874c23e067ecf8665337244baa5872b3d52d9",
     "js/chip_worklet_transport.js": "62bca42d59bf08bc9c815a013765dea4151c81419adf20852a396e63fa70310a",
@@ -354,9 +354,9 @@
     "licenses/snes-spc/LICENSE": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331",
     "licenses/snes-spc/README.md": "0a4ef415f103b996772d321ba2ff28614a27a9c83cfe4afd437a779e58ab0775",
     "llms.txt": "d17a4fb3281092420efc8325191633df818dee4358ba8930b04ba4f70c3d72e9",
-    "playground.js": "06590abb3171157d9cd592a229eae34b3161fda29ae0fe59170854a28785e19c",
+    "playground.js": "43faec70920d42f55ff1b10d96454b96310fc0f39fd5c6295219456099a3c723",
     "playground_audio_monitor.js": "919fcc989423e0ed17ce8a89c6428f469a7b79a0997b725dad71f0ecccdf3a60",
-    "playground_autosave.js": "8a946849f0ba822616fb000be97789e5ea0aab98d41564fdabb1cebed4318217",
+    "playground_autosave.js": "46bbdd5614e1597ee9906db35edd53f407fd18a373b0484b3a92176a5c084abd",
     "playground_cassette.js": "685f14c303706e60f27809b2c53d84003e356d1ce774df523475799b245a3346",
     "playground_chip_tabs.css": "e35d203d5c50bd22d1672a7ee58e1da5ba47db96f7cc9122ea38440aebdbe8f1",
     "playground_chip_tabs.js": "124bc9929ca8ba4b5c887444c97f81fdfbe266a2cc3d0fa15a76c20000fe3caf",
@@ -373,7 +373,7 @@
     "playground_mixer.js": "35a671728a99103e41f6979463d0972d84615c1e57f97e250ca687fb0d1a5e49",
     "playground_mode.js": "37cad7d5399c344b9482461ebaea5e165510b78ca21881b43dd1f013a1c92700",
     "playground_mode_examples.js": "8491e2c359e5dcc0ccb9f416897975b2571eda41c44be0550a8737305abfc514",
-    "playground_mode_project.js": "af3e42700d2ef6f514420ea91d257f89fabf00da903e313d9163ad88bf87356a",
+    "playground_mode_project.js": "7b8010d2521ed12025d5420d7a4399473b8da33d3d3ba7831ea075e1bb55d2cf",
     "playground_mode_starters.js": "2cdce7eee00ba61c17a8e6a88ae10ce470f539d207e18afd48ffecea118127bd",
     "playground_monaco.js": "8fafcebbc1effbc47e9210dbec0c004f15a1b0154c3d951231b63e6f33d349d0",
     "playground_monaco_completion.js": "364095eef44d4e91933935ab07abe837414f38bc5bfc37f585c3d8c2af700a77",
@@ -665,6 +665,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "58cb2096631756e9b33dd713e251d7bb5cd7e2cf2e4469ef2c83255a1d844802"
   },
-  "sha256": "e7536b46703d24e6e4cd552aad4c1b485246ca7236ea9f2a8fcd41b6feac1f64",
-  "version": "sha256-e7536b46703d"
+  "sha256": "08154c9f403400ef1c6e4e132538565841163d5a7014e7beaa16e7ddaaf8b03b",
+  "version": "sha256-08154c9f4034"
 }
