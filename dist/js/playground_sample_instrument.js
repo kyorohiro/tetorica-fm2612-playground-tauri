@@ -1,7 +1,7 @@
 /** Browser / Worker / Node: shared sample instruments. Device access is injected through pg. */
-import {normalizeSampleEdit, renderSampleEdit, renderGameboyWave} from './playground_sample_edit.js?v=sample-editor-1';
+import {normalizeSampleEdit, renderSampleEdit, renderGameboyWave} from './playground_sample_edit.js?v=msx-modes-2';
 import {encodeAdpcmB} from './adpcm_b_sample.js';
-import {captureKeyboardCallback} from './playground_keyboard.js?v=sample-editor-1';
+import {captureKeyboardCallback} from './playground_keyboard.js?v=msx-modes-2';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 function eventNote(event) {
@@ -69,7 +69,10 @@ function metadata(audio) {
   return {rootMidi, tuneCents};
 }
 
-/** audio is already edited PCM; target adapters never silently crop or resample it. */
+/**
+ * audio is already edited PCM; target adapters never silently crop or resample it.
+ * @param {{pg?: any, audio?: any, chip?: string, target?: 'auto' | 'rf5c164' | 'gameboy-wave' | 'adpcm-b', volume?: number}} [options]
+ */
 export async function createSampleInstrument({pg, audio, chip = 'ym2612', target = audio?.target ?? 'auto', volume} = {}) {
   if (!pg || !audio) throw new TypeError('createSampleInstrument requires pg and decoded audio');
   const {rootMidi, tuneCents} = metadata(audio);

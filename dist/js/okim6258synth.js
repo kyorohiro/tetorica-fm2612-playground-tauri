@@ -1,12 +1,19 @@
 import {readSamplePCM} from './adpcm_b_sample.js';
-import {validateChipClock} from './playground_chip_clock.js?v=audio-stability-2';
+import {validateChipClock} from './playground_chip_clock.js?v=msx-modes-2';
 
 export const OKIM6258_CLOCK = 8000000;
 export const OKIM6258_DIVIDERS = Object.freeze([1024, 768, 512]);
 const INDEX_SHIFT = [-1, -1, -1, -1, 2, 4, 6, 8];
 const STEPS = Array.from({length:49}, (_, i) => Math.floor(16 * (11 / 10) ** i));
 
-/** Choose an actual VCLK rate; the chip has three clock dividers, not a pitch register. */
+/** @typedef {{frames:number,waveform:number[],sampleRate?:number,source?:'raw'|'sample',name?:string}} Oki6258SampleMetadata
+ * @typedef {{writeRegister:(register:number,value:number)=>void,
+ * loadMemory:(bytes:Uint8Array,metadata?:Oki6258SampleMetadata)=>void|Promise<void>,
+ * play:(options:{repeat:boolean})=>void,stop:()=>void,reset:()=>void,dispose?:()=>void}} Oki6258Transport
+ */
+
+/** Choose an actual VCLK rate; the chip has three clock dividers, not a pitch register.
+ * @param {number} clock @param {number} hz */
 export function oki6258Rate(clock, hz) {
   validateChipClock(clock);
   if (!Number.isFinite(hz) || hz <= 0) throw new RangeError('Invalid OKIM6258 playback rate');
@@ -18,6 +25,9 @@ export function oki6258Rate(clock, hz) {
 /** Encode MAME-compatible OKI ADPCM4: low nibble first, initial predictor -2,
  * 12-bit output and the 49-entry OKI step table. Stereo PCM is averaged.
  * The final byte always contains two samples, with silence padding if needed.
+ * @param {import('./wav.js').ChannelPCM} pcm
+ * @param {number} outputRate
+ * @param {number} [maxBytes]
  */
 export function encodeOki6258({channels, sampleRate}, outputRate, maxBytes = 0x1000000) {
   if (!Array.isArray(channels) || !channels.length || channels.length > 32 ||
@@ -55,8 +65,28 @@ export function encodeOki6258({channels, sampleRate}, outputRate, maxBytes = 0x1
   return {bytes, frames, paddedFrames:byteLength * 2, sampleRate:outputRate, durationSeconds:byteLength * 2 / outputRate};
 }
 
+/** Decode a bounded peak preview outside the audio render thread. No PCM-sized allocation.
+ * @param {Uint8Array|ArrayBuffer} input @param {{bins?:number}} [options] */
+export function summarizeOki6258(input,{bins=512}={}) {
+  const bytes=input instanceof ArrayBuffer?new Uint8Array(input):input;
+  if(!(bytes instanceof Uint8Array)||!bytes.length||bytes.length>0x1000000)throw new RangeError('Expected 1 byte to 16 MiB of OKI ADPCM');
+  if(!Number.isInteger(bins)||bins<1||bins>512)throw new RangeError('Preview bins must be 1..512');
+  const frames=bytes.length*2,count=Math.min(bins,frames),waveform=new Array(count).fill(0);
+  let predictor=-2,stepIndex=0;
+  for(let frame=0;frame<frames;frame++){
+    const code=bytes[frame>>1]>>((frame&1)*4)&15,step=STEPS[stepIndex];
+    const difference=Math.floor(step/8)+(code&1?Math.floor(step/4):0)+(code&2?Math.floor(step/2):0)+(code&4?step:0);
+    predictor=Math.max(-2048,Math.min(2047,predictor+(code&8?-difference:difference)));
+    stepIndex=Math.max(0,Math.min(48,stepIndex+INDEX_SHIFT[code&7]));
+    const bin=Math.min(count-1,Math.floor(frame*count/frames)),value=predictor/2048;
+    if(Math.abs(value)>Math.abs(waveform[bin]))waveform[bin]=value;
+  }
+  return {frames,waveform};
+}
+
 /** Portable control surface. Transport memory is acknowledged before playback. */
 export class Oki6258Synth {
+  /** @param {{transport:Oki6258Transport,clock?:number}} options */
   constructor({transport, clock = OKIM6258_CLOCK}) {
     this.transport = transport;
     this._clock = validateChipClock(clock);
@@ -80,6 +110,7 @@ export class Oki6258Synth {
     this._clock = state.clock; this.divider = state.divider; this.pan = state.pan; this.sample = sample ? {...sample} : null;
     this._adoptClock?.(state.clock);
   }
+  /** @param {number} divider */
   setDivider(divider) {
     this._assertLive();
     if (!OKIM6258_DIVIDERS.includes(divider)) throw new RangeError('OKIM6258 divider must be 1024, 768 or 512');
@@ -87,6 +118,7 @@ export class Oki6258Synth {
     this.transport.writeRegister(12, OKIM6258_DIVIDERS.indexOf(divider));
     return this.playbackRate;
   }
+  /** @param {number} hz */
   setPlaybackRate(hz) { return this.setDivider(oki6258Rate(this._clock, hz).divider); }
   setPan(left = true, right = true) {
     this._assertLive();
@@ -105,7 +137,8 @@ export class Oki6258Synth {
     if (!(bytes instanceof Uint8Array)) throw new TypeError('OKIM6258 memory requires Uint8Array or ArrayBuffer');
     if (!bytes.length || bytes.length > 0x1000000) throw new RangeError('Expected 1 byte to 16 MiB of OKI ADPCM');
     if (sampleRate !== undefined) this.setPlaybackRate(sampleRate);
-    await this.transport.loadMemory(bytes.slice());
+    const preview=summarizeOki6258(bytes);
+    await this.transport.loadMemory(bytes.slice(),{...preview,sampleRate:this.playbackRate,source:'raw'});
     this.sample = {bytes:bytes.length, frames:bytes.length * 2, sampleRate:this.playbackRate, durationSeconds:bytes.length * 2 / this.playbackRate};
   }
   /** PCM objects, AudioBuffer, WAV bytes, Blob and URL/path are accepted.
@@ -134,6 +167,7 @@ export class Oki6258Synth {
   keyOff() { this.stop(); }
   allNotesOff() { this.stop(); }
   reset() { this._assertLive(); this.transport.reset(); this.divider = 512; this.pan = 0; }
+  /** @param {number} register @param {number} value */
   writeRegister(register, value) {
     this._assertLive();
     if (!Number.isInteger(register) || register < 0 || register > 12 || !Number.isInteger(value) || value < 0 || value > 255) throw new RangeError('Invalid OKIM6258 register/value');

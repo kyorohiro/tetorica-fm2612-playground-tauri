@@ -1,9 +1,13 @@
-import {createNesClient} from './playground_nes.js?v=audio-stability-2';
-import {createSnesClient} from './playground_snes.js?v=native-modes-3';
-import {createYm2151Client} from './playground_ym2151.js?v=audio-stability-2';
-import {createHuc6280Client} from './playground_huc6280.js?v=audio-stability-2';
-import {createSegaPsgClient} from './playground_segapsg.js?v=sega-modes-1';
-import {createOki6258Client} from './playground_okim6258.js?v=audio-stability-2';
+import {createAy8910Client} from './playground_ay8910.js?v=msx-modes-2';
+import {createNesClient} from './playground_nes.js?v=msx-modes-2';
+import {createSnesClient} from './playground_snes.js?v=msx-modes-2';
+import {createYm2151Client} from './playground_ym2151.js?v=msx-modes-2';
+import {createHuc6280Client} from './playground_huc6280.js?v=msx-modes-2';
+import {createSegaPsgClient} from './playground_segapsg.js?v=msx-modes-2';
+import {createOki6258Client} from './playground_okim6258.js?v=msx-modes-2';
+import {createYm2413Client} from './playground_ym2413.js?v=msx-modes-2';
+import {createOplClient, OPL_CHIPS} from './playground_opl.js?v=msx-modes-2';
+import {createDx7Client} from './playground_dx7.js?v=msx-modes-2';
 
 /** Primary controls borrow devices owned by the runtime. */
 export function borrowNativeApi(raw, id, changed = () => {}, before = () => true) {
@@ -34,16 +38,18 @@ export function borrowNativeApi(raw, id, changed = () => {}, before = () => true
 }
 
 export function createNativePrimaryClient(name, port, options = {}) {
-  const client = name === 'nes' ? createNesClient(port, options)
+  const client = name==='ay8910'?createAy8910Client(port,options):name==='ym2413'?createYm2413Client(port,options):OPL_CHIPS.includes(name) ? createOplClient(port, {...options,chip:name})
+    : name === 'nes' ? createNesClient(port, options)
     : name === 'snes' ? createSnesClient(port, options)
     : name === 'ym2151' ? createYm2151Client(port)
     : name === 'segapsg' ? createSegaPsgClient(port, options)
     : name === 'huc6280' ? createHuc6280Client(port, options)
     : name === 'okim6258' ? createOki6258Client(port, options)
+    : name === 'dx7' ? createDx7Client(port, {...options,...options.state})
     : null;
   if (!client) throw new Error(`Unsupported native primary: ${name}`);
   if (options.state) client._adoptState?.(options.state);
-  else if (name === 'huc6280') client.initialize();
+  else if (name === 'huc6280' || name==='ay8910' || name==='ym2413' || OPL_CHIPS.includes(name)) client.initialize();
   return client;
 }
 
@@ -60,17 +66,24 @@ export function createNativeWorkerApis(connections, performance, observe) {
       queued = true;
       queueMicrotask(() => {queued = false; observe(connection.globalName, client._getState());});
     };
+    client._onStateChange?.(changed);
     apis[connection.globalName] = borrowNativeApi(client, connection.name, changed);
   }
   return {apis, raw,
     stop() {
+      const pending=[];
       for (const [name,client] of raw) {
         client._cancelClockRequests?.('Run stopped');
-        if (client.allNotesOff) client.allNotesOff();
+        if (client._stopVoices) {
+          const result=client._stopVoices();
+          if(result?.then)pending.push(result.then(()=>{if(client._getState)observe(name,client._getState());}));
+        }
+        else if (client.allNotesOff) client.allNotesOff();
         else if (client.pulse) {for (let ch = 0; ch < 6; ch++) client.keyOff(ch);}
         else for (let ch = 0; ch < 8; ch++) client.keyOff(ch);
         if(client._getState)observe(name,client._getState());
       }
+      return Promise.all(pending);
     },
     adopt(name, state) {raw.get(name)?._adoptState?.(state);},
   };

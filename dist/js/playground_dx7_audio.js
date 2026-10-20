@@ -44,7 +44,7 @@ function loadWasm(fetchImpl) {
 function loadModule(context) {
   let ready = loadedModules.get(context);
   if (!ready) {
-    ready = context.audioWorklet.addModule(new URL('./playground_dx7_worklet.js?v=sega-modes-1', import.meta.url));
+    ready = context.audioWorklet.addModule(new URL('./playground_dx7_worklet.js?v=msx-modes-2', import.meta.url));
     loadedModules.set(context, ready);
     ready.catch(() => { if (loadedModules.get(context) === ready) loadedModules.delete(context); });
   }
@@ -55,7 +55,7 @@ function loadModule(context) {
  * Ready PCM source for the existing Playground mixer. Owns no AudioContext;
  * control commands use a direct transferable Main/Worker-to-Worklet port.
  * @param {AudioContext} context
- * @param {AudioNode} destination
+ * @param {AudioNode|null} destination
  * @param {{signal?:AbortSignal,fetch?:typeof fetch,onError?:(error:Error)=>void}} [options]
  */
 export async function createDx7Audio(context, destination, options = {}) {
@@ -104,6 +104,9 @@ export async function createDx7Audio(context, destination, options = {}) {
     options.onError?.(error);
   }
   node.port.onmessage = ({data}) => {
+    // Editor validation errors belong to their admin RPC caller. They must not
+    // dispose a healthy synth or turn an invalid edit into a fatal audio error.
+    if (data.type === 'chip-inspector-result') return;
     if (data.ready) readyResolve(data);
     else if (data.fatal || data.error) fail(new Error(data.error ?? 'DX7 AudioWorklet failed.'));
   };
@@ -115,7 +118,7 @@ export async function createDx7Audio(context, destination, options = {}) {
     throwIfAborted(options.signal);
     ensureContext(context);
     node.port.postMessage({port: channel.port1}, [channel.port1]);
-    node.connect(destination);
+    if (destination) node.connect(destination);
     // AbortSignal controls initialization; ownership moves to the endpoint.
     options.signal?.removeEventListener('abort', abort);
     endpoint = {

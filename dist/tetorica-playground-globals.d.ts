@@ -650,7 +650,7 @@ type FMApi = PlaygroundChipClock & {
 };
 
 /** The selected mode's primary FM chip; independent chips retain their own API. */
-type PlaygroundNativeSelectedChip = 'gameboy' | 'nes' | 'snes' | 'x68000' | 'huc6280' | 'game-gear' | 'master-system';
+type PlaygroundNativeSelectedChip = 'gameboy' | 'nes' | 'snes' | 'x68000' | 'huc6280' | 'game-gear' | 'master-system' | 'dx7' | 'msx' | 'msx-audio' | PlaygroundOplChip;
 type PlaygroundGenesisSelectedChip = 'ym2612' | 'mega-cd';
 type PlaygroundSelectedFmChannel = TetoricaSelectedChip extends PlaygroundNativeSelectedChip ? never
   : TetoricaSelectedChip extends 'ym2203' ? 0 | 1 | 2
@@ -675,6 +675,13 @@ type PlaygroundSelectedFm = {
   huc6280: never;
   'game-gear': never;
   'master-system': never;
+  dx7: never;
+  ym3526: never;
+  ym3812: never;
+  y8950: never;
+  ymf262: never;
+  msx: never;
+  'msx-audio': never;
 }[TetoricaSelectedChip];
 declare const fm: PlaygroundSelectedFm;
 /** The primary Game Boy APU, initialized and shared by this mode. */
@@ -687,6 +694,17 @@ declare const snes: PlaygroundPrimarySnes;
 declare const opm: PlaygroundPrimaryOpm;
 /** Primary PC Engine six-channel wavetable PSG. */
 declare const pce: PlaygroundPrimaryHuc6280;
+/** Primary MSFA DX7: six operators, 32 algorithms and 16 allocated voices. */
+declare const dx7: PlaygroundPrimaryDx7;
+/** Primary OPL family FM instrument, with physical zero-based channels. */
+declare const opl: PlaygroundPrimaryOpl<PlaygroundSelectedOplChip>;
+declare const OPL_PRESETS: PlaygroundOplPresets<PlaygroundSelectedOplChip>;
+/** Master System's YM2413. Instrument 0 uses the one chip-wide shared user patch. */
+declare const opll: PlaygroundPrimaryYm2413;
+declare const OPLL_INSTRUMENTS: readonly string[];
+declare const OPLL_USER_PRESETS: Readonly<Record<'sine'|'bell',PlaygroundYm2413UserPatch>>;
+/** MSX's three-channel AY PSG, with shared noise and hardware envelope. */
+declare const ay: PlaygroundPrimaryAy8910;
 
 type PSGApi = {
   /** Configure Hz without triggering or changing attenuation. */
@@ -1136,11 +1154,16 @@ type PlaygroundFmConvenienceName = 'fm' | 'midi' | 'presets' | 'tfiToPreset' | '
   | 'play' | 'write' | 'scheduleWritesSamples' | 'noteToBlockFnum' | 'hzToBlockFnum' | 'noteLerp'
   | 'setDacLookahead' | 'getDacLookahead';
 type PlaygroundSelectedNativeAPI = TetoricaSelectedChip extends 'gameboy' ? {gameboy: PlaygroundPrimaryGameboy}
+  : TetoricaSelectedChip extends 'msx' ? {ay:PlaygroundPrimaryAy8910;opll:PlaygroundPrimaryYm2413;OPLL_INSTRUMENTS:readonly string[];OPLL_USER_PRESETS:Readonly<Record<'sine'|'bell',PlaygroundYm2413UserPatch>>}
+  : TetoricaSelectedChip extends 'msx-audio' ? {ay:PlaygroundPrimaryAy8910;opll:PlaygroundPrimaryYm2413;opl:PlaygroundPrimaryOpl<'y8950'>;OPL_PRESETS:PlaygroundOplPresets<'y8950'>;OPLL_INSTRUMENTS:readonly string[];OPLL_USER_PRESETS:Readonly<Record<'sine'|'bell',PlaygroundYm2413UserPatch>>}
   : TetoricaSelectedChip extends 'nes' ? {nes: PlaygroundPrimaryNes}
   : TetoricaSelectedChip extends 'snes' ? {snes: PlaygroundPrimarySnes}
   : TetoricaSelectedChip extends 'x68000' ? {opm: PlaygroundPrimaryOpm; adpcm: PlaygroundPrimaryOki6258}
   : TetoricaSelectedChip extends 'huc6280' ? {pce: PlaygroundPrimaryHuc6280}
-  : TetoricaSelectedChip extends 'game-gear' | 'master-system' ? {psg: PlaygroundSelectedPsg} : {};
+  : TetoricaSelectedChip extends 'dx7' ? {dx7: PlaygroundPrimaryDx7}
+  : TetoricaSelectedChip extends PlaygroundOplChip ? {opl: PlaygroundPrimaryOpl<TetoricaSelectedChip>; OPL_PRESETS:PlaygroundOplPresets<TetoricaSelectedChip>}
+  : TetoricaSelectedChip extends 'master-system' ? {psg: PlaygroundSelectedPsg;opll:PlaygroundPrimaryYm2413;OPLL_INSTRUMENTS:readonly string[];OPLL_USER_PRESETS:Readonly<Record<'sine'|'bell',PlaygroundYm2413UserPatch>>}
+  : TetoricaSelectedChip extends 'game-gear' ? {psg: PlaygroundSelectedPsg} : {};
 type PlaygroundAPI = TetoricaSelectedChip extends PlaygroundNativeSelectedChip
   ? Omit<PlaygroundAPIBase, PlaygroundFmConvenienceName> & PlaygroundSelectedNativeAPI
   : PlaygroundAPIBase;
@@ -1550,7 +1573,8 @@ interface PlaygroundDx7State {
 }
 /** Independent MSFA DX7 synthesizer. MIDI note numbers, 16 voices, mono output.
  * Starts with the self-authored INIT SINE voice. No setClock/register API.
- * Audio is routed through Playground volume, mixer and FX. STOP disposes the instance.
+ * Audio is routed through Playground volume, mixer and FX. STOP disposes independent
+ * instances; DX7 mode retains its primary instance and bank while silencing voices.
  */
 interface PlaygroundDx7 {
   readonly voices: PlaygroundDx7VoiceInfo[];
@@ -1592,6 +1616,7 @@ interface PlaygroundDx7 {
   getState(): Promise<PlaygroundDx7State>;
   dispose(): void;
 }
+type PlaygroundPrimaryDx7 = Omit<PlaygroundDx7, 'dispose'> & {readonly id: string};
 type PlaygroundSnesChannel = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 /** Raw BRR has no tuning metadata. Declare the note/frequency at basePitch.
  * Native DSP rate is fixed at 32,000 Hz. Loop positions are native sample indices.
@@ -1770,17 +1795,24 @@ type PlaygroundSoundChipMap = {
   ym2151: TetoricaSelectedChip extends 'x68000' ? PlaygroundPrimaryOpm : PlaygroundYm2151;
   nes: TetoricaSelectedChip extends 'nes' ? PlaygroundPrimaryNes : PlaygroundNes;
   pwm: PlaygroundPWM32X;
-  dx7: PlaygroundDx7;
+  dx7: TetoricaSelectedChip extends 'dx7' ? PlaygroundPrimaryDx7 : PlaygroundDx7;
   snes: TetoricaSelectedChip extends 'snes' ? PlaygroundPrimarySnes : PlaygroundSnes;
   spc: PlaygroundSpc;
   huc6280: TetoricaSelectedChip extends 'huc6280' ? PlaygroundPrimaryHuc6280 : PlaygroundHuc6280;
   okim6258: TetoricaSelectedChip extends 'x68000' ? PlaygroundPrimaryOki6258 : PlaygroundOki6258;
+  ym3526: TetoricaSelectedChip extends 'ym3526' ? PlaygroundPrimaryOpl<'ym3526'> : PlaygroundOpl<'ym3526'>;
+  ym3812: TetoricaSelectedChip extends 'ym3812' ? PlaygroundPrimaryOpl<'ym3812'> : PlaygroundOpl<'ym3812'>;
+  y8950: TetoricaSelectedChip extends 'y8950'|'msx-audio' ? PlaygroundPrimaryOpl<'y8950'> : PlaygroundOpl<'y8950'>;
+  ymf262: TetoricaSelectedChip extends 'ymf262' ? PlaygroundPrimaryOpl<'ymf262'> : PlaygroundOpl<'ymf262'>;
+  ym2413: TetoricaSelectedChip extends 'master-system'|'msx'|'msx-audio' ? PlaygroundPrimaryYm2413 : PlaygroundYm2413;
+  ay8910: TetoricaSelectedChip extends 'msx'|'msx-audio' ? PlaygroundPrimaryAy8910 : PlaygroundAy8910;
 };
 type PlaygroundUseSoundChipOptions = { [key: string]: never };
 type PlaygroundSoundChipClient<Name extends keyof PlaygroundSoundChipMap> = Name extends 'dx7' | 'snes' | 'spc'
   ? PlaygroundSoundChipMap[Name] & {readonly id: string}
   : PlaygroundSoundChipMap[Name] & PlaygroundChipClock & {readonly id: string};
-/** Reuse one instance of this instrument until STOP. For independent instances use createSoundChip. */
+/** Borrow the mode's primary instrument when names match; otherwise reuse an
+ * independent instance until STOP. For separate instances use createSoundChip. */
 declare function useSoundChip<Name extends keyof PlaygroundSoundChipMap>(name: Name, options?: PlaygroundUseSoundChipOptions): Promise<PlaygroundSoundChipClient<Name>>;
 
 /** Create an independent DX7 with its own 16 voices and SysEx bank. */
@@ -1827,6 +1859,172 @@ type PlaygroundPrimaryGameGearPsg = Omit<PlaygroundSegaPsg, 'dispose'> & Playgro
 /** The Master System PSG has a mono output and no Game Gear stereo register. */
 type PlaygroundPrimaryMasterSystemPsg = Omit<PlaygroundPrimaryGameGearPsg, 'setStereo'>;
 declare function createSoundChip(name: 'segapsg', options?: PlaygroundCreateSoundChipOptions): Promise<PlaygroundSegaPsg & PlaygroundChipClock & {readonly id: string}>;
+
+/** AY has three channels mixing tone and shared noise, plus one shared envelope. */
+type PlaygroundAy8910Channel = 0|1|2;
+interface PlaygroundAy8910Voice {
+  tone?:boolean;
+  noise?:boolean;
+  /** Fixed hardware level, 0 silent .. 15 loudest. */
+  volume?:number;
+  envelope?:boolean;
+  period?:number;
+  frequency?:number;
+  note?:string|number;
+}
+interface PlaygroundAy8910 {
+  readonly chip:'ay8910';
+  readonly channels:3;
+  initialize():void;
+  reset():void;
+  writeRegister(register:number,value:number):void;
+  getRegisterSnapshot():Uint8Array;
+  setVoice(channel:PlaygroundAy8910Channel,voice:PlaygroundAy8910Voice):void;
+  tone(channel:PlaygroundAy8910Channel,options?:{period?:number;frequency?:number;note?:string|number;volume?:number;envelope?:boolean}):number;
+  setTone(channel:PlaygroundAy8910Channel,options?:{period?:number;frequency?:number;note?:string|number;volume?:number;envelope?:boolean}):number;
+  /** Noise period is shared by every channel that enables noise. */
+  noise(channel:PlaygroundAy8910Channel,options?:{period?:number;volume?:number;envelope?:boolean}):void;
+  setMixer(channel:PlaygroundAy8910Channel,options:{tone?:boolean;noise?:boolean}):void;
+  setVolume(channel:PlaygroundAy8910Channel,volume:number,envelope?:boolean):void;
+  /** Writing shape retriggers the one shared hardware envelope. */
+  setEnvelope(options:{period?:number;shape?:number}):void;
+  setNoisePeriod(period:number):void;
+  setTonePeriod(channel:PlaygroundAy8910Channel,period:number):void;
+  setFrequency(channel:PlaygroundAy8910Channel,frequency:number):number;
+  setNote(channel:PlaygroundAy8910Channel,note:string|number):number;
+  keyOn(channel:PlaygroundAy8910Channel):void;
+  keyOff(channel:PlaygroundAy8910Channel):void;
+  noteOn(channel:PlaygroundAy8910Channel,note:string|number):void;
+  noteOff(channel:PlaygroundAy8910Channel):void;
+  off(channel:PlaygroundAy8910Channel):void;
+  allNotesOff():void;
+  dispose():void;
+}
+type PlaygroundPrimaryAy8910 = Omit<PlaygroundAy8910,'dispose'> & PlaygroundChipClock & {readonly id:string};
+declare function createSoundChip(name:'ay8910',options?:PlaygroundCreateSoundChipOptions):Promise<PlaygroundAy8910 & PlaygroundChipClock & {readonly id:string}>;
+
+/** OPLL has 15 built-in instruments and one user patch shared by all channels. */
+type PlaygroundYm2413Channel = 0|1|2|3|4|5|6|7|8;
+type PlaygroundYm2413Instrument = 0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15;
+type PlaygroundYm2413Drum = 'bassDrum'|'snare'|'tom'|'cymbal'|'hiHat';
+interface PlaygroundYm2413OperatorParams {
+  am?:boolean|0|1; vibrato?:boolean|0|1; egt?:boolean|0|1; sustain?:boolean|0|1;
+  ksr?:boolean|0|1; multi?:number; mul?:number; ksl?:number;
+  ar?:number; dr?:number; sl?:number; rr?:number; waveform?:0|1;
+}
+type PlaygroundYm2413ModulatorParams = PlaygroundYm2413OperatorParams & {tl?:number};
+interface PlaygroundYm2413UserPatch {
+  label?:string;
+  feedback?:number;
+  operators?:[PlaygroundYm2413ModulatorParams?,PlaygroundYm2413OperatorParams?];
+}
+interface PlaygroundYm2413Voice {
+  instrument?:PlaygroundYm2413Instrument;
+  /** Hardware attenuation: 0 is loudest, 15 quietest. */
+  attenuation?:number;
+  sustain?:boolean;
+}
+interface PlaygroundYm2413 {
+  readonly chip:'ym2413';
+  readonly channels:9;
+  initialize():void;
+  reset():void;
+  writeRegister(register:number,value:number):void;
+  getRegisterSnapshot():Uint8Array;
+  setVoice(channel:PlaygroundYm2413Channel,voice:PlaygroundYm2413Voice):void;
+  setInstrument(channel:PlaygroundYm2413Channel,instrument:PlaygroundYm2413Instrument,attenuation?:number):void;
+  setAttenuation(channel:PlaygroundYm2413Channel,attenuation:number):void;
+  setSustain(channel:PlaygroundYm2413Channel,enabled:boolean):void;
+  setPreset(channel:PlaygroundYm2413Channel,preset:PlaygroundYm2413Instrument|(PlaygroundYm2413Voice & {userPatch?:PlaygroundYm2413UserPatch|Uint8Array|number[]})):void;
+  /** Updates the single user patch for every channel currently using instrument 0. */
+  setUserPatch(patch:PlaygroundYm2413UserPatch|Uint8Array|number[]):void;
+  setUserOperator(operator:0,params:PlaygroundYm2413ModulatorParams):void;
+  /** Carrier loudness is the channel's attenuation; it has no shared TL field. */
+  setUserOperator(operator:1,params:PlaygroundYm2413OperatorParams):void;
+  setNote(channel:PlaygroundYm2413Channel,note:string|number):{fnum:number;block:number};
+  setFrequency(channel:PlaygroundYm2413Channel,frequency:number):{fnum:number;block:number};
+  setPitch(channel:PlaygroundYm2413Channel,fnum:number,block?:number):void;
+  keyOn(channel:PlaygroundYm2413Channel):void;
+  keyOff(channel:PlaygroundYm2413Channel):void;
+  noteOn(channel:PlaygroundYm2413Channel,note:string|number):void;
+  noteOff(channel:PlaygroundYm2413Channel):void;
+  allNotesOff():void;
+  setRhythm(options:{enabled?:boolean;bassDrum?:boolean;snare?:boolean;tom?:boolean;cymbal?:boolean;hiHat?:boolean}):void;
+  /** Drum levels share the melody instrument/attenuation registers of CH6..8. */
+  setRhythmLevels(levels:Partial<Record<PlaygroundYm2413Drum,number>>):void;
+  setRhythmLevel(drum:PlaygroundYm2413Drum,attenuation:number):void;
+  dispose():void;
+}
+type PlaygroundPrimaryYm2413 = Omit<PlaygroundYm2413,'dispose'> & PlaygroundChipClock & {readonly id:string};
+declare function createSoundChip(name:'ym2413',options?:PlaygroundCreateSoundChipOptions):Promise<PlaygroundYm2413 & PlaygroundChipClock & {readonly id:string}>;
+
+/** OPL family. Y8950 exposes FM here; its ADPCM bus remains a raw-register API. */
+type PlaygroundOplChip = 'ym3526'|'ym3812'|'y8950'|'ymf262';
+type PlaygroundSelectedOplChip = TetoricaSelectedChip extends 'msx-audio' ? 'y8950' : TetoricaSelectedChip extends PlaygroundOplChip ? TetoricaSelectedChip : 'ym3812';
+type PlaygroundOplChannel<K extends PlaygroundOplChip> = K extends 'ymf262'
+  ? 0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17 : 0|1|2|3|4|5|6|7|8;
+type PlaygroundOplWaveform<K extends PlaygroundOplChip> = K extends 'ymf262' ? 0|1|2|3|4|5|6|7
+  : K extends 'ym3812' ? 0|1|2|3 : 0;
+type PlaygroundOplOperator<K extends PlaygroundOplChip> = K extends 'ymf262' ? 0|1|2|3 : 0|1;
+type PlaygroundOplAlgorithm<K extends PlaygroundOplChip> = K extends 'ymf262' ? 0|1|2|3 : 0|1;
+interface PlaygroundOplOperatorParams<K extends PlaygroundOplChip = 'ymf262'> {
+  am?: boolean|0|1;
+  vibrato?: boolean|0|1;
+  egt?: boolean|0|1;
+  sustain?: boolean|0|1;
+  ksr?: boolean|0|1;
+  multi?: number;
+  mul?: number;
+  ksl?: number;
+  tl?: number;
+  ar?: number;
+  dr?: number;
+  sl?: number;
+  rr?: number;
+  waveform?: PlaygroundOplWaveform<K>;
+}
+interface PlaygroundOplPreset<K extends PlaygroundOplChip = 'ymf262'> {
+  label?: string;
+  name?: string;
+  algorithm?: PlaygroundOplAlgorithm<K>;
+  feedback?: number;
+  pan?: K extends 'ymf262' ? {left?:boolean;right?:boolean} : {left?:true;right?:true};
+  fourOp?: K extends 'ymf262' ? boolean : false;
+  operators?: PlaygroundOplOperatorParams<K>[];
+}
+type PlaygroundOplPresets<K extends PlaygroundOplChip> = Readonly<Record<'sine'|'bell'|'organ',PlaygroundOplPreset<K>>>
+  & (K extends 'ymf262' ? Readonly<{'four-op-bell':PlaygroundOplPreset<K>}> : {});
+type PlaygroundOplPitch = {fnum:number;block:number};
+interface PlaygroundOplBase<K extends PlaygroundOplChip> {
+  readonly chip: K;
+  readonly channels: K extends 'ymf262' ? 18 : 9;
+  initialize(): void;
+  reset(): void;
+  /** OPL3 also accepts flattened bank addresses 0..511 or a bank argument. */
+  writeRegister(register:number,value:number,port?:K extends 'ymf262' ? 0|1 : 0):void;
+  getRegisterSnapshot():Uint8Array;
+  setOperator(channel:PlaygroundOplChannel<K>,operator:PlaygroundOplOperator<K>,params:PlaygroundOplOperatorParams<K>):void;
+  setPreset(channel:PlaygroundOplChannel<K>,preset:PlaygroundOplPreset<K>):void;
+  setAlgo(channel:PlaygroundOplChannel<K>,algorithm:PlaygroundOplAlgorithm<K>,feedback?:number):void;
+  setPan(channel:PlaygroundOplChannel<K>,left:K extends 'ymf262' ? boolean : true,right:K extends 'ymf262' ? boolean : true):void;
+  setFrequency(channel:PlaygroundOplChannel<K>,frequency:number):PlaygroundOplPitch;
+  /** Note name or integer MIDI 0..127 within the current clock's hardware range. */
+  setNote(channel:PlaygroundOplChannel<K>,note:string|number):PlaygroundOplPitch;
+  setPitch(channel:PlaygroundOplChannel<K>,fnum:number,block?:number):void;
+  keyOn(channel:PlaygroundOplChannel<K>):void;
+  keyOff(channel:PlaygroundOplChannel<K>):void;
+  noteOn(channel:PlaygroundOplChannel<K>,note:string|number):void;
+  noteOff(channel:PlaygroundOplChannel<K>):void;
+  allNotesOff():void;
+  setLFO(options:{amDepth?:boolean;pmDepth?:boolean}):void;
+  setRhythm(options:{enabled?:boolean;bassDrum?:boolean;snare?:boolean;tom?:boolean;cymbal?:boolean;hiHat?:boolean}):void;
+  dispose():void;
+}
+/** In 4-op mode the paired secondary is owned by its primary (0..2 or 9..11). */
+type PlaygroundOpl<K extends PlaygroundOplChip = 'ym3812'> = PlaygroundOplBase<K>
+  & (K extends 'ymf262' ? {setFourOp(channel:0|1|2|9|10|11,enabled:boolean):void} : {});
+type PlaygroundPrimaryOpl<K extends PlaygroundOplChip> = Omit<PlaygroundOpl<K>,'dispose'> & PlaygroundChipClock & {readonly id:string};
+declare function createSoundChip<K extends PlaygroundOplChip>(name:K,options?:PlaygroundCreateSoundChipOptions):Promise<PlaygroundOpl<K> & PlaygroundChipClock & {readonly id:string}>;
 
 /** OPM channels 0..7; operators in register order M1, C1, M2, C2 (0..3). */
 interface PlaygroundYm2151 {

@@ -1,5 +1,5 @@
 import {normalizeSampleEdit, renderSampleEdit, renderGameboyWave, sampleNormalizationGainDb,
-  estimateSamplePitch, encodeSampleWav} from './js/playground_sample_edit.js?v=sample-editor-1';
+  estimateSamplePitch, encodeSampleWav} from './js/playground_sample_edit.js?v=msx-modes-2';
 
 let audio = null;
 self.onmessage = async ({data}) => {

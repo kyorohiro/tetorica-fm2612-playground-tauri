@@ -15,7 +15,13 @@ export const MODE_DEFAULT_CODES = {
   "x68000": "// Select Mode: X68000. Built-in YM2151, channels 0..7; operators M1/C1/M2/C2.\nsetBpm(120);\nopm.setAlgo(0, 7);\nopm.setPan(0, true, true);\nopm.setOperator(0, 3, {mul:1, tl:32, ar:31, d1r:0, d2r:0, d1l:0, rr:15});\n\nliveLoop('x68000-opm-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    opm.setNote(0, note);\n    opm.keyOn(0, 8); // Only C2, one of algorithm 7's four parallel carriers.\n    await beat(0.4);\n    opm.keyOff(0);\n    await beat(0.1);\n  }\n});\n\n// The built-in adpcm device is the X68000's mono OKIM6258.\n",
   "pc-engine": "// Select Mode: PC Engine. Six 32-entry, five-bit wavetable voices.\nsetBpm(120);\npce.setWaveform(0, Array.from({length:32}, (_, index) =>\n  Math.round(15.5 + 15.5 * Math.sin(index * Math.PI / 16))));\npce.setVolume(0, 26); // Hardware volume 0..31.\npce.setPan(0, 15, 15); // Independent left/right balances 0..15.\n\nliveLoop('pce-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    // Keep the waveform running between notes; hard key cuts can click.\n    pce.noteOn(0, note);\n    await beat(0.5);\n  }\n});\n\n// Uploading a waveform stops its channel. Channels 4/5 can also generate noise.\n",
   "game-gear": "// Select Mode: Game Gear. Three PSG tones and one noise voice, with stereo routing.\nsetBpm(120);\npsg.setStereo(0xff); // All four voices reach both speakers.\n\nliveLoop('gg-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    psg.tone(PSG1, {note, attenuation: 9});\n    await beat(0.4);\n    psg.off(PSG1);\n    await beat(0.1);\n  }\n});\n\nliveLoop('gg-rhythm', async () => {\n  psg.noise({type: 'white', rate: 'high', attenuation: 12});\n  await beat(0.1);\n  psg.noiseOff();\n  await beat(0.9);\n});\n",
-  "master-system": "// Select Mode: Master System. Three PSG tones and one noise voice, in mono.\nsetBpm(120);\n\nliveLoop('sms-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    psg.tone(PSG1, {note, attenuation: 9});\n    await beat(0.4);\n    psg.off(PSG1);\n    await beat(0.1);\n  }\n});\n\nliveLoop('sms-rhythm', async () => {\n  psg.noise({type: 'white', rate: 'high', attenuation: 12});\n  await beat(0.1);\n  psg.noiseOff();\n  await beat(0.9);\n});\n",
+  "master-system": "// Master System: mono Sega PSG + YM2413 OPLL (FM sound unit).\nsetBpm(120);\nopll.setVoice(0, {instrument: 3, attenuation: 5, sustain: false}); // Built-in Piano.\n\nliveLoop('sms-psg-opll', async () => {\n  const lead = ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4'];\n  for (let step = 0; step < lead.length; step++) {\n    psg.tone(PSG1, {note: step < 4 ? 'C3' : 'G2', attenuation: 13});\n    opll.noteOn(0, lead[step]); // Standard MIDI octave: C4 = MIDI 60.\n    await beat(0.4);\n    opll.keyOff(0);\n    psg.off(PSG1);\n    await beat(0.1);\n  }\n});\n\nliveLoop('sms-rhythm', async () => {\n  psg.noise({type: 'white', rate: 'high', attenuation: 14});\n  await beat(0.1);\n  psg.noiseOff();\n  await beat(0.9);\n});\n\n// Open YM2413 to choose its 15 ROM instruments or edit the shared User patch.\n// Keyboard selects Sega PSG / YM2413 and a physical voice. Game Gear is PSG-only.\n",
+  "msx": "// MSX: PSG bass with an MSX-MUSIC melody.\nsetBpm(120);\nay.setVoice(0, {tone: true, noise: false, volume: 8, envelope: false});\nopll.setVoice(0, {instrument: 3, attenuation: 6, sustain: false}); // OPLL ROM Piano.\n\nliveLoop('msx-music-duet', async () => {\n  const lead = ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4'];\n  for (let step = 0; step < lead.length; step++) {\n    ay.noteOn(0, step < 4 ? 'C3' : 'G2');\n    opll.noteOn(0, lead[step]);\n    await beat(0.4);\n    ay.keyOff(0);\n    opll.keyOff(0);\n    await beat(0.1);\n  }\n});\n\n// Open YM2413 / AY-3-8910 to edit their current voices.\n// Keyboard selects the chip and channel. MSX Audio adds Y8950 FM and rhythm.\n",
+  "msx-audio": "// MSX Audio: AY-3-8910 PSG + YM2413 OPLL + Y8950 FM, sharing one mono output.\nsetBpm(120);\nay.setVoice(0, {tone: true, noise: false, volume: 8, envelope: false});\nopll.setVoice(0, {instrument: 3, attenuation: 6, sustain: false}); // OPLL ROM Piano.\nopl.setPreset(0, OPL_PRESETS.bell);\nopl.setOperator(0, 1, {tl: 26}); // Keep the Y8950 bell behind the melody.\n\nliveLoop('msx-audio-three-chips', async () => {\n  const lead = ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4'];\n  for (let step = 0; step < lead.length; step++) {\n    ay.noteOn(0, step < 4 ? 'C3' : 'G2');\n    opll.noteOn(0, lead[step]);\n    opl.noteOn(0, step < 4 ? 'G4' : 'D4');\n    await beat(0.4);\n    ay.keyOff(0);\n    opll.keyOff(0);\n    opl.keyOff(0);\n    await beat(0.1);\n  }\n});\n\n// Open AY-3-8910 / YM2413 / Y8950 to edit their current voices.\n// Keyboard selects the chip and channel. Y8950 uses FM and rhythm here.\n",
+  "dx7": "// Select Mode: DX7. Six operators, 32 algorithms and 16 allocated voices.\n// This original one-carrier preset needs no SysEx file. MIDI notes are 0..127.\nawait dx7.setPreset({\n  name: 'MODE KEYS', algorithm: 31, feedback: 0,\n  operators: {\n    1: {\n      coarse: 1, outputLevel: 85,\n      envelope: {rates: [99, 75, 65, 75], levels: [99, 85, 75, 0]},\n    },\n  },\n});\nawait mixer.set(dx7.id, {volume: 0.5});\nsetBpm(120);\n\nliveLoop('dx7-melody', async () => {\n  for (const note of [60, 64, 67, 71, 72, 67, 64, 62]) {\n    dx7.noteOn(note, 100);\n    await beat(0.4);\n    dx7.noteOff(note);\n    await beat(0.1);\n  }\n});\n\n// Open examples/dx7/dx7-keyboard.js to play from the shared Keyboard.\n// For your own bank: await dx7.loadSysex(await file('/presets/my-bank.syx', {type:'arrayBuffer'}));\n",
+  "ym3812": "// OPL2 / YM3812: nine two-operator voices. JavaScript channels are 0..8.\n// MIDI note 69 = A4 = 440 Hz. OPL uses its own API rather than play().\nsetBpm(120);\nopl.setPreset(0, OPL_PRESETS.bell);\n\nliveLoop('opl2-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    opl.noteOn(0, note);\n    await beat(0.4);\n    opl.keyOff(0);\n    await beat(0.1);\n  }\n});\n\n// Open YM3812 to edit operators or Keyboard to select a chip and channel.\n",
+  "ym3526": "// OPL / YM3526: nine two-operator voices with sine operators.\nsetBpm(120);\nopl.setPreset(0, OPL_PRESETS.organ);\n\nliveLoop('opl-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    opl.noteOn(0, note);\n    await beat(0.4);\n    opl.keyOff(0);\n    await beat(0.1);\n  }\n});\n\n// Channels 0..8; MIDI note 69 = A4. Open YM3526 to edit the current voice.\n",
+  "ymf262": "// OPL3 / YMF262: six optional four-operator pairs and stereo routing.\n// Four-op primaries: 0..2 and 9..11. Each borrows channel primary + 3.\nsetBpm(120);\nopl.setPreset(0, OPL_PRESETS['four-op-bell']);\nopl.setPan(0, true, true);\n\nliveLoop('opl3-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    opl.noteOn(0, note);\n    await beat(0.4);\n    opl.keyOff(0);\n    await beat(0.1);\n  }\n});\n\n// CH3 is borrowed by CH0. Keyboard excludes borrowed channels automatically.\n",
   "genesis-nuked": "setBpm(120);\n\nfm.setPreset(CH1, FM_PRESETS[\"one-op-basic\"]);\n\nliveFx(\"distortion\", {\n  context: { gain: 60.0, drive: 0.03 },\n  process(input, output, state, context) {\n    for (let ch = 0; ch < input.length; ch++) {\n      for (let i = 0; i < input[ch].length; i++) {\n        output[ch][i] = Math.tanh(input[ch][i] * context.gain) * context.drive;\n      }\n    }\n  },\n});\n\nliveLoop(\"lead\", async () => {\n  const notes = scale(\"E3\", \"minorPentatonic\", 2);\n  //await nextBeat();\n  await play(choose(notes), {\n    channel: CH1,\n    duration: 0.08,\n  });\n  await beat(cycle([0.04, 0.04, 0.08]));\n});\n"
 };
 export const MODE_DEFAULT_HISTORY = {
@@ -42,6 +48,12 @@ export const MODE_DEFAULT_HISTORY = {
   ],
   "mega-cd": [
     "// Mega-CD / Sega CD: FM and a short bass sample in the built-in PCM RAM.\n// Try examples/mega-cd/megacd-sampler.js to turn your own audio into a keyboard instrument.\nconst pcm = await useSoundChip('rf5c164');\nconst sampleRate = 16000;\nconst rootNote = 48; // C3; the bass pattern uses this note or higher.\nconst rootHz = 440 * 2 ** ((rootNote - 69) / 12);\nconst samples = new Float32Array(Math.round(sampleRate * 0.35));\nconst attackFrames = Math.round(sampleRate * 0.005);\nconst releaseFrames = Math.round(sampleRate * 0.03);\nfor (let i = 0; i < samples.length; i++) {\n  const ramp = Math.min(1, i / attackFrames, (samples.length - 1 - i) / releaseFrames);\n  const envelope = (1 - Math.cos(Math.PI * ramp)) / 2;\n  samples[i] = 0.75 * Math.sin(2 * Math.PI * rootHz * i / sampleRate) * envelope;\n}\n// With no loopStart, loadSample returns a silent tail after the finite sample.\nconst wave = await pcm.loadSample({channels: [samples], sampleRate});\nawait pcm.setChannel(0, {...wave, volume: 100, pan: {left: 15, right: 15}});\nconst stepFor = midi => Math.round(wave.step * 2 ** ((midi - rootNote) / 12));\nsetBpm(120);\nfm.setPreset(CH1, FM_PRESETS['one-op-basic']);\n\nliveLoop('fm-and-pcm', async () => {\n  for (const [note, midi] of [['C4', 48], ['E4', 52], ['G4', 55], ['B4', 59]]) {\n    await pcm.setPitch(0, stepFor(midi));\n    await pcm.keyOn(0);\n    await play(note, {channel: CH1, beats: 0.8});\n    // The 350 ms sample (or a faster note) has faded out before this 400 ms gate.\n    await pcm.keyOff(0);\n    await beat(0.2);\n  }\n});\n"
+  ],
+  "master-system": [
+    "// Select Mode: Master System. Three PSG tones and one noise voice, in mono.\nsetBpm(120);\n\nliveLoop('sms-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    psg.tone(PSG1, {note, attenuation: 9});\n    await beat(0.4);\n    psg.off(PSG1);\n    await beat(0.1);\n  }\n});\n\nliveLoop('sms-rhythm', async () => {\n  psg.noise({type: 'white', rate: 'high', attenuation: 12});\n  await beat(0.1);\n  psg.noiseOff();\n  await beat(0.9);\n});\n"
+  ],
+  "msx": [
+    "// MSX: AY-3-8910 PSG + YM2413 OPLL + Y8950 FM, sharing one mono output.\nsetBpm(120);\nay.setVoice(0, {tone: true, noise: false, volume: 8, envelope: false});\nopll.setVoice(0, {instrument: 3, attenuation: 6, sustain: false}); // OPLL ROM Piano.\nopl.setPreset(0, OPL_PRESETS.bell);\nopl.setOperator(0, 1, {tl: 26}); // Keep the Y8950 bell behind the melody.\n\nliveLoop('msx-three-chips', async () => {\n  const lead = ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4'];\n  for (let step = 0; step < lead.length; step++) {\n    ay.noteOn(0, step < 4 ? 'C3' : 'G2');\n    opll.noteOn(0, lead[step]);\n    opl.noteOn(0, step < 4 ? 'G4' : 'D4');\n    await beat(0.4);\n    ay.keyOff(0);\n    opll.keyOff(0);\n    opl.keyOff(0);\n    await beat(0.1);\n  }\n});\n\n// Open AY-3-8910 / YM2413 / Y8950 to edit their current voices.\n// Keyboard selects the chip and channel. Y8950 uses FM and rhythm here.\n"
   ]
 };
 export const EXAMPLE_FILES = [
@@ -291,6 +303,41 @@ export const EXAMPLE_FILES = [
     "data": "// Select Mode: Master System. The fourth PSG voice supplies short noise percussion.\nsetBpm(120);\n\nliveLoop('sms-noise-drums', async () => {\n  for (let step = 0; step < 8; step++) {\n    psg.noise({\n      type: 'white',\n      rate: step % 2 ? 'high' : 'low',\n      attenuation: step % 2 ? 13 : 10,\n    });\n    await beat(0.1);\n    psg.noiseOff();\n    await beat(0.4);\n  }\n});\n"
   },
   {
+    "path": "/examples/master-system/sms-opll-instruments.js",
+    "name": "sms-opll-instruments",
+    "data": "// Master System: built-in YM2413 instruments. No patch or sample upload needed.\nsetBpm(120);\nopll.setVoice(0, {attenuation: 5, sustain: false});\n\nliveLoop('sms-opll-instruments', async () => {\n  for (const instrument of [1, 2, 3, 4, 8, 12, 14, 15]) {\n    opll.setInstrument(0, instrument);\n    log(instrument, OPLL_INSTRUMENTS[instrument]);\n    for (const note of ['C4', 'E4', 'G4', 'C5']) {\n      opll.noteOn(0, note);\n      await beat(0.35);\n      opll.keyOff(0);\n      await beat(0.15);\n    }\n  }\n});\n\n// Instrument 0 is the one shared User patch; instruments 1..15 are fixed ROM.\n"
+  },
+  {
+    "path": "/examples/master-system/sms-opll-rhythm.js",
+    "name": "sms-opll-rhythm",
+    "data": "// Master System: six melodic FM channels plus five hardware rhythm voices.\nsetBpm(120);\nopll.setNote(6, 'C2'); // Bass drum tuning uses physical CH6.\nopll.setNote(7, 'G3'); // Hi-hat / snare share physical CH7.\nopll.setNote(8, 'D3'); // Tom / cymbal share physical CH8.\nopll.setRhythm({enabled: true});\nopll.setRhythmLevels({bassDrum: 5, snare: 6, tom: 6, cymbal: 8, hiHat: 8});\nopll.setVoice(0, {instrument: 8, attenuation: 7, sustain: false});\n\nliveLoop('sms-opll-rhythm', async () => {\n  for (let step = 0; step < 8; step++) {\n    if (step % 2 === 0) opll.noteOn(0, step < 4 ? 'C3' : 'G2');\n    const drum = step % 4 === 0 ? 'bassDrum' : step % 4 === 2 ? 'snare' : 'hiHat';\n    opll.setRhythm({[drum]: true});\n    await beat(0.1);\n    opll.setRhythm({[drum]: false});\n    opll.keyOff(0);\n    await beat(0.4);\n  }\n});\n\n// Rhythm uses CH6..8 instrument/volume nibbles; selecting melody afterward\n// requires assigning their instruments again. Keyboard lists the five drums.\n"
+  },
+  {
+    "path": "/examples/master-system/sms-opll-user-patch.js",
+    "name": "sms-opll-user-patch",
+    "data": "// Master System: one global User patch shared by every instrument-0 channel.\nsetBpm(120);\nopll.setUserPatch(OPLL_USER_PRESETS.bell);\nopll.setVoice(0, {instrument: 0, attenuation: 5, sustain: false});\nopll.setVoice(1, {instrument: 0, attenuation: 7, sustain: false});\nopll.setVoice(2, {instrument: 4, attenuation: 7, sustain: false}); // ROM Flute is unaffected.\n\nliveLoop('sms-opll-user-chord', async () => {\n  for (const notes of [['C4', 'E4', 'G4'], ['A3', 'C4', 'E4'], ['F3', 'A3', 'C4'], ['G3', 'B3', 'D4']]) {\n    for (let channel = 0; channel < notes.length; channel++) opll.noteOn(channel, notes[channel]);\n    await tween({beats: 1}, progress => opll.setUserOperator(0, {\n      tl: Math.round(36 - 14 * progress), // Modulator level changes CH0 and CH1 together.\n    }));\n    for (const channel of [0, 1, 2]) opll.keyOff(channel);\n    await beat(0.5);\n  }\n});\n\n// Carrier level is set per channel with setAttenuation(channel, 0..15).\n// Editing the User patch does not alter ROM instrument 4 on CH2.\n"
+  },
+  {
+    "path": "/examples/msx/msx-ay-envelope.js",
+    "name": "msx-ay-envelope",
+    "data": "// MSX AY-3-8910: both voices use the same hardware envelope.\nsetBpm(120);\nay.setVoice(0, {tone: true, noise: false, volume: 9, envelope: true});\nay.setVoice(1, {tone: true, noise: false, volume: 7, envelope: true});\n\nliveLoop('msx-ay-envelope', async () => {\n  for (const [shape, period, notes] of [[8, 1800, ['C4', 'E4']], [10, 1200, ['G3', 'D4']], [12, 2200, ['A3', 'C4']], [14, 1500, ['G3', 'B3']]]) {\n    // Period is a 16-bit hardware value. An explicit Shape write restarts it\n    // globally, once per chord; noteOn itself does not reset the shared envelope.\n    ay.setEnvelope({period, shape});\n    ay.noteOn(0, notes[0]);\n    ay.noteOn(1, notes[1]);\n    await beat(2);\n    ay.keyOff(0);\n    ay.keyOff(1);\n    await beat(0.5);\n  }\n});\n"
+  },
+  {
+    "path": "/examples/msx/msx-ay-tone-noise.js",
+    "name": "msx-ay-tone-noise",
+    "data": "// MSX AY-3-8910: three voices mix their own tone with one shared noise source.\nsetBpm(120);\nay.setVoice(0, {tone: true, noise: false, volume: 9, envelope: false});\nay.setVoice(1, {tone: false, noise: true, volume: 5, envelope: false});\nay.setVoice(2, {tone: true, noise: true, volume: 4, envelope: false});\n\nliveLoop('msx-ay-tone-noise', async () => {\n  for (const [note, period] of [['C4', 8], ['E4', 16], ['G4', 24], ['C5', 16]]) {\n    ay.setNoisePeriod(period); // Changes the noise on CH1 and CH2 together.\n    ay.noteOn(0, note);\n    ay.keyOn(1); // A noise-only voice keeps its configured noise period.\n    ay.noteOn(2, 'C3');\n    await beat(0.15);\n    ay.keyOff(1);\n    await beat(0.25);\n    ay.keyOff(0);\n    ay.keyOff(2);\n    await beat(0.1);\n  }\n});\n"
+  },
+  {
+    "path": "/examples/msx/msx-fm-sections.js",
+    "name": "msx-fm-sections",
+    "data": "// MSX: YM2413 OPLL and Y8950 OPL are separate FM chips.\nsetBpm(120);\nopll.setUserPatch(OPLL_USER_PRESETS.bell); // One shared User patch, not one per CH.\nopll.setVoice(0, {instrument: 0, attenuation: 6, sustain: false});\nopll.setVoice(1, {instrument: 4, attenuation: 7, sustain: false}); // ROM Flute.\nopl.setPreset(0, OPL_PRESETS.organ);\nopl.setOperator(0, 0, {tl: 30});\nopl.setOperator(0, 1, {tl: 26});\n\nliveLoop('msx-two-fm-chips', async () => {\n  for (const notes of [['C4', 'E4', 'G3'], ['A3', 'C4', 'E3'], ['F3', 'A3', 'C3'], ['G3', 'B3', 'D3']]) {\n    opll.noteOn(0, notes[0]);\n    opll.noteOn(1, notes[1]);\n    opl.noteOn(0, notes[2]);\n    await beat(0.8);\n    opll.keyOff(0);\n    opll.keyOff(1);\n    opl.keyOff(0);\n    await beat(0.2);\n  }\n});\n\n// Both FM chips have nine melodic channels (0..8); rhythm changes ownership.\n// The OPLL User patch affects instrument-0 channels only; ROM Flute stays fixed.\n"
+  },
+  {
+    "path": "/examples/msx/msx-music-duet.js",
+    "name": "msx-music-duet",
+    "data": "// MSX / MSX Audio: one shared OPLL user patch over a PSG bass line.\nsetBpm(120);\nopll.setUserPatch(OPLL_USER_PRESETS.bell);\nopll.setVoice(0, {instrument: 0, attenuation: 5, sustain: false});\nopll.setVoice(1, {instrument: 0, attenuation: 8, sustain: false});\nay.setVoice(0, {tone: true, noise: false, volume: 7, envelope: false});\n\nliveLoop('msx-music-duet', async () => {\n  for (const [bass, low, high] of [\n    ['C3', 'E4', 'G4'], ['A2', 'C4', 'E4'],\n    ['F2', 'A3', 'C4'], ['G2', 'B3', 'D4'],\n  ]) {\n    ay.noteOn(0, bass);\n    opll.noteOn(0, low);\n    opll.noteOn(1, high);\n    await beat(0.8);\n    ay.keyOff(0);\n    opll.keyOff(0);\n    opll.keyOff(1);\n    await beat(0.2);\n  }\n});\n\n// Both instrument-0 voices use the same eight user-patch registers.\n// Built-in instruments 1..15 are independent of that shared custom patch.\n"
+  },
+  {
     "path": "/examples/gameboy/gameboy-mode-noise.js",
     "name": "gameboy-mode-noise",
     "data": "// Select Mode: Game Boy. Shape percussion with the built-in noise channel.\nsetBpm(120);\n\nliveLoop('noise-drums', async () => {\n  for (let step = 0; step < 8; step++) {\n    gameboy.noise.setVoice({\n      volume: step % 2 ? 7 : 10,\n      envelope: {direction: 'down', period: 1},\n      divisor: step % 2 ? 1 : 4,\n      shift: step % 2 ? 2 : 5,\n      width: 15,\n    });\n    gameboy.noise.keyOn();\n    await beat(0.2);\n    gameboy.noise.keyOff();\n    await beat(0.3);\n  }\n});\n"
@@ -443,17 +490,22 @@ export const EXAMPLE_FILES = [
   {
     "path": "/examples/dx7/dx7-init-sine.js",
     "name": "dx7-init-sine",
-    "data": "// Independent MSFA DX7, ready with the self-authored INIT SINE voice.\n// MIDI note numbers 0..127; the DX7 allocates its own 16 voices.\nconst dx7 = await useSoundChip('dx7');\nsetBpm(110);\nawait mixer.set(dx7.id, {volume: 0.5});\n\n// To use your own DX7 SysEx, import a .syx file into FILES first:\n// await dx7.loadSysex(await file('/presets/my-bank.syx', {type:'arrayBuffer'}));\n// console.log(dx7.voices);\n// dx7.selectVoice(0);\n\nliveLoop('dx7-melody', async () => {\n  for (const note of [60, 64, 67, 72, 67, 64]) {\n    dx7.noteOn(note, 100);\n    await beat(0.4);\n    dx7.noteOff(note);\n    await beat(0.1);\n  }\n});\n"
+    "data": "// Independent MSFA DX7, ready with the self-authored INIT SINE voice.\n// MIDI note numbers 0..127; the DX7 allocates its own 16 voices.\nconst synth = await useSoundChip('dx7');\nsetBpm(110);\nawait mixer.set(synth.id, {volume: 0.5});\n\n// To use your own DX7 SysEx, import a .syx file into FILES first:\n// await synth.loadSysex(await file('/presets/my-bank.syx', {type:'arrayBuffer'}));\n// console.log(synth.voices);\n// synth.selectVoice(0);\n\nliveLoop('dx7-melody', async () => {\n  for (const note of [60, 64, 67, 72, 67, 64]) {\n    synth.noteOn(note, 100);\n    await beat(0.4);\n    synth.noteOff(note);\n    await beat(0.1);\n  }\n});\n"
+  },
+  {
+    "path": "/examples/dx7/dx7-keyboard.js",
+    "name": "dx7-keyboard",
+    "data": "// Run, then open Keyboard to play this original DX7 voice.\n// Guitar / Bass / Ukulele input shares this binding. No SysEx file is needed.\nconst synth = await useSoundChip('dx7');\nawait synth.setPreset({\n  name: 'KEYBOARD', algorithm: 0, feedback: 0,\n  operators: {\n    1: {\n      coarse: 1, outputLevel: 85,\n      envelope: {rates: [99, 80, 70, 75], levels: [99, 90, 80, 0]},\n    },\n    2: {\n      coarse: 2, outputLevel: 55,\n      envelope: {rates: [99, 70, 50, 75], levels: [99, 70, 40, 0]},\n    },\n  },\n});\nawait mixer.set(synth.id, {volume: 0.5});\n\n// DX7 noteOff releases every voice at that pitch. Keep the latest press ID\n// for each MIDI note so an older release cannot cut off a newer press.\nconst held = new Map();\nkeyboard.bind('DX7 Keyboard', {\n  noteOn({id, midi, velocity}) {\n    held.set(midi, id);\n    synth.noteOn(midi, velocity);\n  },\n  noteOff({id, midi}) {\n    if (held.get(midi) !== id) return;\n    held.delete(midi);\n    synth.noteOff(midi);\n  },\n  allNotesOff() {\n    held.clear();\n    synth.allNotesOff();\n  },\n});\nlog('DX7 ready. Open Keyboard to play. Stop releases this binding.');\n"
   },
   {
     "path": "/examples/dx7/dx7-live-parameters.js",
     "name": "dx7-live-parameters",
-    "data": "// Live DX7 operator editing (tetorica-fm2612 0.2.16 / DX7 core 0.3.0).\n// Level/frequency edits affect this patch's held notes and release tails.\nconst dx7 = await useSoundChip('dx7');\nawait dx7.setPreset({\n  name: 'LIVE FM', algorithm: 0,\n  operators: {\n    1: {outputLevel: 80, envelope: {rates: [99, 99, 99, 75], levels: [99, 99, 99, 0]}},\n    2: {coarse: 2, outputLevel: 20, envelope: {rates: [99, 99, 99, 75], levels: [99, 99, 99, 0]}},\n  },\n});\nawait mixer.set(dx7.id, {volume: 0.5});\nsetBpm(100);\n\nliveLoop('dx7-live-parameters', async () => {\n  await dx7.setOperators([[1, {outputLevel: 80}], [2, {outputLevel: 20, fine: 0}]]);\n  dx7.noteOn(60, 100);\n  // Two beats; follows BPM. Returning the Promise waits for each edit.\n  await tween({beats: 2}, progress => dx7.setOperator(2, {\n    outputLevel: Math.round(20 + 60 * progress),\n    fine: Math.round(50 * progress),\n  }));\n  await beat(1);\n  // One real second, independent of BPM. The oscillator and EG are not restarted.\n  await tween(1, progress => dx7.setOperator(1, {\n    outputLevel: Math.round(80 * (1 - progress)),\n  }));\n  dx7.noteOff(60);\n  await beat(1);\n});\n"
+    "data": "// Live DX7 operator editing (tetorica-fm2612 0.2.16 / DX7 core 0.3.0).\n// Level/frequency edits affect this patch's held notes and release tails.\nconst synth = await useSoundChip('dx7');\nawait synth.setPreset({\n  name: 'LIVE FM', algorithm: 0,\n  operators: {\n    1: {outputLevel: 80, envelope: {rates: [99, 99, 99, 75], levels: [99, 99, 99, 0]}},\n    2: {coarse: 2, outputLevel: 20, envelope: {rates: [99, 99, 99, 75], levels: [99, 99, 99, 0]}},\n  },\n});\nawait mixer.set(synth.id, {volume: 0.5});\nsetBpm(100);\n\nliveLoop('dx7-live-parameters', async () => {\n  await synth.setOperators([[1, {outputLevel: 80}], [2, {outputLevel: 20, fine: 0}]]);\n  synth.noteOn(60, 100);\n  // Two beats; follows BPM. Returning the Promise waits for each edit.\n  await tween({beats: 2}, progress => synth.setOperator(2, {\n    outputLevel: Math.round(20 + 60 * progress),\n    fine: Math.round(50 * progress),\n  }));\n  await beat(1);\n  // One real second, independent of BPM. The oscillator and EG are not restarted.\n  await tween(1, progress => synth.setOperator(1, {\n    outputLevel: Math.round(80 * (1 - progress)),\n  }));\n  synth.noteOff(60);\n  await beat(1);\n});\n"
   },
   {
     "path": "/examples/dx7/dx7-object-preset.js",
     "name": "dx7-object-preset",
-    "data": "// Build a DX7 voice with objects. No SysEx file is needed.\n// Operators are OP1..6; algorithm 0 is the instrument's algorithm 1.\nconst dx7 = await useSoundChip('dx7');\nawait dx7.setPreset({\n  name: 'JS BELL',\n  algorithm: 0,\n  feedback: 0,\n});\nawait dx7.setOperators([\n  [1, {\n    coarse: 1, outputLevel: 90,\n    envelope: {rates: [99, 70, 50, 75], levels: [99, 80, 60, 0]},\n  }],\n  [2, {\n    coarse: 2, outputLevel: 68,\n    envelope: {rates: [99, 75, 50, 80], levels: [99, 70, 0, 0]},\n  }],\n]);\nsetBpm(110);\nawait mixer.set(dx7.id, {volume: 0.5});\n\nliveLoop('dx7-object-melody', async () => {\n  // Level edits keep other parameters and also affect this patch's release tails.\n  await dx7.setOperator(2, {outputLevel: choose([55, 65, 75])});\n  for (const note of [60, 64, 67, 72]) {\n    dx7.noteOn(note, 100);\n    await beat(0.4);\n    dx7.noteOff(note);\n    await beat(0.1);\n  }\n});\n"
+    "data": "// Build a DX7 voice with objects. No SysEx file is needed.\n// Operators are OP1..6; algorithm 0 is the instrument's algorithm 1.\nconst synth = await useSoundChip('dx7');\nawait synth.setPreset({\n  name: 'JS BELL',\n  algorithm: 0,\n  feedback: 0,\n});\nawait synth.setOperators([\n  [1, {\n    coarse: 1, outputLevel: 90,\n    envelope: {rates: [99, 70, 50, 75], levels: [99, 80, 60, 0]},\n  }],\n  [2, {\n    coarse: 2, outputLevel: 68,\n    envelope: {rates: [99, 75, 50, 80], levels: [99, 70, 0, 0]},\n  }],\n]);\nsetBpm(110);\nawait mixer.set(synth.id, {volume: 0.5});\n\nliveLoop('dx7-object-melody', async () => {\n  // Level edits keep other parameters and also affect this patch's release tails.\n  await synth.setOperator(2, {outputLevel: choose([55, 65, 75])});\n  for (const note of [60, 64, 67, 72]) {\n    synth.noteOn(note, 100);\n    await beat(0.4);\n    synth.noteOff(note);\n    await beat(0.1);\n  }\n});\n"
   },
   {
     "path": "/examples/snes/snes-brr-melody.js",
@@ -484,6 +536,31 @@ export const EXAMPLE_FILES = [
     "path": "/examples/pc-engine/pce-mode-wave.js",
     "name": "pce-mode-wave",
     "data": "// Select Mode: PC Engine. Six 32-entry, five-bit wavetable voices.\nsetBpm(120);\npce.setWaveform(0, Array.from({length:32}, (_, index) =>\n  Math.round(15.5 + 15.5 * Math.sin(index * Math.PI / 16))));\npce.setVolume(0, 26); // Hardware volume 0..31.\npce.setPan(0, 15, 15); // Independent left/right balances 0..15.\n\nliveLoop('pce-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    // Keep the waveform running between notes; hard key cuts can click.\n    pce.noteOn(0, note);\n    await beat(0.5);\n  }\n});\n\n// Uploading a waveform stops its channel. Channels 4/5 can also generate noise.\n"
+  },
+  {
+    "path": "/examples/opl/opl-live-operators.js",
+    "name": "opl-live-operators",
+    "data": "// Adjust OP1's total level while a note is held. No retrigger is needed.\n// TL: 0 = loudest, 63 = quietest. Operator indices are 0-based.\nsetBpm(100);\nopl.setPreset(0, OPL_PRESETS.organ);\nopl.setAlgo(0, 0, 2); // OP1 modulates OP2; feedback belongs to OP1.\n\nliveLoop('opl-timbre', async () => {\n  opl.noteOn(0, 'C4');\n  await tween({beats: 2}, progress => opl.setOperator(0, 0, {\n    tl: Math.round(50 - 34 * progress),\n  }));\n  await tween({beats: 2}, progress => opl.setOperator(0, 0, {\n    tl: Math.round(16 + 34 * progress),\n  }));\n  opl.keyOff(0);\n  await beat(1);\n});\n"
+  },
+  {
+    "path": "/examples/opl/opl-melody.js",
+    "name": "opl-melody",
+    "data": "// Works in all OPL modes: OPL, OPL2, Y8950 FM and OPL3.\nsetBpm(112);\nopl.setPreset(0, OPL_PRESETS.bell);\nopl.setPreset(1, OPL_PRESETS.organ);\n\nliveLoop('opl-duet', async () => {\n  for (const [lead, bass] of [['C4', 'C3'], ['E4', 'C3'], ['G4', 'G2'], ['B4', 'G2']]) {\n    opl.noteOn(0, lead);\n    opl.noteOn(1, bass);\n    await beat(0.7);\n    opl.keyOff(0);\n    opl.keyOff(1);\n    await beat(0.3);\n  }\n});\n"
+  },
+  {
+    "path": "/examples/opl/opl-rhythm.js",
+    "name": "opl-rhythm",
+    "data": "// All OPL models: rhythm reuses the operators of physical channels 6..8.\n// Prepare those voices while rhythm mode is off, then trigger individual gates.\nsetBpm(110);\nopl.setRhythm({enabled: false});\nfor (const channel of [6, 7, 8]) {\n  opl.setPreset(channel, OPL_PRESETS.organ);\n  opl.setNote(channel, channel === 6 ? 'C2' : 'G3');\n  for (const operator of [0, 1]) {\n    opl.setOperator(channel, operator, {tl: 20, ar: 15, dr: 9, sl: 12, rr: 10, egt: false});\n  }\n}\nopl.setRhythm({enabled: true});\n\nliveLoop('opl-rhythm', async () => {\n  for (let step = 0; step < 8; step++) {\n    const drum = step % 4 === 0 ? 'bassDrum' : step % 4 === 2 ? 'snare' : 'hiHat';\n    opl.setRhythm({[drum]: true});\n    await beat(0.12);\n    opl.setRhythm({[drum]: false});\n    await beat(0.38);\n  }\n});\n"
+  },
+  {
+    "path": "/examples/opl/opl3-four-operators.js",
+    "name": "opl3-four-operators",
+    "data": "// OPL3: CH0 + CH3 form one four-operator voice; only CH0 receives notes.\nsetBpm(100);\nopl.setPreset(0, OPL_PRESETS['four-op-bell']);\n\nliveLoop('opl3-algorithms', async () => {\n  for (const algorithm of [0, 1, 2, 3]) {\n    opl.setAlgo(0, algorithm, 2);\n    for (const note of ['C4', 'E4', 'G4']) {\n      opl.noteOn(0, note);\n      await beat(0.6);\n      opl.keyOff(0);\n      await beat(0.2);\n    }\n  }\n});\n\n// setFourOp(0, false) returns physical CH3 to an independent two-op voice.\n"
+  },
+  {
+    "path": "/examples/opl/opl3-stereo.js",
+    "name": "opl3-stereo",
+    "data": "// OPL3 channel outputs are routed left / right, rather than a continuous pan.\nsetBpm(120);\nopl.setPreset(0, OPL_PRESETS.bell);\nopl.setPreset(9, OPL_PRESETS.bell);\nopl.setPan(0, true, false);\nopl.setPan(9, false, true);\n\nliveLoop('opl3-stereo', async () => {\n  for (const [channel, note] of [[0, 'C4'], [9, 'E4'], [0, 'G4'], [9, 'C5']]) {\n    opl.noteOn(channel, note);\n    await beat(0.6);\n    opl.keyOff(channel);\n    await beat(0.4);\n  }\n});\n"
   }
 ];
 export const EXAMPLES = Object.fromEntries(EXAMPLE_FILES.map(file => [file.name, file.data]));
@@ -544,6 +621,7 @@ export const MODE_EXAMPLE_FILES = Object.fromEntries(Object.entries({
     "/examples/pc98/ym2608-rhythm.js",
     "/examples/x68000/ym2151-tone.js",
     "/examples/dx7/dx7-init-sine.js",
+    "/examples/dx7/dx7-keyboard.js",
     "/examples/dx7/dx7-live-parameters.js",
     "/examples/dx7/dx7-object-preset.js",
     "/examples/snes/snes-brr-melody.js"
@@ -612,7 +690,40 @@ export const MODE_EXAMPLE_FILES = Object.fromEntries(Object.entries({
   ],
   "master-system": [
     "/examples/master-system/sms-mode-melody.js",
-    "/examples/master-system/sms-mode-noise.js"
+    "/examples/master-system/sms-mode-noise.js",
+    "/examples/master-system/sms-opll-instruments.js",
+    "/examples/master-system/sms-opll-user-patch.js",
+    "/examples/master-system/sms-opll-rhythm.js"
+  ],
+  "msx": [
+    "/examples/msx/msx-ay-tone-noise.js",
+    "/examples/msx/msx-ay-envelope.js",
+    "/examples/msx/msx-music-duet.js"
+  ],
+  "msx-audio": [
+    "/examples/msx/msx-fm-sections.js",
+    "/examples/msx/msx-ay-tone-noise.js",
+    "/examples/msx/msx-ay-envelope.js"
+  ],
+  "dx7": [
+    "/examples/dx7/dx7-object-preset.js",
+    "/examples/dx7/dx7-live-parameters.js",
+    "/examples/dx7/dx7-keyboard.js"
+  ],
+  "ym3812": [
+    "/examples/opl/opl-melody.js",
+    "/examples/opl/opl-live-operators.js",
+    "/examples/opl/opl-rhythm.js"
+  ],
+  "ym3526": [
+    "/examples/opl/opl-melody.js",
+    "/examples/opl/opl-live-operators.js",
+    "/examples/opl/opl-rhythm.js"
+  ],
+  "ymf262": [
+    "/examples/opl/opl-melody.js",
+    "/examples/opl/opl3-four-operators.js",
+    "/examples/opl/opl3-stereo.js"
   ],
   "genesis-nuked": [
     "/examples/basic/8-bit-arcade-sweep.js",
@@ -669,6 +780,7 @@ export const MODE_EXAMPLE_FILES = Object.fromEntries(Object.entries({
     "/examples/pc98/ym2608-rhythm.js",
     "/examples/x68000/ym2151-tone.js",
     "/examples/dx7/dx7-init-sine.js",
+    "/examples/dx7/dx7-keyboard.js",
     "/examples/dx7/dx7-live-parameters.js",
     "/examples/dx7/dx7-object-preset.js",
     "/examples/snes/snes-brr-melody.js"

@@ -1,4 +1,4 @@
-import {attachChipClock} from './playground_chip_clock.js?v=audio-stability-2';
+import {attachChipClock} from './playground_chip_clock.js?v=msx-modes-2';
 import {Huc6280Synth, HUC6280_CLOCK} from './huc6280synth.js?v=audio-stability-2';
 
 /** Immediate, ordered register commands shared by Main and Worker runtimes.
@@ -10,7 +10,12 @@ export function createHuc6280Client(port, {clock = HUC6280_CLOCK} = {}) {
     reset() { port.postMessage({method:'reset', args:[]}); },
     dispose() { port.postMessage({method:'dispose', args:[]}); port.close(); },
   }});
-  return attachChipClock(synth, port, clock);
+  const controlled=attachChipClock(synth,port,clock);
+  Object.defineProperty(synth,'_stopVoices',{value:()=>{
+    const state=synth._getState();for(const registers of state.registers)registers[4]&=127;
+    synth._adoptState(state);return controlled._requestControl('stopVoices');
+  }});
+  return controlled;
 }
 
 /** Builtin controls borrow the primary device; the runtime owns its lifetime. */
