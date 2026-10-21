@@ -1,5 +1,5 @@
 {
-  "archive": "hello_ymfm_wasm_native-livefx-probe-20261021_itch_playground.zip",
+  "archive": "hello_ymfm_wasm_dev_native_livefx_connected_20261021_itch_playground.zip",
   "files": {
     "LICENSE": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c",
     "THIRD_PARTY_LICENSES.txt": "175af411003e7150ed5ef1574631c11ad288155fcaaa7ba123300bf353c24805",
@@ -228,12 +228,14 @@
     "js/native_fx_engine.js": "8f9ba9ff857a34dc46b2646d77838e79fd48cdf4d2d4f3caf7176091a575967f",
     "js/native_fx_graph.js": "fc9345f3a1c499b6fb5d2a893ed2c31c92394397e1a0ccaa343fc7b722e64ccf",
     "js/native_fx_rack.js": "92e57a539409d7139e4820d275fedff5e9862765f34a5cb3b3c07c67608429a5",
-    "js/native_genesis_fx.js": "e9fea9be80eced3344748de2e2b16c546094495baa6653c8a649417f96e815be",
+    "js/native_genesis_fx.js": "78a97bc6ff655ff15c813d6f35098a313aa6b87da2c2c31e2eba41841d82745e",
+    "js/native_genesis_livefx.js": "70820e1111aef36c9525959e094c91604593f03fc8e4af867e83cb6f7aceb990",
     "js/native_genesis_media.js": "9c00df76ba6b423228e6a9d9565c9bcd61acddd148a06ce80c2c80c3de3bc88b",
     "js/native_genesis_monitor.js": "611f58692af8da6f71f2195acab74bba1d21c1bf37a5592004ac2fd623f9490e",
     "js/native_genesis_noise.js": "f678b109b63f1c5bbe6e833ee0cf9c5d73e8bbbb030713d5e53ebd4ab1bc8317",
-    "js/native_genesis_synth.js": "a475215b92eba163030a88974eb89639c4ea83cbc8a06757068ca8a3b540162d",
+    "js/native_genesis_synth.js": "12fef694c712d7495eaf14ea9f4de5bff57b37297593bd3706a7e77d2ed7a107",
     "js/native_genesis_worker.js": "868f52373134ca16239011918cba389c5f3f06f2df24d0af4c24df50bcacf952",
+    "js/native_livefx_context.js": "2bf0d1eacceceea2932304505b2c68d01b8d1be174a93a09d0af7432361318f1",
     "js/native_noise.js": "c0ce2bdb16f1aed62e6b83f1b27c8e37b25fa2ee5035f0d332f59cd21ae3996f",
     "js/native_runtime_synth.js": "90a15515bb0fb7c73f476a13e9ac371cf972272875393ac6b84b1edc6d76314b",
     "js/native_sample.js": "d7b9818adfa87cf8ae5489746d4038a0f163ba6803e90803eabf7d939333dbce",
@@ -312,7 +314,7 @@
     "js/playground_pwm_worklet.js": "70169b36d4d7670319364bea91771caf55efef498704226aae8a9235b077f88e",
     "js/playground_rf5c164.js": "e5284a13392d769b03d904879f0ca7e09ab92ddebc9c38d49b65af4fb68efc7c",
     "js/playground_rf5c164_audio.js": "e4cc50dc4f196a4c2f6efd74fa16525ab7a96de62a62c9ad7d0a31e1e7b6d5e4",
-    "js/playground_runtime.js": "8c6d681bf6eb23f70beaf0104c7a93be28f2ab78dae0c0b54bc1a3f4a9e863d6",
+    "js/playground_runtime.js": "43c94a4c35b32d08ddb6f8e5f431674b2203a73d5d337555dbe86ebf93f8cd3f",
     "js/playground_sample_edit.js": "789268d79daaff5a2e6e122a7cef3eb2280d758f742e3a2d3c2df655c5ac4cec",
     "js/playground_sample_instrument.js": "a65f67f1d7c272f5f469f8b241f38d4257e2e1bd596b5db689a84f56e3747f20",
     "js/playground_segapsg.js": "44e0d1325735b6ca5f9329c6be54452c28ba4c4a02f175a520c057b647097956",
@@ -452,9 +454,9 @@
     "licenses/snes-spc/LICENSE": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331",
     "licenses/snes-spc/README.md": "0a4ef415f103b996772d321ba2ff28614a27a9c83cfe4afd437a779e58ab0775",
     "llms.txt": "c220e9cd8de8d1cf724996cadc5f3333b374021bb131f42e15d2e7ebe1a4fdba",
-    "playground.js": "665acff23ef91bac332fc403da5b61e3546b90b15cf65e09dad8e92e8879d02f",
+    "playground.js": "806520ad157aaa246a2e80ae2dcccc543a714fa131db57e1d6eca3b6835f0a80",
     "playground_audio_diagnostics.js": "badc3a6c274850bdba21918ea4b68ff6123fca49209a6066e21be434d9b25967",
-    "playground_audio_engine.js": "6d31582b388d315f400cadef1d37afb3451f78df0434b75d3f240296a0a7f7c6",
+    "playground_audio_engine.js": "7b1ad1a87bb2654031ba0033416885aefdff0daa39579af18d19b54d507241d5",
     "playground_audio_input.js": "3aea20a15d7c0c642f1df38be9724bef9cd77620187d991754af144aab632548",
     "playground_audio_monitor.js": "7a75febe0c38063a50e0217b9bd42c93cb196fbab88717af8689e192663c020d",
     "playground_autosave.js": "46bbdd5614e1597ee9906db35edd53f407fd18a373b0484b3a92176a5c084abd",
@@ -469,7 +471,7 @@
     "playground_file_menu.js": "dc2f9c1ee49cdf42a4e4cac502437a551938e699e981773493005ba5aa58a76e",
     "playground_file_resize.js": "be704ea2e301033fcd31bb14fd365ce224d9c0d46147caa1d616882092db7a8f",
     "playground_file_tree.js": "0a8a4c342bbf94023648d17cd952ba1e2e5a1595846fcf860518205aaf1addad",
-    "playground_fx_monitor.js": "839abcf3c40fe4bf755847977a015d434e6459895f8b9cad60605362a0ef0c39",
+    "playground_fx_monitor.js": "09b9b0a25dbf2261e48f4ac3a3ebb2c57798b7695a0194e974909a0287169ee9",
     "playground_gameboy_voice_panel.js": "3cb7b3af8f9ed831abedc5abff6398cc5802e110dea1745b72e1fd5c5af4300d",
     "playground_git.js": "dc23360e8b17c7215259d6ecb27f877ee8a661787c9a4ffe45d2a1bf6b1394cf",
     "playground_huc6280_voice_panel.js": "03b6f054b22f3ea162874f638d0b5397128e000d78f24603351e460ecbf4a42f",
@@ -789,6 +791,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "58cb2096631756e9b33dd713e251d7bb5cd7e2cf2e4469ef2c83255a1d844802"
   },
-  "sha256": "294c5a03fca271a8dccd55bb7d62b6b527f5101a10bd7f4f8a083a4ee647459f",
-  "version": "sha256-294c5a03fca2"
+  "sha256": "3dcd16893109d2008c1dde29e3cfb795f57e0b0edb18bf4d2b65709078c2f117",
+  "version": "sha256-3dcd16893109"
 }

@@ -15,6 +15,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "native_genesis_livefx.rs"]
+mod livefx;
 #[path = "native_genesis_media.rs"]
 mod media;
 #[path = "native_genesis_monitor.rs"]
@@ -127,6 +129,7 @@ enum Action {
     SampleTimedStop(Arc<media::StopTargets>),
     Record(Arc<recording::Capture>),
     Fx(FxAction),
+    FxReset(FxAction),
     Noise(Option<noise::Prepared>),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -375,6 +378,7 @@ impl Command {
 struct Shared {
     queue: ArrayQueue<Event>,
     monitor: monitor::Monitor,
+    livefx: livefx::Control,
     noise: Mutex<noise::Control>,
     noise_completed: [AtomicU64; noise::VOICES],
     media: Mutex<media::Store>,
@@ -405,6 +409,7 @@ impl Shared {
         Self {
             queue: ArrayQueue::new(CAPACITY),
             monitor: monitor::Monitor::new(rate),
+            livefx: livefx::Control::new(),
             noise: Mutex::new(noise::Control::default()),
             noise_completed: std::array::from_fn(|_| AtomicU64::new(0)),
             media: Mutex::new(media::Store::default()),
@@ -758,6 +763,7 @@ impl Shared {
             queued: self.pending.load(Ordering::Acquire),
             late_commands: self.late.load(Ordering::Relaxed),
             queue_overflows: self.overflows.load(Ordering::Relaxed),
+            live_fx: self.livefx.status(),
             error: self
                 .failed
                 .load(Ordering::Acquire)
@@ -793,6 +799,7 @@ impl Shared {
             .map_err(|_| "Native FX state is unavailable")?;
         let _ = fx.command(FxMessage::Reset, self.rate)?;
         fx.collect();
+        self.livefx.wait_reset()?;
         Ok(self.status())
     }
 }
@@ -815,6 +822,7 @@ struct DacStream {
 struct Renderer {
     core: Core,
     fx: FxRenderer,
+    livefx: livefx::Renderer,
     noise: noise::Renderer,
     voices: [Option<media::Voice>; media::VOICES],
     dac: Option<DacVoice>,
@@ -841,6 +849,7 @@ impl Renderer {
         Ok(Self {
             core: Core::new(rate)?,
             fx: FxRenderer::new(rate),
+            livefx: livefx::Renderer::new(),
             noise: noise::Renderer::new(rate)?,
             voices: std::array::from_fn(|_| None),
             dac: None,
@@ -867,6 +876,8 @@ impl Renderer {
         let epoch = shared.epoch.load(Ordering::Acquire);
         if epoch != self.epoch {
             self.epoch = epoch;
+            self.livefx.begin_stop();
+            shared.livefx.transport.invalidate(true);
             let mut removed = self.heap.len();
             while let Some(event) = self.heap.pop() {
                 shared.retire_action(event.action.into_inner());
@@ -1068,6 +1079,10 @@ impl Renderer {
                 self.record = Some(capture);
             }
             Action::Fx(action) => self.fx.apply(action),
+            Action::FxReset(action) => {
+                self.fx.apply(action);
+                shared.livefx.reset();
+            }
             Action::Noise(command) => {
                 if let Some(command) = command {
                     self.noise.apply(command, owner, &shared.noise_completed);
@@ -1187,13 +1202,21 @@ impl Renderer {
                 let action = event.action.borrow();
                 match &*action {
                     Action::Noise(command) => command.is_some_and(|command| command.starts()),
-                    Action::Mix(_) | Action::Reset | Action::Record(_) | Action::Fx(_) => false,
+                    Action::Mix(_)
+                    | Action::Reset
+                    | Action::Record(_)
+                    | Action::Fx(_)
+                    | Action::FxReset(_) => false,
                     _ => true,
                 }
             };
             if self.idle && wakes_audio {
                 self.idle = false;
-                self.resume_remaining = (shared.rate / 200).max(1);
+                // An already running JS generator owns the audible bus. A
+                // first chip note must not fade that existing output to zero.
+                if !self.livefx.has_output() {
+                    self.resume_remaining = (shared.rate / 200).max(1);
+                }
             }
             if shared.valid_event(&event) {
                 self.apply(event, shared);
@@ -1216,6 +1239,9 @@ impl Renderer {
             }
         }
         self.fx.process(&mut pcm);
+        pcm = self
+            .livefx
+            .process(pcm, self.frame, shared.rate, &shared.livefx.transport);
         let master = unsafe { native_genesis_master(self.core.0) };
         pcm[0] *= master;
         pcm[1] *= master;
@@ -1231,12 +1257,13 @@ impl Renderer {
                 self.clear_media(shared);
                 self.noise.reset(&shared.noise_completed);
                 self.fx.stop();
+                self.livefx.end_stop();
                 self.fm_owners = [None; 6];
                 self.psg_owners = [None; 4];
                 self.idle = true;
                 shared.stopped_epoch.store(self.epoch, Ordering::Release);
             }
-        } else if self.idle {
+        } else if self.idle && !self.livefx.has_output() {
             pcm = [0.0; 2];
         } else if self.resume_remaining > 0 {
             let total = (shared.rate / 200).max(1);
@@ -1285,6 +1312,7 @@ pub struct Status {
     queued: usize,
     late_commands: u64,
     queue_overflows: u64,
+    live_fx: livefx::Status,
     error: Option<String>,
 }
 struct Running {
@@ -1618,6 +1646,10 @@ pub fn native_genesis_fx(
             .lock()
             .map_err(|_| "Native FX state is unavailable")?;
         fx.collect();
+        let reset_livefx = matches!(&message, FxMessage::Reset);
+        if reset_livefx && frame == 0 {
+            shared.livefx.reset();
+        }
         if let Some(action) = fx.command(message, shared.rate)? {
             shared.pending.fetch_add(1, Ordering::AcqRel);
             let event = Event {
@@ -1625,7 +1657,11 @@ pub fn native_genesis_fx(
                 sequence: *sequence,
                 epoch: shared.epoch.load(Ordering::Acquire),
                 owner: tag,
-                action: RefCell::new(Action::Fx(action)),
+                action: RefCell::new(if reset_livefx && frame != 0 {
+                    Action::FxReset(action)
+                } else {
+                    Action::Fx(action)
+                }),
             };
             *sequence += 1;
             shared
@@ -1635,6 +1671,34 @@ pub fn native_genesis_fx(
         }
         Ok(shared.status())
     })
+}
+
+#[tauri::command]
+pub fn native_genesis_live_fx(
+    window: tauri::WebviewWindow,
+    state: tauri::State<NativeGenesis>,
+    session: u64,
+    message: serde_json::Value,
+    frame: Option<u64>,
+    performance: Option<u64>,
+    owner: Option<u32>,
+) -> Result<Status, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let _producer = shared
+        .producer
+        .lock()
+        .map_err(|_| "Native producer state is unavailable")?;
+    let frame = frame.unwrap_or(0);
+    let tag = Command {
+        frame,
+        performance,
+        owner,
+        action: CommandAction::Reset,
+    }
+    .owner(&shared)?;
+    shared.livefx.command(&shared, message, frame, tag)?;
+    Ok(shared.status())
 }
 
 #[tauri::command]

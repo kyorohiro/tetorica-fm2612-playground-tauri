@@ -1,7 +1,7 @@
-//! Offline QuickJS-NG embedding probe, deliberately separate from the renderer.
+//! Single-owner QuickJS-NG rack used by the native generation worker and probe.
 //!
-//! A `Probe` and every call into it must remain on one owner thread. Neither the
-//! Native Genesis audio callback nor a Tauri IPC command constructs this host.
+//! A `LiveFxHost` and every call into it must remain on one owner thread. Neither
+//! the Native Genesis audio callback nor a Tauri IPC command constructs this host.
 //! The C++ host itself is lazy: its VM and PCM storage appear on first register.
 #![allow(dead_code)]
 
@@ -13,6 +13,8 @@ use std::{
 };
 
 const ERROR_CAPACITY: usize = 8192;
+const REPORT_CAPACITY: usize = 16 * 1024 + 1;
+pub(crate) const MAX_COMMAND_BYTES: usize = 256 * 1024;
 
 extern "C" {
     fn native_genesis_livefx_create(
@@ -50,15 +52,15 @@ extern "C" {
     ) -> usize;
 }
 
-struct Probe {
+pub(crate) struct LiveFxHost {
     host: NonNull<c_void>,
     max_frames: u32,
     // Prevent sharing or moving an initialized QuickJS context across threads.
     _owner: PhantomData<Rc<()>>,
 }
 
-impl Probe {
-    fn new(
+impl LiveFxHost {
+    pub(crate) fn new(
         rate: u32,
         max_frames: u32,
         memory_limit: usize,
@@ -67,7 +69,7 @@ impl Probe {
         let host = NonNull::new(unsafe {
             native_genesis_livefx_create(rate, max_frames, memory_limit, budget_us)
         })
-        .ok_or("Invalid offline LiveFX host configuration or allocation failure")?;
+        .ok_or("Invalid native LiveFX host configuration or allocation failure")?;
         Ok(Self {
             host,
             max_frames,
@@ -75,14 +77,17 @@ impl Probe {
         })
     }
 
-    fn command(&mut self, command: &serde_json::Value) -> Result<(), String> {
+    pub(crate) fn command(&mut self, command: &serde_json::Value) -> Result<(), String> {
         let action = match command.get("action").and_then(|value| value.as_str()) {
             Some("register") => 0,
             Some("context") => 1,
             Some("remove") => 2,
-            _ => return Err("Unknown offline LiveFX action".into()),
+            _ => return Err("Unknown native LiveFX action".into()),
         };
         let source = serde_json::to_vec(command).map_err(|error| error.to_string())?;
+        if source.len() > MAX_COMMAND_BYTES {
+            return Err("Native LiveFX command exceeds 256 KiB limit".into());
+        }
         let mut error = [0u8; ERROR_CAPACITY];
         let status = unsafe {
             native_genesis_livefx_command(
@@ -97,9 +102,10 @@ impl Probe {
         Self::result(status, &error)
     }
 
-    fn process(&mut self, stereo: &mut [f32]) -> Result<(), String> {
-        if stereo.len() % 2 != 0 || stereo.len() / 2 > self.max_frames as usize {
-            return Err("Invalid offline LiveFX stereo block".into());
+    pub(crate) fn process(&mut self, stereo: &mut [f32]) -> Result<(), String> {
+        if stereo.is_empty() || stereo.len() % 2 != 0 || stereo.len() / 2 > self.max_frames as usize
+        {
+            return Err("Invalid native LiveFX stereo block".into());
         }
         let mut error = [0u8; ERROR_CAPACITY];
         let status = unsafe {
@@ -126,12 +132,12 @@ impl Probe {
         }
     }
 
-    fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         unsafe { native_genesis_livefx_clear(self.host.as_ptr()) }
     }
 
-    fn reports(&mut self) -> String {
-        let mut output = [0u8; ERROR_CAPACITY];
+    pub(crate) fn reports(&mut self) -> String {
+        let mut output = [0u8; REPORT_CAPACITY];
         let written = unsafe {
             native_genesis_livefx_reports(
                 self.host.as_ptr(),
@@ -147,28 +153,28 @@ impl Probe {
         String::from_utf8_lossy(&output[..end]).into_owned()
     }
 
-    fn initialized(&self) -> bool {
+    pub(crate) fn initialized(&self) -> bool {
         unsafe { native_genesis_livefx_initialized(self.host.as_ptr()) != 0 }
     }
 
-    fn active(&self) -> u32 {
+    pub(crate) fn active(&self) -> u32 {
         unsafe { native_genesis_livefx_active(self.host.as_ptr()) }
     }
 
-    fn faulted(&self) -> bool {
+    pub(crate) fn faulted(&self) -> bool {
         unsafe { native_genesis_livefx_faulted(self.host.as_ptr()) != 0 }
     }
 
-    fn process_calls(&self) -> u64 {
+    pub(crate) fn process_calls(&self) -> u64 {
         unsafe { native_genesis_livefx_process_calls(self.host.as_ptr()) }
     }
 
-    fn initializations(&self) -> u64 {
+    pub(crate) fn initializations(&self) -> u64 {
         unsafe { native_genesis_livefx_initializations(self.host.as_ptr()) }
     }
 }
 
-impl Drop for Probe {
+impl Drop for LiveFxHost {
     fn drop(&mut self) {
         unsafe { native_genesis_livefx_destroy(self.host.as_ptr()) }
     }
@@ -176,7 +182,7 @@ impl Drop for Probe {
 
 #[cfg(test)]
 mod tests {
-    use super::Probe;
+    use super::{LiveFxHost as Probe, MAX_COMMAND_BYTES};
     use serde_json::json;
     use std::time::{Duration, Instant};
 
@@ -208,6 +214,22 @@ mod tests {
         assert_eq!(probe.process_calls(), 0);
         assert_eq!(probe.initializations(), 0);
         assert!(!probe.initialized());
+    }
+
+    #[test]
+    fn actual_device_sample_rate_is_a_read_only_global_for_existing_dsp() {
+        for rate in [44_100, 48_000, 96_000] {
+            let mut probe = Probe::new(rate, 128, 16 * 1024 * 1024, 50_000).unwrap();
+            register(
+                &mut probe,
+                "process(input, output, state, context) { const rate=Reflect.get(globalThis,'sampleRate'); const descriptor=Object.getOwnPropertyDescriptor(globalThis,'sampleRate'); if(rate!==context.rate||descriptor.writable||descriptor.configurable) throw new Error('Native sampleRate changed'); for(let c=0;c<2;c++) output[c].fill(rate/1000000); }",
+                json!({"rate":rate}),
+            );
+            let mut pcm = [0.; 4];
+            probe.process(&mut pcm).unwrap();
+            assert_eq!(pcm, [rate as f32 / 1_000_000.; 4]);
+            assert!(probe.reports().is_empty());
+        }
     }
 
     #[test]
@@ -351,10 +373,81 @@ mod tests {
     #[test]
     fn rust_adapter_rejects_out_of_bounds_blocks_without_entering_js() {
         let mut probe = probe();
+        assert!(probe.process(&mut []).is_err());
         assert!(probe.process(&mut [0.; 3]).is_err());
         assert!(probe.process(&mut [0.; 258]).is_err());
         assert_eq!(probe.process_calls(), 0);
         assert!(!probe.initialized());
         assert!(probe.command(&json!({"action":"unknown"})).is_err());
+    }
+
+    #[test]
+    fn oversized_command_is_rejected_before_initializing_engine() {
+        let mut probe = probe();
+        let error = probe
+            .command(&json!({"action":"register","name":"large",
+                "source":" ".repeat(MAX_COMMAND_BYTES),"context":{}}))
+            .unwrap_err();
+        assert!(error.contains("256 KiB"), "{error}");
+        assert!(!probe.initialized());
+        assert_eq!(probe.initializations(), 0);
+    }
+
+    #[test]
+    fn failed_first_registration_releases_the_unused_vm_and_can_retry() {
+        let mut probe = probe();
+        assert!(probe
+            .command(&json!({"action":"register","name":"test","source":"invalid {", "context":{}}))
+            .is_err());
+        assert!(!probe.initialized());
+        assert_eq!(probe.active(), 0);
+        assert!(!probe.faulted());
+        register(&mut probe, GAIN, json!({"gain":0.5}));
+        let mut pcm = [0.5, -0.25];
+        probe.process(&mut pcm).unwrap();
+        assert_eq!(pcm, [0.25, -0.125]);
+    }
+
+    #[test]
+    fn bounded_reports_are_not_truncated_by_rust_and_clear_discards_old_reports() {
+        let mut probe = probe();
+        let source = "process() { throw new Error('x'.repeat(20000)); }";
+        register(&mut probe, source, json!({}));
+        probe.process(&mut [0.1, -0.1]).unwrap();
+        let report = probe.reports();
+        assert_eq!(report.len(), 16 * 1024);
+        assert!(report.starts_with("[liveFx:test]"), "{report}");
+        assert!(probe.reports().is_empty());
+        register(&mut probe, source, json!({}));
+        probe.process(&mut [0.1, -0.1]).unwrap();
+        probe.clear();
+        assert!(probe.reports().is_empty());
+        assert!(!probe.initialized());
+    }
+
+    #[test]
+    fn fatal_rack_stays_dry_until_explicit_clear_and_then_can_be_reused() {
+        let mut probe = Probe::new(48_000, 128, 16 * 1024 * 1024, 5_000).unwrap();
+        register(&mut probe, "process() { for (;;) {} }", json!({}));
+        let mut pcm = [0.2, -0.3];
+        assert!(probe.process(&mut pcm).is_err());
+        assert!(probe.faulted());
+        assert_eq!(pcm, [0.2, -0.3]);
+        let calls = probe.process_calls();
+        for _ in 0..16 {
+            probe.process(&mut pcm).unwrap();
+        }
+        assert_eq!(probe.process_calls(), calls);
+        assert_eq!(pcm, [0.2, -0.3]);
+        let error = probe
+            .command(&json!({"action":"register","name":"test", "source":GAIN,
+                "context":{"gain":0.5}}))
+            .unwrap_err();
+        assert!(error.contains("Stop and Run"), "{error}");
+        probe.clear();
+        assert!(!probe.faulted());
+        register(&mut probe, GAIN, json!({"gain":0.5}));
+        probe.process(&mut pcm).unwrap();
+        assert_eq!(pcm, [0.1, -0.15]);
     }
 }

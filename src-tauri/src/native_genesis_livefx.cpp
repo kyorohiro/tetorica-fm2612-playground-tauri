@@ -1,4 +1,5 @@
-// Offline QuickJS-NG embedding prototype. Not connected to the audio callback.
+// QuickJS-NG rack for the dedicated generation worker and offline probe.
+// Never instantiate, execute or destroy this host in the audio callback.
 #include "native_genesis_livefx.h"
 #include "../native-livefx/quickjs-ng/quickjs.h"
 #include "../native-livefx/custom_fx.inc"
@@ -54,7 +55,7 @@ struct Host {
         runtime = nullptr; context = nullptr;
         rack = command = process = reporter = decode_context = JS_UNDEFINED;
         active = 0; running = interrupted = faulted = false;
-        if (reset_rendering) has_processed = false;
+        if (reset_rendering) { has_processed = false; reports.clear(); }
     }
     void begin() {
         interrupted = false; running = true;
@@ -99,9 +100,10 @@ std::string exception(Host *host) {
     // Thrown values can implement hostile toString/getters. Error formatting
     // must remain under the same bounded execution policy as the callback.
     host->begin();
-    const char *text = JS_ToCString(host->context, value);
+    size_t length = 0;
+    const char *text = JS_ToCStringLen(host->context, &length, value);
     host->end();
-    std::string result = text ? text : "QuickJS exception";
+    std::string result = text ? std::string(text, std::min(length, max_report_bytes)) : "QuickJS exception";
     if (text) JS_FreeCString(host->context, text);
     else {
         const JSValue formatting_error = JS_GetException(host->context);
@@ -133,6 +135,12 @@ bool initialize(Host *host, std::string &error) {
     host->context = JS_NewContext(host->runtime);
     if (!host->context) { error = "Cannot create QuickJS context"; host->clear(false); return false; }
     JS_SetContextOpaque(host->context, host);
+    // Existing liveFx programs use the AudioWorklet's read-only rate for DSP
+    // coefficients. Supply the real native device rate, never a guessed 48 kHz.
+    JSValue global = JS_GetGlobalObject(host->context);
+    const int rate_defined = JS_DefinePropertyValueStr(host->context, global, "sampleRate", JS_NewUint32(host->context, host->rate), 0);
+    JS_FreeValue(host->context, global);
+    if (rate_defined < 0) { error = exception(host); host->clear(false); return false; }
     // No quickjs-libc, module loader, filesystem, network, timers or host eval API.
     const std::string source = std::string(native_livefx_source) + "\nnew LiveFX(" + std::to_string(host->rate) + ");";
     host->begin();
@@ -228,7 +236,7 @@ int32_t native_genesis_livefx_command(void *opaque, int32_t action, const char *
     if (!host->context && action == 2) return 1;
     if (!host->context && action == 1) { copy_message(error, capacity, "Unknown liveFx"); return 0; }
     // An interrupted or fatal rack remains dry until the caller clears it.
-    if (host->faulted) { copy_message(error, capacity, "QuickJS LiveFX rack faulted; clear before retry"); return 0; }
+    if (host->faulted) { copy_message(error, capacity, "QuickJS LiveFX rack faulted; Stop and Run to retry"); return 0; }
     EmptyCleanup cleanup(host);
     std::string message;
     try {

@@ -26,8 +26,8 @@ fn main() {
         .file("native-genesis/segapsg.cpp")
         .warnings(false)
         .compile("tetorica_native_genesis");
-    // Offline LiveFX probe only. The application has no route from its audio
-    // callback to this host, and the host creates a JSRuntime only on register.
+    // LiveFX executes only on its generation/probe owner thread, never the
+    // output callback. The host creates a JSRuntime only on first register.
     cc::Build::new()
         .std("c11")
         .opt_level(2)

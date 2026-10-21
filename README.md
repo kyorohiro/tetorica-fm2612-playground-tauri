@@ -64,15 +64,21 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
 
 NativeはGenesis modeのYM2612＋Sega PSG、Main／Worker実行、音色・レジスター操作、Keyboard、
-DAC・サンプル・noise、組込みFX、Audioモニターと最終出力の録音に対応します。
+DAC・サンプル・noise、組込みFX・JavaScriptの`liveFx`、Audioモニターと最終出力の録音に対応します。
 ミキサー・音量・停止もNative側で処理します。既存のPlayground用C++音源を直接ビルドし、
 CPALの音声コールバックで生成・変換・ミックスしてシステム既定の出力機器へ送ります。
 AudioWorklet／WebSocketでPCMを転送する現行Audifyとは別の経路です。
 Nativeを使う間はWeb Audio用のAudio outputメニューを表示しません。
 
-QuickJS-NGの`liveFx`ホストは、別のオフライン試作としてビルドに含めています。
-Native音声やIPCからの呼出しはまだ接続せず、通常再生ではJSRuntimeを作りません。
-試作では既存の`custom_fx.js`を共有し、初回登録時だけVMを生成、最後の削除で解放します。
+`liveFx`は既存の`custom_fx.js`をQuickJS-NGで実行します。
+使用中だけNativeの専用workerで処理し、2048フレーム（48kHzで約42.7ms）の遅延が加わります。
+初回登録までworker・VMを作らず、未使用時は直接出力します。最後の削除でVMを解放します。
+音声callbackはJSの完了を待たず、処理が間に合わない場合は同じ時刻のdry音へ戻します。
+Audioモニターと録音は処理後の最終出力です。FX MonitorのFX単位表示は未対応です。
+processは同期関数に限り、外側の変数やDOM・タイマーを使えません。`sampleRate`は利用できます。
+contextには循環参照・TypedArray・Map等も渡せますが、Error・Blob／File・SharedArrayBuffer等は未対応です。
+context graphは128 KiB、ソースは192 KiB、命令全体は256 KiB、名前は128 UTF-8 bytesまでです。
+通常の例外は該当FXをbypassして表示します。VMの実行制限で継続不能になった場合はStop／Runで再試行します。
 由来とMITライセンスは`src-tauri/native-livefx/`に保存し、ライセンスをアプリにも同梱します。
 共有ソースとエンジンの照合・デバイスを使わないRustテストは次で実行できます。
 
@@ -84,7 +90,7 @@ cargo test --offline --locked --manifest-path src-tauri/Cargo.toml native_live_f
 `noise.create()`は共通C DSPのwhite／pink／brown／gray／clipを32声まで生成します。
 filter・ramp・attack／releaseに対応し、loop取消しではrelease後に領域を回収します。
 圧縮サンプルは読込み時だけブラウザーのofflineデコーダーを使い、Native側で再生します。
-追加チップ、stream、JavaScriptの`liveFx`、chip clock変更、独立した音色ファイルの試聴、
+追加チップ、stream、chip clock変更、独立した音色ファイルの試聴、
 PSGの適用済み状態表示は未対応です。
 対応するWeb Audioへ設定で切り戻してください。FMの編集情報はJS側の設定値であり、
 Native内部のエンベロープ等の観測ではありません。

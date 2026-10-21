@@ -5,8 +5,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-// Offline prototype only: all operations must run on one dedicated owner
-// thread. QuickJS can allocate, collect cycles and exceed its interrupt budget;
+// All operations must run on one dedicated generation/probe owner thread.
+// QuickJS can allocate, collect cycles and exceed its interrupt budget;
 // this interface must never be called from the CPAL output callback.
 void *native_genesis_livefx_create(uint32_t rate, uint32_t max_frames,
                                   size_t memory_limit, uint64_t budget_us);
@@ -20,7 +20,8 @@ int32_t native_genesis_livefx_command(void *, int32_t action, const char *comman
 // the entire block unchanged; shared-rack callback errors bypass that effect.
 int32_t native_genesis_livefx_process(void *, float *stereo, uint32_t frames,
                                      char *error, size_t capacity);
-// clear releases the engine. An empty rack never evaluates/processes JavaScript.
+// clear releases the engine, reports and fatal state. An empty rack never
+// evaluates/processes JavaScript. Recover a fatal rack with Stop/Run (clear).
 void native_genesis_livefx_clear(void *);
 uint32_t native_genesis_livefx_active(void *);
 uint32_t native_genesis_livefx_initialized(void *);
