@@ -62,8 +62,8 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 **Native (experimental)** を明示的に選べます。切替時は演奏を停止し、
 編集中のプロジェクトを引き継いでページを開き直します。選択だけではデバイスを開かず、
 RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
-Native選択中のModeには、対応するGenesis／Mega CD／NES＋FDS／DX7／Game Boy／SNES／PC Engineを表示します。他modeへ移るときは先にWeb Audioへ戻してください。
-Genesis／Mega CD／NES＋FDS／DX7／Game Boy／SNES／PC Engine以外ではNativeを選べません。Web Audioでは全Modeを選べます。
+Native選択中のModeには、対応するGenesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engineを表示します。他modeへ移るときは先にWeb Audioへ戻してください。
+Genesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engine以外ではNativeを選べません。Web Audioでは全Modeを選べます。
 
 NativeはGenesis modeのYM2612＋Sega PSG、Main／Worker実行、音色・レジスター操作、Keyboard、
 DAC・サンプル・noise、組込みFX・JavaScriptの`liveFx`、Audioモニターと最終出力の録音に対応します。
@@ -78,6 +78,14 @@ KeyboardのChip／CH選択、`loadSample`、ミキサー、RFのclock変更に�
 RFの音も共通FX・最終出力monitor・録音へ入ります。StopはRAMと設定を保持して発音を止めます。
 音声のファイル選択・マイク入力・編集は既存のWebView側、再生はNative側で行います。
 Nativeコアの由来とBSD-3-Clauseライセンスは`src-tauri/native-megacd/`に保存し、ライセンスをアプリにも同梱します。
+
+32Xでは既存のFull構成を引き継ぎ、YM2612＋Sega PSG＋RF5C164に加え、
+3段FIFOとタイマーを持つPWMをNativeで生成します。
+Browser／npmのWASMと同じC++コアを使い、`pwm`／`await useSoundChip('pwm')`、
+Main／Workerのレジスター操作・frame指定の予約書込み・clock変更に対応します。
+PWMも共通ミキサー・FX／liveFx・monitor・録音へ入ります。Stopは予約と保持中の出力を消し、
+clock・routing・cycleを保持します。resetはレジスターも初期化します。
+32X NukedはWeb Audioで使ってください。由来とBSD-3-Clauseライセンスは`src-tauri/native-pwm/`に保存しています。
 
 DX7 modeではMSFAのC++音源を直接使い、16音ポリフォニーで生成します。
 `dx7`／`useSoundChip('dx7')`、音色・SysEx、オペレーター・feedback編集、Keyboard／Operatorsに対応します。

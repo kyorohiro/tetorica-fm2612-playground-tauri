@@ -59,7 +59,8 @@
       "native-huc6280/LICENSE": "huc6280-LICENSE.txt",
       "native-snes/LICENSE": "snes-spc-COPYING.txt",
       "native-snes/README.md": "snes-spc-native-README.md",
-      "native-snes/": "native-snes/"
+      "native-snes/": "native-snes/",
+      "native-pwm/LICENSE": "pwm32x-LICENSE.txt"
     }
   }
 }

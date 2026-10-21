@@ -1,0 +1,19 @@
+{
+  "source": "hello_ymfm shared wasm/pwm32x_core.h",
+  "license": "BSD-3-Clause",
+  "adaptation": "None; byte-identical shared Browser/WASM/Native core",
+  "files": {
+    "wasm/pwm32x_core.h": {
+      "snapshot": "snapshot/wasm/pwm32x_core.h",
+      "sha256": "5ad3e58e1d0133d676ffcc2e332840fb57f19d97cc52b6302b1914b084b8927c"
+    },
+    "third_party/mame-32x-pwm/LICENSE": {
+      "snapshot": "snapshot/third_party/mame-32x-pwm/LICENSE",
+      "sha256": "6a64f110345311659c26dc7bfdc5d8e05542fec917afbd63aa623d8d5a0098f6"
+    },
+    "third_party/mame-32x-pwm/README.md": {
+      "snapshot": "snapshot/third_party/mame-32x-pwm/README.md",
+      "sha256": "f25748dec64d5b5475e0117a48620748c39807d18fae49501237f89fdacb2cec"
+    }
+  }
+}

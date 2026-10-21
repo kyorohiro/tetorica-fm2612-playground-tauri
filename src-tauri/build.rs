@@ -122,6 +122,18 @@ fn main() {
         .file("native-snes/snapshot/third_party/snes-spc/snes_spc/SPC_DSP.cpp")
         .warnings(false)
         .compile("tetorica_native_snes");
+    println!("cargo:rerun-if-changed=native-pwm");
+    println!("cargo:rerun-if-changed=src/native_genesis_pwm.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_pwm.h");
+    cc::Build::new()
+        .cpp(true)
+        .std("c++17")
+        .opt_level(2)
+        .flag_if_supported("-ffp-contract=off")
+        .include("native-pwm/snapshot/wasm")
+        .file("src/native_genesis_pwm.cpp")
+        .warnings(false)
+        .compile("tetorica_native_pwm");
     // LiveFX executes only on its generation/probe owner thread, never the
     // output callback. The host creates a JSRuntime only on first register.
     cc::Build::new()
