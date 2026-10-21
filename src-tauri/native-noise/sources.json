@@ -1,0 +1,6 @@
+{
+  "source": "hello_ymfm",
+  "sha256": {
+    "native/audio_effect/noise.c": "b32e4f637782c4a9a35cfaf0c1134d68fa9977db75e4033e0d4fbc0738c11e71"
+  }
+}

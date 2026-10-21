@@ -63,14 +63,18 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 編集中のプロジェクトを引き継いでページを開き直します。選択だけではデバイスを開かず、
 RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
 
-NativeはGenesis modeのYM2612＋Sega PSG、Main実行、音色・レジスター操作、Keyboard、
-ミキサー・音量・停止に対応します。既存のPlayground用C++音源を直接ビルドし、
+NativeはGenesis modeのYM2612＋Sega PSG、Main／Worker実行、音色・レジスター操作、Keyboard、
+DAC・サンプル・noise、組込みFX、Audioモニターと最終出力の録音に対応します。
+ミキサー・音量・停止もNative側で処理します。既存のPlayground用C++音源を直接ビルドし、
 CPALの音声コールバックで生成・変換・ミックスしてシステム既定の出力機器へ送ります。
 AudioWorklet／WebSocketでPCMを転送する現行Audifyとは別の経路です。
 Nativeを使う間はWeb Audio用のAudio outputメニューを表示しません。
 
-初期段階ではWorker、追加チップ、DAC／サンプル／stream／noise、FX、音声記録、
-chip clock変更、独立した音色ファイルの試聴、PSGの適用済み状態表示は未対応です。
+`noise.create()`は共通C DSPのwhite／pink／brown／gray／clipを32声まで生成します。
+filter・ramp・attack／releaseに対応し、loop取消しではrelease後に領域を回収します。
+圧縮サンプルは読込み時だけブラウザーのofflineデコーダーを使い、Native側で再生します。
+追加チップ、stream、JavaScriptの`liveFx`、chip clock変更、独立した音色ファイルの試聴、
+PSGの適用済み状態表示は未対応です。
 対応するWeb Audioへ設定で切り戻してください。FMの編集情報はJS側の設定値であり、
 Native内部のエンベロープ等の観測ではありません。
 Keyboardは物理CHを共有し、scriptの未来の書込みが手動演奏を上書きする場合があるため、
@@ -81,7 +85,9 @@ Keyboardは物理CHを共有し、scriptの未来の書込みが手動演奏を�
 ```sh
 cargo test --locked --manifest-path src-tauri/Cargo.toml native_genesis
 node scripts/check_native_genesis_core.mjs ../..
+node scripts/check_native_genesis_noise.mjs ../..
 python3 scripts/sync_native_genesis.py --check --source ../..
+python3 scripts/sync_native_genesis_noise.py --check --source ../..
 ```
 
 機器を無音で開いて時計・停止・解放だけ確認する場合は、明示的に実行します。

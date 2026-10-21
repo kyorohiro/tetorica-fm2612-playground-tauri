@@ -19,6 +19,11 @@ use std::{
 mod media;
 #[path = "native_genesis_monitor.rs"]
 mod monitor;
+#[path = "native_genesis_noise.rs"]
+mod noise;
+#[cfg(test)]
+#[path = "native_genesis_noise_tests.rs"]
+mod noise_tests;
 #[path = "native_genesis_recording.rs"]
 mod recording;
 const OWNERS: usize = 512;
@@ -122,6 +127,7 @@ enum Action {
     SampleTimedStop(Arc<media::StopTargets>),
     Record(Arc<recording::Capture>),
     Fx(FxAction),
+    Noise(Option<noise::Prepared>),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Owner {
@@ -181,6 +187,9 @@ enum CommandAction {
     },
     PsgReset,
     Reset,
+    Noise {
+        message: noise::Message,
+    },
     DacPlay {
         name: String,
         #[serde(default)]
@@ -247,6 +256,9 @@ impl Command {
                     voice,
                     name: name.clone(),
                 }
+            }
+            CommandAction::Noise { .. } => {
+                return Err("Native noise command requires resource preparation".into())
             }
             CommandAction::DacPlay { .. }
             | CommandAction::DacStreamPlay { .. }
@@ -363,6 +375,8 @@ impl Command {
 struct Shared {
     queue: ArrayQueue<Event>,
     monitor: monitor::Monitor,
+    noise: Mutex<noise::Control>,
+    noise_completed: [AtomicU64; noise::VOICES],
     media: Mutex<media::Store>,
     fx: Mutex<FxController>,
     retired: ArrayQueue<Arc<media::Reservation>>,
@@ -391,6 +405,8 @@ impl Shared {
         Self {
             queue: ArrayQueue::new(CAPACITY),
             monitor: monitor::Monitor::new(rate),
+            noise: Mutex::new(noise::Control::default()),
+            noise_completed: std::array::from_fn(|_| AtomicU64::new(0)),
             media: Mutex::new(media::Store::default()),
             fx: Mutex::new(FxController::default()),
             retired: ArrayQueue::new(CAPACITY),
@@ -429,6 +445,12 @@ impl Shared {
             .lock()
             .map_err(|_| "Native PCM state is unavailable")?;
         self.reclaim(&mut store);
+        let mut noise_control = self
+            .noise
+            .lock()
+            .map_err(|_| "Native noise state is unavailable")?;
+        let mut noise_plan = noise_control.clone();
+        noise_plan.collect(&self.noise_completed);
         // Resolve every bank, tag and range before admission or state mutation.
         let mut voices = HashSet::new();
         let mut streams = 0;
@@ -436,7 +458,11 @@ impl Shared {
             .iter()
             .map(|command| {
                 let owner = command.owner(self)?;
-                let action = command.resolve(&store, self.rate, owner)?;
+                let action = if let CommandAction::Noise { message } = &command.action {
+                    Action::Noise(noise_plan.prepare(message, self.rate)?)
+                } else {
+                    command.resolve(&store, self.rate, owner)?
+                };
                 if let Action::SamplePlay(reservation) = &action {
                     if !voices.insert(reservation.voice) {
                         return Err("Duplicate native sample voice ID in batch".into());
@@ -466,6 +492,7 @@ impl Shared {
             self.overflows.fetch_add(1, Ordering::Relaxed);
             return Err("Native command queue is full; playback was not silently truncated".into());
         }
+        *noise_control = noise_plan;
         self.dac_streams.fetch_add(streams, Ordering::AcqRel);
         let epoch = self.epoch.load(Ordering::Acquire);
         for (command, (mut action, owner)) in commands.iter().zip(actions) {
@@ -754,6 +781,10 @@ impl Shared {
             }
             std::thread::sleep(Duration::from_millis(2));
         }
+        self.noise
+            .lock()
+            .map_err(|_| "Native noise state is unavailable")?
+            .clear();
         // Runtime Stop disposes run FX. The callback has released every graph
         // at the fade barrier; clear the control model and reclaim off-thread.
         let mut fx = self
@@ -784,6 +815,7 @@ struct DacStream {
 struct Renderer {
     core: Core,
     fx: FxRenderer,
+    noise: noise::Renderer,
     voices: [Option<media::Voice>; media::VOICES],
     dac: Option<DacVoice>,
     streams: [Option<DacStream>; 8],
@@ -809,6 +841,7 @@ impl Renderer {
         Ok(Self {
             core: Core::new(rate)?,
             fx: FxRenderer::new(rate),
+            noise: noise::Renderer::new(rate)?,
             voices: std::array::from_fn(|_| None),
             dac: None,
             streams: std::array::from_fn(|_| None),
@@ -883,6 +916,7 @@ impl Renderer {
                     self.psg_owners[channel] = None;
                 }
             }
+            self.noise.cancel_invalid(|owner| shared.valid_owner(owner));
             for voice in self.voices.iter_mut().flatten() {
                 if !shared.valid_owner(voice.owner) {
                     voice.reservation.cancel();
@@ -1034,6 +1068,11 @@ impl Renderer {
                 self.record = Some(capture);
             }
             Action::Fx(action) => self.fx.apply(action),
+            Action::Noise(command) => {
+                if let Some(command) = command {
+                    self.noise.apply(command, owner, &shared.noise_completed);
+                }
+            }
             action => {
                 match &action {
                     Action::Write(port, reg, value) => {
@@ -1144,12 +1183,15 @@ impl Renderer {
             if event.frame != 0 && event.frame < self.frame {
                 shared.late.fetch_add(1, Ordering::Relaxed);
             }
-            if self.idle
-                && !matches!(
-                    *event.action.borrow(),
-                    Action::Mix(_) | Action::Reset | Action::Record(_) | Action::Fx(_)
-                )
-            {
+            let wakes_audio = {
+                let action = event.action.borrow();
+                match &*action {
+                    Action::Noise(command) => command.is_some_and(|command| command.starts()),
+                    Action::Mix(_) | Action::Reset | Action::Record(_) | Action::Fx(_) => false,
+                    _ => true,
+                }
+            };
+            if self.idle && wakes_audio {
                 self.idle = false;
                 self.resume_remaining = (shared.rate / 200).max(1);
             }
@@ -1161,6 +1203,7 @@ impl Renderer {
         }
         self.advance_dac(shared);
         let mut pcm = self.core.sample_bus();
+        self.noise.mix(&mut pcm, &shared.noise_completed);
         for slot in &mut self.voices {
             if let Some(voice) = slot {
                 if !voice.sample(&mut pcm) {
@@ -1186,6 +1229,7 @@ impl Renderer {
                     native_genesis_stop_voices(self.core.0);
                 }
                 self.clear_media(shared);
+                self.noise.reset(&shared.noise_completed);
                 self.fx.stop();
                 self.fm_owners = [None; 6];
                 self.psg_owners = [None; 4];
