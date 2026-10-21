@@ -1,0 +1,34 @@
+{
+  "source": "hello_ymfm third_party/mame-gameboy (current browser WASM core)",
+  "license": "BSD-3-Clause",
+  "mameCppRevision": "0e6df89e98f10a05af5fd4df32572982e1709c81",
+  "mameHeaderRevision": "fca00cace9e40ca70d82bbcc6dbd82167325e12b",
+  "adaptation": "Header adds one friend accessor for applied state / gate-only Stop; DSP .cpp unchanged",
+  "files": {
+    "third_party/mame-gameboy/gameboy_apu.cpp": {
+      "snapshot": "snapshot/third_party/mame-gameboy/gameboy_apu.cpp",
+      "sha256": "ba5fa988a82d175500dac392f518d7d86258c3743910b87f24218ef5602c91de",
+      "canonicalSha256": "ba5fa988a82d175500dac392f518d7d86258c3743910b87f24218ef5602c91de"
+    },
+    "third_party/mame-gameboy/gameboy_apu.h": {
+      "snapshot": "snapshot/third_party/mame-gameboy/gameboy_apu.h",
+      "sha256": "3f464c0874e12995ddc3403587ab4bed0538c57e49d3179c7a0c50e6a1d96a12",
+      "canonicalSha256": "1d0d70f8d716dd62f67cc4d4a31d3d5df85c602711fb0595ea754c50249475a8"
+    },
+    "third_party/mame-gameboy/LICENSE": {
+      "snapshot": "snapshot/third_party/mame-gameboy/LICENSE",
+      "sha256": "acb20353889f489aba276d31cbd8ffce15c6bd353f873dc2255e67053446f3dc",
+      "canonicalSha256": "acb20353889f489aba276d31cbd8ffce15c6bd353f873dc2255e67053446f3dc"
+    },
+    "third_party/mame-gameboy/README.md": {
+      "snapshot": "snapshot/third_party/mame-gameboy/README.md",
+      "sha256": "831990cae084021f75b9432aa6a9c50f2b686e79541482e86997a9cf67e50f61",
+      "canonicalSha256": "831990cae084021f75b9432aa6a9c50f2b686e79541482e86997a9cf67e50f61"
+    },
+    "wasm/gameboy_apu_wasm.cpp": {
+      "snapshot": "snapshot/wasm/gameboy_apu_wasm.cpp",
+      "sha256": "03ad182b928394ca58340a50e36570dc425ff080338bd196b903572638bc2db7",
+      "canonicalSha256": "03ad182b928394ca58340a50e36570dc425ff080338bd196b903572638bc2db7"
+    }
+  }
+}

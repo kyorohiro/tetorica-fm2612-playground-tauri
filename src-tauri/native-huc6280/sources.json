@@ -1,0 +1,31 @@
+{
+  "source": "hello_ymfm/third_party/mame-huc6280 (same source as Browser WASM)",
+  "upstream": "mamedev/mame ad84df9d8a14c9f2bdd996b22d2832bcdb2e4f24",
+  "license": "BSD-3-Clause",
+  "files": {
+    "third_party/mame-huc6280/huc6280.cpp": {
+      "snapshot": "snapshot/third_party/mame-huc6280/huc6280.cpp",
+      "sha256": "5693c83943957e2ee0ee1bd5045503034363fed282764f99acb907293222f26f"
+    },
+    "third_party/mame-huc6280/huc6280.h": {
+      "snapshot": "snapshot/third_party/mame-huc6280/huc6280.h",
+      "sha256": "6b1464fc6d56390e56f99bf072d7300126cc91cd317bacc78b43be4d552af2b6"
+    },
+    "third_party/mame-huc6280/LICENSE": {
+      "snapshot": "snapshot/third_party/mame-huc6280/LICENSE",
+      "sha256": "d9aef90a96f93be90d39250e2a85c4ce78b381b6abbf16856fc337e71263dc1d"
+    },
+    "third_party/mame-huc6280/README.md": {
+      "snapshot": "snapshot/third_party/mame-huc6280/README.md",
+      "sha256": "1b792f719db680de5b5121ed2293256ac00fe6e51725e2aadc38dfaaa768b8dd"
+    },
+    "third_party/mame-huc6280/upstream/c6280.cpp": {
+      "snapshot": "snapshot/third_party/mame-huc6280/upstream/c6280.cpp",
+      "sha256": "192eeee545d8f438000f68e3867a26df7cd7b26efd9985d14f4dd7b53d61c8fc"
+    },
+    "third_party/mame-huc6280/upstream/c6280.h": {
+      "snapshot": "snapshot/third_party/mame-huc6280/upstream/c6280.h",
+      "sha256": "167fd885f209efdbdbe9375f7a39fce6f2545006bc5b4e06673824865162dfe5"
+    }
+  }
+}

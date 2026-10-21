@@ -62,8 +62,8 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 **Native (experimental)** を明示的に選べます。切替時は演奏を停止し、
 編集中のプロジェクトを引き継いでページを開き直します。選択だけではデバイスを開かず、
 RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
-Native選択中のModeには、対応するGenesis／Mega CD／NES＋FDS／DX7を表示します。他modeへ移るときは先にWeb Audioへ戻してください。
-Genesis／Mega CD／NES＋FDS／DX7以外ではNativeを選べません。Web Audioでは全Modeを選べます。
+Native選択中のModeには、対応するGenesis／Mega CD／NES＋FDS／DX7／Game Boy／SNES／PC Engineを表示します。他modeへ移るときは先にWeb Audioへ戻してください。
+Genesis／Mega CD／NES＋FDS／DX7／Game Boy／SNES／PC Engine以外ではNativeを選べません。Web Audioでは全Modeを選べます。
 
 NativeはGenesis modeのYM2612＋Sega PSG、Main／Worker実行、音色・レジスター操作、Keyboard、
 DAC・サンプル・noise、組込みFX・JavaScriptの`liveFx`、Audioモニターと最終出力の録音に対応します。
@@ -92,8 +92,19 @@ Main／Workerの`nes`／`useSoundChip('nes')`、KeyboardのChip／CH選択、Ope
 StopはRAM・波形・変調表・設定・clockを保持し、resetはRAMと波形も初期化します。
 音は共通FX／liveFx・monitor・録音へ入り、YM2612／PSG／DX7は生成しません。
 VGM取込みは基準clockが1,789,773 Hzのときに主音源を借用します。PALや別の基準clockのVGMはWeb Audioを使ってください。
-Browser版のJS音源は比較基準として維持しています。Nativeコア・原典・ハッシュは`src-tauri/native-nes/`に保存し、
+Browser版も同じC++音源のWASMを使います。Nativeコア・原典・ハッシュは`src-tauri/native-nes/`に保存し、
 JSNESのApache-2.0、FDSのMITライセンスとJSNES著作者情報をアプリへ同梱します。
+
+Game Boy／PC Engineでは、Browser版と同じMAME由来のC++音源を直接使います。
+`gameboy`／`pce`と`useSoundChip('gameboy'/'huc6280')`、Main／Worker、KeyboardのChip／CH選択、
+Operatorsの音色・波形編集／試聴、clock変更に対応します。Stopは波形・音色・clockを保持します。
+
+SNESではS-DSPをNativeで動かし、8声のBRR楽器・サンプルRAM・ADSR／GAIN・noise・echoを使えます。
+`snes`／`useSoundChip('snes')`、BRRアップロード、Main／Worker、Keyboard／Operators、
+キャプチャ済みDSP／RAM timelineの準備・再生・停止・状態取得に対応します。
+StopはBRR・RAMと設定を保持して発音を止めます。SPC700 CPUを実行するSPCファイルプレーヤーはWeb Audioを使ってください。
+3モードとも共通ミキサー・FX／liveFx・最終出力monitor／録音へ接続し、Genesis音源は生成しません。
+Game Boy／HuC6280のBSDライセンス、SNES_SPCのLGPL-2.1とソース・ビルド手順を同梱しています。
 
 `liveFx`は既存の`custom_fx.js`をQuickJS-NGで実行します。
 使用中だけNativeの専用workerで処理し、2048フレーム（48kHzで約42.7ms）の遅延が加わります。

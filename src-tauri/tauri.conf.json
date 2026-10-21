@@ -54,7 +54,12 @@
       "native-nes/LICENSE-FDS": "fixnes-fds-LICENSE.txt",
       "native-nes/snapshot/third_party/jsnes/AUTHORS.md": "jsnes-AUTHORS.md",
       "../desktop/git-licenses.txt": "git-licenses.txt",
-      "../desktop/git-js-licenses.txt": "git-js-licenses.txt"
+      "../desktop/git-js-licenses.txt": "git-js-licenses.txt",
+      "native-gameboy/LICENSE": "gameboy-LICENSE.txt",
+      "native-huc6280/LICENSE": "huc6280-LICENSE.txt",
+      "native-snes/LICENSE": "snes-spc-COPYING.txt",
+      "native-snes/README.md": "snes-spc-native-README.md",
+      "native-snes/": "native-snes/"
     }
   }
 }

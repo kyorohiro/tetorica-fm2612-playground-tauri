@@ -15,11 +15,18 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(test)]
+#[path = "native_genesis_consoles_tests.rs"]
+mod consoles_tests;
 #[path = "native_genesis_dx7.rs"]
 mod dx7;
 #[cfg(test)]
 #[path = "native_genesis_dx7_tests.rs"]
 mod dx7_tests;
+#[path = "native_genesis_gameboy.rs"]
+mod gameboy;
+#[path = "native_genesis_huc6280.rs"]
+mod huc6280;
 #[path = "native_genesis_livefx.rs"]
 mod livefx;
 #[path = "native_genesis_media.rs"]
@@ -28,6 +35,9 @@ mod media;
 mod monitor;
 #[path = "native_genesis_nes.rs"]
 mod nes;
+#[path = "native_genesis_snes.rs"]
+mod snes;
+
 #[cfg(test)]
 #[path = "native_genesis_nes_tests.rs"]
 mod nes_tests;
@@ -141,6 +151,10 @@ impl Drop for Core {
 enum Action {
     Dx7(Arc<dx7::Prepared>),
     Nes(Arc<nes::Prepared>),
+    Gameboy(Arc<gameboy::Prepared>),
+    Snes(Arc<snes::Prepared>),
+    Huc6280(Arc<huc6280::Prepared>),
+
     RfWrite(u8, u8, bool),
     RfWriteMemory(u16, u8),
     RfLoad(Arc<rf5c164::Memory>),
@@ -225,6 +239,16 @@ enum CommandAction {
     Nes {
         message: nes::Message,
     },
+    Gameboy {
+        message: gameboy::Message,
+    },
+    Snes {
+        message: snes::Message,
+    },
+    Huc6280 {
+        message: huc6280::Message,
+    },
+
     Rf5c164Write {
         register: u8,
         value: u8,
@@ -318,6 +342,10 @@ impl Command {
         Ok(match self.action {
             CommandAction::Dx7 { ref message } => Action::Dx7(message.prepare()?),
             CommandAction::Nes { ref message } => Action::Nes(message.prepare()?),
+            CommandAction::Gameboy { ref message } => Action::Gameboy(message.prepare()?),
+            CommandAction::Snes { ref message } => Action::Snes(message.prepare()?),
+            CommandAction::Huc6280 { ref message } => Action::Huc6280(message.prepare()?),
+
             CommandAction::Rf5c164Write {
                 register,
                 value,
@@ -508,6 +536,10 @@ struct Shared {
     mega_cd: bool,
     dx7: Option<dx7::Shared>,
     nes: Option<nes::Shared>,
+    gameboy: Option<gameboy::Shared>,
+    snes: Option<snes::Shared>,
+    huc6280: Option<huc6280::Shared>,
+
     rf5c164: rf5c164::Shared,
     rf_memory: Mutex<Vec<Arc<rf5c164::Memory>>>,
     retired_rf: ArrayQueue<Arc<rf5c164::Memory>>,
@@ -554,11 +586,26 @@ impl Shared {
     fn new_primary(rate: u32, session: u64, mega_cd: bool, dx7: bool) -> Self {
         Self::new_config(rate, session, mega_cd, dx7, false)
     }
+    #[cfg(test)]
     fn new_config(rate: u32, session: u64, mega_cd: bool, dx7: bool, nes: bool) -> Self {
+        Self::new_modes(rate, session, mega_cd, dx7, nes, None)
+    }
+    fn new_modes(
+        rate: u32,
+        session: u64,
+        mega_cd: bool,
+        dx7: bool,
+        nes: bool,
+        console: Option<&str>,
+    ) -> Self {
         Self {
             mega_cd,
             dx7: dx7.then(dx7::Shared::default),
             nes: nes.then(nes::Shared::default),
+            gameboy: (console == Some("gameboy")).then(gameboy::Shared::default),
+            snes: (console == Some("snes")).then(snes::Shared::default),
+            huc6280: (console == Some("huc6280")).then(huc6280::Shared::default),
+
             rf5c164: rf5c164::Shared::default(),
             rf_memory: Mutex::new(Vec::new()),
             retired_rf: ArrayQueue::new(MAX_BATCH),
@@ -684,7 +731,21 @@ impl Shared {
                 if matches!(&action, Action::Nes(_)) && self.nes.is_none() {
                     return Err("Native NES commands require NES mode".into());
                 }
-                if (self.dx7.is_some() || self.nes.is_some())
+                if matches!(&action, Action::Gameboy(_)) && self.gameboy.is_none() {
+                    return Err("Native Gameboy requires gameboy mode".into());
+                }
+                if matches!(&action, Action::Snes(_)) && self.snes.is_none() {
+                    return Err("Native Snes requires snes mode".into());
+                }
+                if matches!(&action, Action::Huc6280(_)) && self.huc6280.is_none() {
+                    return Err("Native Huc6280 requires huc6280 mode".into());
+                }
+
+                if (self.dx7.is_some()
+                    || self.nes.is_some()
+                    || self.gameboy.is_some()
+                    || self.snes.is_some()
+                    || self.huc6280.is_some())
                     && matches!(
                         &action,
                         Action::Write(..)
@@ -758,6 +819,54 @@ impl Shared {
                 })
                 .collect();
             if let Err(error) = nes.retain(&prepared) {
+                self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
+                return Err(error);
+            }
+        }
+        if let Some(chip) = &self.gameboy {
+            let prepared: Vec<_> = actions
+                .iter()
+                .filter_map(|(action, _)| {
+                    if let Action::Gameboy(command) = action {
+                        Some(command.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Err(error) = chip.retain(&prepared) {
+                self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
+                return Err(error);
+            }
+        }
+        if let Some(chip) = &self.snes {
+            let prepared: Vec<_> = actions
+                .iter()
+                .filter_map(|(action, _)| {
+                    if let Action::Snes(command) = action {
+                        Some(command.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Err(error) = chip.retain(&prepared) {
+                self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
+                return Err(error);
+            }
+        }
+        if let Some(chip) = &self.huc6280 {
+            let prepared: Vec<_> = actions
+                .iter()
+                .filter_map(|(action, _)| {
+                    if let Action::Huc6280(command) = action {
+                        Some(command.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Err(error) = chip.retain(&prepared) {
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
@@ -941,13 +1050,15 @@ impl Shared {
         let action = event.action.borrow();
         self.valid_owner(event.owner)
             && event.epoch == self.epoch.load(Ordering::Acquire)
-            && (!matches!(*action, Action::Nes(_))
-                || event.sequence >= self.nes_cancel_before.load(Ordering::Acquire)
-                    && event.owner.is_none_or(|owner| {
-                        event.sequence
-                            >= self.owner_nes_cancel_before[(owner.owner - 1) as usize]
-                                .load(Ordering::Acquire)
-                    }))
+            && (!matches!(
+                *action,
+                Action::Nes(_) | Action::Gameboy(_) | Action::Snes(_) | Action::Huc6280(_)
+            ) || event.sequence >= self.nes_cancel_before.load(Ordering::Acquire)
+                && event.owner.is_none_or(|owner| {
+                    event.sequence
+                        >= self.owner_nes_cancel_before[(owner.owner - 1) as usize]
+                            .load(Ordering::Acquire)
+                }))
             && (!matches!(*action, Action::DacPlay { .. } | Action::DacStream(_))
                 || event.sequence >= self.dac_cancel_before.load(Ordering::Acquire)
                     && event.owner.is_none_or(|owner| {
@@ -962,6 +1073,21 @@ impl Shared {
             Action::Nes(command) => {
                 if let Some(nes) = &self.nes {
                     nes.retire(command);
+                }
+            }
+            Action::Gameboy(command) => {
+                if let Some(chip) = &self.gameboy {
+                    chip.retire(command);
+                }
+            }
+            Action::Snes(command) => {
+                if let Some(chip) = &self.snes {
+                    chip.retire(command);
+                }
+            }
+            Action::Huc6280(command) => {
+                if let Some(chip) = &self.huc6280 {
+                    chip.retire(command);
                 }
             }
             Action::Dx7(command) => {
@@ -1055,7 +1181,13 @@ impl Shared {
     fn status(&self) -> Status {
         Status {
             session: self.session,
-            mode: if self.dx7.is_some() {
+            mode: if self.gameboy.is_some() {
+                "gameboy"
+            } else if self.snes.is_some() {
+                "snes"
+            } else if self.huc6280.is_some() {
+                "huc6280"
+            } else if self.dx7.is_some() {
                 "dx7"
             } else if self.nes.is_some() {
                 "nes"
@@ -1066,6 +1198,9 @@ impl Shared {
             },
             rf5c164_clock: self.mega_cd.then(|| self.rf5c164.clock()),
             nes_clock: self.nes.as_ref().map(nes::Shared::clock),
+            gameboy_clock: self.gameboy.as_ref().map(gameboy::Shared::clock),
+            snes_clock: self.snes.as_ref().map(snes::Shared::clock),
+            huc6280_clock: self.huc6280.as_ref().map(huc6280::Shared::clock),
             sample_rate: self.rate,
             frame: self.frame.load(Ordering::Acquire),
             ym_clock: 7_670_454,
@@ -1134,6 +1269,10 @@ struct Renderer {
     core: Core,
     dx7: Option<dx7::Renderer>,
     nes: Option<nes::Renderer>,
+    gameboy: Option<gameboy::Renderer>,
+    snes: Option<snes::Renderer>,
+    huc6280: Option<huc6280::Renderer>,
+
     dx7_master: f32,
     dx7_master_target: f32,
     dx7_master_ramp: u32,
@@ -1174,9 +1313,19 @@ impl Renderer {
     fn new_primary(rate: u32, mega_cd: bool, dx7: bool) -> Result<Self, String> {
         Self::new_config(rate, mega_cd, dx7, false)
     }
+    #[cfg(test)]
     fn new_config(rate: u32, mega_cd: bool, dx7: bool, nes: bool) -> Result<Self, String> {
+        Self::new_modes(rate, mega_cd, dx7, nes, None)
+    }
+    fn new_modes(
+        rate: u32,
+        mega_cd: bool,
+        dx7: bool,
+        nes: bool,
+        console: Option<&str>,
+    ) -> Result<Self, String> {
         Ok(Self {
-            core: if dx7 || nes {
+            core: if dx7 || nes || console.is_some() {
                 Core::empty()
             } else {
                 Core::new(rate)?
@@ -1188,6 +1337,21 @@ impl Renderer {
             },
             dx7: if dx7 {
                 Some(dx7::Renderer::new(rate)?)
+            } else {
+                None
+            },
+            gameboy: if console == Some("gameboy") {
+                Some(gameboy::Renderer::new(rate)?)
+            } else {
+                None
+            },
+            snes: if console == Some("snes") {
+                Some(snes::Renderer::new(rate)?)
+            } else {
+                None
+            },
+            huc6280: if console == Some("huc6280") {
+                Some(huc6280::Renderer::new(rate)?)
             } else {
                 None
             },
@@ -1286,6 +1450,15 @@ impl Renderer {
             if let (Some(nes), Some(state)) = (&mut self.nes, &shared.nes) {
                 nes.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
+            if let (Some(chip), Some(state)) = (&mut self.gameboy, &shared.gameboy) {
+                chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
+            }
+            if let (Some(chip), Some(state)) = (&mut self.snes, &shared.snes) {
+                chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
+            }
+            if let (Some(chip), Some(state)) = (&mut self.huc6280, &shared.huc6280) {
+                chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
+            }
             self.noise.cancel_invalid(|owner| shared.valid_owner(owner));
             if let Some(rf) = &mut self.rf5c164 {
                 rf.cancel_invalid(|owner| shared.valid_owner(owner), &shared.rf5c164);
@@ -1336,6 +1509,15 @@ impl Renderer {
         if let (Some(nes), Some(state)) = (&self.nes, &shared.nes) {
             nes.publish(state);
         }
+        if let (Some(chip), Some(state)) = (&self.gameboy, &shared.gameboy) {
+            chip.publish(state);
+        }
+        if let (Some(chip), Some(state)) = (&self.snes, &shared.snes) {
+            chip.publish(state);
+        }
+        if let (Some(chip), Some(state)) = (&self.huc6280, &shared.huc6280) {
+            chip.publish(state);
+        }
     }
     fn stop_dac(&mut self) {
         if self.dac.take().is_some() || self.raw_dac_enabled {
@@ -1373,6 +1555,33 @@ impl Renderer {
                     nes.apply(&command, owner, state);
                 }
                 shared.retire_action(Action::Nes(command));
+            }
+            Action::Gameboy(command) => {
+                if command.stops() {
+                    shared.cancel_nes_before(owner, sequence.saturating_add(1));
+                }
+                if let (Some(chip), Some(state)) = (&mut self.gameboy, &shared.gameboy) {
+                    chip.apply(&command, owner, state);
+                }
+                shared.retire_action(Action::Gameboy(command));
+            }
+            Action::Snes(command) => {
+                if command.stops() {
+                    shared.cancel_nes_before(owner, sequence.saturating_add(1));
+                }
+                if let (Some(chip), Some(state)) = (&mut self.snes, &shared.snes) {
+                    chip.apply(&command, owner, state);
+                }
+                shared.retire_action(Action::Snes(command));
+            }
+            Action::Huc6280(command) => {
+                if command.stops() {
+                    shared.cancel_nes_before(owner, sequence.saturating_add(1));
+                }
+                if let (Some(chip), Some(state)) = (&mut self.huc6280, &shared.huc6280) {
+                    chip.apply(&command, owner, state);
+                }
+                shared.retire_action(Action::Huc6280(command));
             }
             Action::Dx7(command) => {
                 if let (Some(dx7), Some(state)) = (&mut self.dx7, &shared.dx7) {
@@ -1549,7 +1758,13 @@ impl Renderer {
                         self.psg_owners = [None; 4];
                         self.psg_latch = 0;
                     }
-                    Action::Mix(gains) if self.dx7.is_some() || self.nes.is_some() => {
+                    Action::Mix(gains)
+                        if self.dx7.is_some()
+                            || self.nes.is_some()
+                            || self.gameboy.is_some()
+                            || self.snes.is_some()
+                            || self.huc6280.is_some() =>
+                    {
                         self.dx7_master_target = gains[4];
                         self.dx7_master_ramp = (shared.rate / 200).max(1);
                     }
@@ -1560,6 +1775,15 @@ impl Renderer {
                         }
                         if let (Some(nes), Some(state)) = (&mut self.nes, &shared.nes) {
                             nes.stop(state);
+                        }
+                        if let (Some(chip), Some(state)) = (&mut self.gameboy, &shared.gameboy) {
+                            chip.stop(state);
+                        }
+                        if let (Some(chip), Some(state)) = (&mut self.snes, &shared.snes) {
+                            chip.stop(state);
+                        }
+                        if let (Some(chip), Some(state)) = (&mut self.huc6280, &shared.huc6280) {
+                            chip.stop(state);
                         }
                         if let Some(rf) = &mut self.rf5c164 {
                             rf.reset(&shared.rf5c164);
@@ -1637,12 +1861,19 @@ impl Renderer {
             if event.frame != 0 && event.frame < self.frame {
                 shared.late.fetch_add(1, Ordering::Relaxed);
             }
+            if !shared.valid_event(&event) {
+                shared.retire_action(event.action.into_inner());
+                continue;
+            }
             let wakes_audio = {
                 let action = event.action.borrow();
                 match &*action {
                     Action::Noise(command) => command.is_some_and(|command| command.starts()),
                     Action::Dx7(command) => command.starts(),
                     Action::Nes(command) => command.starts(),
+                    Action::Gameboy(command) => command.starts(),
+                    Action::Snes(command) => command.starts(),
+                    Action::Huc6280(command) => command.starts(),
                     Action::Mix(_)
                     | Action::RfMix(_)
                     | Action::RfLoad(_)
@@ -1665,11 +1896,7 @@ impl Renderer {
                     self.resume_remaining = (shared.rate / 200).max(1);
                 }
             }
-            if shared.valid_event(&event) {
-                self.apply(event, shared);
-            } else {
-                shared.retire_action(event.action.into_inner());
-            }
+            self.apply(event, shared);
         }
         self.advance_dac(shared);
         let mut pcm = self.core.sample_bus();
@@ -1678,6 +1905,15 @@ impl Renderer {
         }
         if let Some(nes) = &mut self.nes {
             nes.mix(&mut pcm);
+        }
+        if let Some(chip) = &mut self.gameboy {
+            chip.mix(&mut pcm);
+        }
+        if let Some(chip) = &mut self.snes {
+            chip.mix(&mut pcm);
+        }
+        if let Some(chip) = &mut self.huc6280 {
+            chip.mix(&mut pcm);
         }
         if let Some(rf) = &mut self.rf5c164 {
             rf.mix(&mut pcm);
@@ -1698,7 +1934,12 @@ impl Renderer {
         pcm = self
             .livefx
             .process(pcm, self.frame, shared.rate, &shared.livefx.transport);
-        let master = if self.dx7.is_some() || self.nes.is_some() {
+        let master = if self.dx7.is_some()
+            || self.nes.is_some()
+            || self.gameboy.is_some()
+            || self.snes.is_some()
+            || self.huc6280.is_some()
+        {
             if self.dx7_master_ramp > 0 {
                 self.dx7_master +=
                     (self.dx7_master_target - self.dx7_master) / self.dx7_master_ramp as f32;
@@ -1727,6 +1968,15 @@ impl Renderer {
                 }
                 if let (Some(nes), Some(state)) = (&mut self.nes, &shared.nes) {
                     nes.stop(state);
+                }
+                if let (Some(chip), Some(state)) = (&mut self.gameboy, &shared.gameboy) {
+                    chip.stop(state);
+                }
+                if let (Some(chip), Some(state)) = (&mut self.snes, &shared.snes) {
+                    chip.stop(state);
+                }
+                if let (Some(chip), Some(state)) = (&mut self.huc6280, &shared.huc6280) {
+                    chip.stop(state);
                 }
                 if let Some(rf) = &mut self.rf5c164 {
                     rf.stop(&shared.rf5c164);
@@ -1785,6 +2035,12 @@ pub struct Status {
     rf5c164_clock: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     nes_clock: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gameboy_clock: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    snes_clock: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    huc6280_clock: Option<u32>,
     sample_rate: u32,
     frame: u64,
     ym_clock: u32,
@@ -1820,14 +2076,17 @@ impl NativeGenesis {
         self.replace_running(Self::launch)
     }
     fn start_mode(&self, mode: Option<&str>) -> Result<Status, String> {
-        let (mega_cd, dx7, nes) = match mode.unwrap_or("genesis") {
-            "genesis" => (false, false, false),
-            "mega-cd" => (true, false, false),
-            "dx7" => (false, true, false),
-            "nes" => (false, false, true),
-            _ => return Err("Native output supports Genesis, Mega CD, DX7 and NES modes".into()),
+        let (mega_cd, dx7, nes, console) = match mode.unwrap_or("genesis") {
+            "genesis" => (false, false, false, None),
+            "mega-cd" => (true, false, false, None),
+            "dx7" => (false, true, false, None),
+            "nes" => (false, false, true, None),
+            "gameboy" => (false,false,false,Some("gameboy")),
+            "snes" => (false,false,false,Some("snes")),
+            "pc-engine" | "huc6280" => (false,false,false,Some("huc6280")),
+            _ => return Err("Native output supports Genesis, Mega CD, DX7, NES, Game Boy, SNES and PC Engine modes".into()),
         };
-        self.replace_running(|session| Self::launch_config(session, mega_cd, dx7, nes))
+        self.replace_running(|session| Self::launch_config(session, mega_cd, dx7, nes, console))
     }
     fn replace_running(
         &self,
@@ -1856,21 +2115,30 @@ impl NativeGenesis {
     }
     #[cfg(test)]
     fn launch_primary(session: u64, mega_cd: bool, dx7: bool) -> Result<Running, String> {
-        Self::launch_config(session, mega_cd, dx7, false)
+        Self::launch_config(session, mega_cd, dx7, false, None)
     }
-    fn launch_config(session: u64, mega_cd: bool, dx7: bool, nes: bool) -> Result<Running, String> {
+    fn launch_config(
+        session: u64,
+        mega_cd: bool,
+        dx7: bool,
+        nes: bool,
+        console: Option<&'static str>,
+    ) -> Result<Running, String> {
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let (stop, stopped) = mpsc::channel();
-        let thread = std::thread::spawn(move || match start_device(session, mega_cd, dx7, nes) {
-            Ok((stream, shared)) => {
-                let _ = ready_tx.send(Ok(shared));
-                let _ = stopped.recv();
-                drop(stream);
-            }
-            Err(error) => {
-                let _ = ready_tx.send(Err(error));
-            }
-        });
+        let thread =
+            std::thread::spawn(
+                move || match start_device(session, mega_cd, dx7, nes, console) {
+                    Ok((stream, shared)) => {
+                        let _ = ready_tx.send(Ok(shared));
+                        let _ = stopped.recv();
+                        drop(stream);
+                    }
+                    Err(error) => {
+                        let _ = ready_tx.send(Err(error));
+                    }
+                },
+            );
         match ready_rx.recv().map_err(|e| e.to_string())? {
             Ok(shared) => Ok(Running {
                 shared,
@@ -1936,6 +2204,7 @@ fn start_device(
     mega_cd: bool,
     dx7: bool,
     nes: bool,
+    console: Option<&'static str>,
 ) -> Result<(cpal::Stream, Arc<Shared>), String> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     let device = cpal::default_host()
@@ -1945,12 +2214,13 @@ fn start_device(
         .default_output_config()
         .map_err(|e| format!("Native audio configuration failed: {e}"))?;
     let config: cpal::StreamConfig = supported.clone().into();
-    let shared = Arc::new(Shared::new_config(
+    let shared = Arc::new(Shared::new_modes(
         config.sample_rate.0,
         session,
         mega_cd,
         dx7,
         nes,
+        console,
     ));
     let stream = match supported.sample_format() {
         cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config, shared.clone()),
@@ -1971,11 +2241,20 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
     shared: Arc<Shared>,
 ) -> Result<cpal::Stream, String> {
     use cpal::traits::DeviceTrait;
-    let mut renderer = Renderer::new_config(
+    let mut renderer = Renderer::new_modes(
         config.sample_rate.0,
         shared.mega_cd,
         shared.dx7.is_some(),
         shared.nes.is_some(),
+        if shared.gameboy.is_some() {
+            Some("gameboy")
+        } else if shared.snes.is_some() {
+            Some("snes")
+        } else if shared.huc6280.is_some() {
+            Some("huc6280")
+        } else {
+            None
+        },
     )?;
     // Publish the actual initialized core before start() exposes the session.
     renderer.publish_primary(&shared);
@@ -2041,6 +2320,83 @@ pub async fn native_genesis_nes_status(
                 nes.wait_applied(id)?;
             }
             nes.status(shared.frame.load(Ordering::Acquire))
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+#[tauri::command]
+pub async fn native_genesis_gameboy_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    after: Option<u64>,
+) -> Result<gameboy::Status, String> {
+    crate::allowed(&window)?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.with_session(session, |shared| {
+            let chip = shared
+                .gameboy
+                .as_ref()
+                .ok_or("Native gameboy requires gameboy mode")?;
+            if let Some(id) = after {
+                chip.wait_applied(id)?;
+            }
+            chip.status(shared.frame.load(Ordering::Acquire))
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+#[tauri::command]
+pub async fn native_genesis_snes_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    after: Option<u64>,
+    ram: Option<bool>,
+) -> Result<snes::Status, String> {
+    crate::allowed(&window)?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.with_session(session, |shared| {
+            let chip = shared
+                .snes
+                .as_ref()
+                .ok_or("Native snes requires snes mode")?;
+            if let Some(id) = after {
+                chip.wait_applied(id)?;
+            }
+            if ram.unwrap_or(false) {
+                chip.status_with_ram(shared.frame.load(Ordering::Acquire))
+            } else {
+                chip.status(shared.frame.load(Ordering::Acquire))
+            }
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+#[tauri::command]
+pub async fn native_genesis_huc6280_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    after: Option<u64>,
+) -> Result<huc6280::Status, String> {
+    crate::allowed(&window)?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.with_session(session, |shared| {
+            let chip = shared
+                .huc6280
+                .as_ref()
+                .ok_or("Native huc6280 requires huc6280 mode")?;
+            if let Some(id) = after {
+                chip.wait_applied(id)?;
+            }
+            chip.status(shared.frame.load(Ordering::Acquire))
         })
     })
     .await

@@ -1,0 +1,135 @@
+{
+  "source": "hello_ymfm/third_party/snes-spc",
+  "revision": "ec8ee2bbe30451614c1d02a83f7af1c97d497d45",
+  "license": "LGPL-2.1-or-later",
+  "adaptation": "Accurate SPC_DSP, local output mute/RAM wrap/read tracking changes retained verbatim; no SPC700 CPU or ROM.",
+  "files": {
+    "third_party/snes-spc/LICENSE": {
+      "snapshot": "snapshot/third_party/snes-spc/LICENSE",
+      "sha256": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331"
+    },
+    "third_party/snes-spc/README.md": {
+      "snapshot": "snapshot/third_party/snes-spc/README.md",
+      "sha256": "0a4ef415f103b996772d321ba2ff28614a27a9c83cfe4afd437a779e58ab0775"
+    },
+    "third_party/snes-spc/README.upstream.md": {
+      "snapshot": "snapshot/third_party/snes-spc/README.upstream.md",
+      "sha256": "da0bfe0b5183787d61314fe7964e2c231675a9e61ce734ff7887b55fbf7d1362"
+    },
+    "third_party/snes-spc/changes.txt": {
+      "snapshot": "snapshot/third_party/snes-spc/changes.txt",
+      "sha256": "2f753e4f016d9cd8a37dc338f7a4d1bae70cd3a3623027f514542bee8daea148"
+    },
+    "third_party/snes-spc/license.txt": {
+      "snapshot": "snapshot/third_party/snes-spc/license.txt",
+      "sha256": "5df07007198989c622f5d41de8d703e7bef3d0e79d62e24332ee739a452af62a"
+    },
+    "third_party/snes-spc/readme.txt": {
+      "snapshot": "snapshot/third_party/snes-spc/readme.txt",
+      "sha256": "3832c72b8bf6c5b4e4b6d424d674c2a658b92aa595be10b14bdb715b0d6eb22b"
+    },
+    "third_party/snes-spc/snes_spc.txt": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc.txt",
+      "sha256": "bf36fda81ac9ad8fecee4efe59bd360772ea0eaa49a0ea801dc06761a07ff295"
+    },
+    "third_party/snes-spc/snes_spc/SNES_SPC.cpp": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/SNES_SPC.cpp",
+      "sha256": "3d235748b0c520a000263b8098305061673b405754c900a94b9545991628533f"
+    },
+    "third_party/snes-spc/snes_spc/SNES_SPC.h": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/SNES_SPC.h",
+      "sha256": "3ebf24542de1405b054fc7f044516aa25eabdd530a66daf1f91468a1e52a00ae"
+    },
+    "third_party/snes-spc/snes_spc/SNES_SPC_misc.cpp": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/SNES_SPC_misc.cpp",
+      "sha256": "d89d85fd584299360eb304219658f2b92121b5dd4e8a4089e1e7d4806c1a8d3e"
+    },
+    "third_party/snes-spc/snes_spc/SNES_SPC_state.cpp": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/SNES_SPC_state.cpp",
+      "sha256": "6af18978d82617f12b9830b87e06dd6c27f772b78de9d18a8ebbdf38d93309d2"
+    },
+    "third_party/snes-spc/snes_spc/SPC_CPU.h": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/SPC_CPU.h",
+      "sha256": "8f28ed5a3461cbf85c64c6a8ecdb6f51b486396e37940e112b94748b44c3a7a8"
+    },
+    "third_party/snes-spc/snes_spc/SPC_DSP.cpp": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/SPC_DSP.cpp",
+      "sha256": "ec2ad75d60192fd1d03c63b5fea25874f96ec1beade45d6cecbd08277f35c9fc"
+    },
+    "third_party/snes-spc/snes_spc/SPC_DSP.h": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/SPC_DSP.h",
+      "sha256": "736ac067d04e38bd1bc888c8e06799579a35fa14c9879f7c7ab7b69c6b085f8a"
+    },
+    "third_party/snes-spc/snes_spc/SPC_Filter.cpp": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/SPC_Filter.cpp",
+      "sha256": "34c6ab92475d5fd700c3e01bff7d2fe8e59f8d188a0719c1ad12141d905f62e8"
+    },
+    "third_party/snes-spc/snes_spc/SPC_Filter.h": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/SPC_Filter.h",
+      "sha256": "a86f33de7fbaa1d448de8e3879c4619e1d9a30a494c5a9606d682cee8dd89bb9"
+    },
+    "third_party/snes-spc/snes_spc/blargg_common.h": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/blargg_common.h",
+      "sha256": "4bc17a19fe46de2860868d3f88c037aee718b4dedc61450a28de3d1336053dba"
+    },
+    "third_party/snes-spc/snes_spc/blargg_config.h": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/blargg_config.h",
+      "sha256": "b318cfcd2828719d8e3435e4972bc75ba82697c2cc6b8d291130d66d7b6904b8"
+    },
+    "third_party/snes-spc/snes_spc/blargg_endian.h": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/blargg_endian.h",
+      "sha256": "97062e15b46e1347a4fc2e95fd131bcb89c1b8947b28d20a27c1f342a387d637"
+    },
+    "third_party/snes-spc/snes_spc/blargg_source.h": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/blargg_source.h",
+      "sha256": "bd6b376d6d9b1bccce3b89e915b1ad9a6fede7d43b273258bfa13c3855fb1a6a"
+    },
+    "third_party/snes-spc/snes_spc/dsp.cpp": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/dsp.cpp",
+      "sha256": "80b7ff9f2f7ab4af0485c5faaa3dc333359a8892c63b996a3448c047bad62bb6"
+    },
+    "third_party/snes-spc/snes_spc/dsp.h": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/dsp.h",
+      "sha256": "ac61fc96a688ce7429942a76562b0ce8cfb014f84c2c2398ef875b0f33521c2b"
+    },
+    "third_party/snes-spc/snes_spc/spc.cpp": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/spc.cpp",
+      "sha256": "0f6bf884f2d6ef5728d8bb3fc277ff1e1bf74813251d8308f4e6d3aa1e33ec1f"
+    },
+    "third_party/snes-spc/snes_spc/spc.h": {
+      "snapshot": "snapshot/third_party/snes-spc/snes_spc/spc.h",
+      "sha256": "e45c8e2862f44a23804bb6fe14c747e16f49efc2e991a92138d285c36b45e0c7"
+    },
+    "web/spc_resampler.js": {
+      "snapshot": "snapshot/web/spc_resampler.js",
+      "sha256": "ad389d1ed6b695d4ab59ad8875adbb2de4dbe4abf5ee478f65d5711535a73b84"
+    },
+    "web/spc.js": {
+      "snapshot": "snapshot/web/spc.js",
+      "sha256": "ab76ca3db5ec710e52278c1945cd0e052fb3c537fffed7c2e5741d157571739f"
+    },
+    "wasm/spc_wasm.cpp": {
+      "snapshot": "snapshot/wasm/spc_wasm.cpp",
+      "sha256": "2c88efc7f10d0b4cd1124163f0a99caf0e1d8cac3ba1767de1134c30d62e8d77"
+    },
+    "scripts/build_spc_wasm.sh": {
+      "snapshot": "snapshot/scripts/build_spc_wasm.sh",
+      "sha256": "5781875fda51d45609770f6fe2323b99107b56c32539cc00ad547c7ec397f786"
+    },
+    "src-tauri/src/native_genesis_snes.cpp": {
+      "snapshot": "snapshot/application/src-tauri/src/native_genesis_snes.cpp",
+      "sha256": "ff6fb26440dfe9b43cffff3e60b9e089bf6734a95311e27d9973608956d9035f",
+      "origin": "application"
+    },
+    "src-tauri/src/native_genesis_snes.h": {
+      "snapshot": "snapshot/application/src-tauri/src/native_genesis_snes.h",
+      "sha256": "0e663bdaf29d22e601d8c95ea2f346a84569d667a937332f2ea948b4097d7a2d",
+      "origin": "application"
+    },
+    "src-tauri/src/native_genesis_snes_fixture.cpp": {
+      "snapshot": "snapshot/application/src-tauri/src/native_genesis_snes_fixture.cpp",
+      "sha256": "df9934c6306637c1fe888b649b8b9580c9fd9c8b9f70fc9ecdb9e4c42fde77ca",
+      "origin": "application"
+    }
+  }
+}

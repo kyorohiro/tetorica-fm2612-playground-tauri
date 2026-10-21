@@ -83,6 +83,45 @@ fn main() {
         .file("src/native_genesis_nes.cpp")
         .warnings(false)
         .compile("tetorica_native_nes");
+    for name in ["gameboy", "snes", "huc6280"] {
+        println!("cargo:rerun-if-changed=native-{name}");
+        println!("cargo:rerun-if-changed=src/native_genesis_{name}.cpp");
+        println!("cargo:rerun-if-changed=src/native_genesis_{name}.h");
+    }
+    cc::Build::new()
+        .cpp(true)
+        .std("c++17")
+        .opt_level(2)
+        .flag_if_supported("-fwrapv")
+        .flag_if_supported("-fno-strict-aliasing")
+        .flag_if_supported("-ffp-contract=off")
+        .include("native-gameboy/snapshot/third_party/mame-gameboy")
+        .file("src/native_genesis_gameboy.cpp")
+        .file("native-gameboy/snapshot/third_party/mame-gameboy/gameboy_apu.cpp")
+        .warnings(false)
+        .compile("tetorica_native_gameboy");
+    cc::Build::new()
+        .cpp(true)
+        .std("c++17")
+        .opt_level(2)
+        .flag_if_supported("-fwrapv")
+        .flag_if_supported("-fno-strict-aliasing")
+        .flag_if_supported("-ffp-contract=off")
+        .file("src/native_genesis_huc6280.cpp")
+        .warnings(false)
+        .compile("tetorica_native_huc6280");
+    cc::Build::new()
+        .cpp(true)
+        .std("c++17")
+        .opt_level(2)
+        .flag_if_supported("-fwrapv")
+        .flag_if_supported("-fno-strict-aliasing")
+        .flag_if_supported("-ffp-contract=off")
+        .include("native-snes/snapshot/third_party/snes-spc/snes_spc")
+        .file("src/native_genesis_snes.cpp")
+        .file("native-snes/snapshot/third_party/snes-spc/snes_spc/SPC_DSP.cpp")
+        .warnings(false)
+        .compile("tetorica_native_snes");
     // LiveFX executes only on its generation/probe owner thread, never the
     // output callback. The host creates a JSRuntime only on first register.
     cc::Build::new()
