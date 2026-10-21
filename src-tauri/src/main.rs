@@ -7,6 +7,8 @@ mod git_tokens;
 mod mcp;
 mod native_genesis;
 mod native_genesis_fx;
+// Linked for offline embedding and DSP validation; no audio or IPC route yet.
+mod native_live_fx_probe;
 
 use tauri::{menu::Menu, Manager, WebviewWindow};
 

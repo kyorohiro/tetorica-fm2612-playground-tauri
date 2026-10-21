@@ -1,5 +1,5 @@
 {
-  "archive": "hello_ymfm_wasm_native-noise-final-20261021_itch_playground.zip",
+  "archive": "hello_ymfm_wasm_native-livefx-probe-20261021_itch_playground.zip",
   "files": {
     "LICENSE": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c",
     "THIRD_PARTY_LICENSES.txt": "175af411003e7150ed5ef1574631c11ad288155fcaaa7ba123300bf353c24805",
@@ -180,7 +180,7 @@
     "js/ay8910synth.js": "cd361b16e2dcbae405c80216be07fe2dea934a309ec94b30da349f2c209ad470",
     "js/bitcrusher-worklet.js": "782a8c0f015770792f7226f3d6a874c23e067ecf8665337244baa5872b3d52d9",
     "js/chip_worklet_transport.js": "05a069f07f2eff176be14a2d194d56da3969f1f6f020dd3a7b6ea8b0d1e5b77a",
-    "js/custom_fx.js": "9fbaa3dde871d16f60366cfec0afb4f049313042cab748fd9c8f5f38e43ab4c9",
+    "js/custom_fx.js": "f719e32f063bdbdb4d7cb9bb7aff1087dde2152ade7449b2819f2d3a6cc4424e",
     "js/fds_audio.js": "a40594267909ec49f07897913877e3e27aee345ed783f8044d7f5f6e13c09ee9",
     "js/gameboy_runtime_synth.js": "8a2f31123b4bfb9241ce0ec44234905ee56aef3e49081b7ba885114bf65e1436",
     "js/gameboyapu.js": "4aaea3f8fa773f5e95d41c81b05edccbaa900aeea5c91c2c7130af56ea0a3c81",
@@ -789,6 +789,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "58cb2096631756e9b33dd713e251d7bb5cd7e2cf2e4469ef2c83255a1d844802"
   },
-  "sha256": "548064eefeed5a86b7a87ff8bb92deb316f711b00da2f9cfd24677bb8ff6a9fb",
-  "version": "sha256-548064eefeed"
+  "sha256": "294c5a03fca271a8dccd55bb7d62b6b527f5101a10bd7f4f8a083a4ee647459f",
+  "version": "sha256-294c5a03fca2"
 }

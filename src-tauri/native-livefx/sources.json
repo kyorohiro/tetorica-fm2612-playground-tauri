@@ -1,0 +1,18 @@
+{
+  "source": "https://github.com/quickjs-ng/quickjs",
+  "tag": "v0.17.0",
+  "commit": "6d46d07d04041b40f4f49eaa7fdebe44c314c699",
+  "archive_url": "https://github.com/quickjs-ng/quickjs/releases/download/v0.17.0/quickjs-amalgam.zip",
+  "archive_sha256": "a0955463c74809173a253ff87365095e6972e8b171cfb6aa8a1e781adf35cfeb",
+  "license_url": "https://raw.githubusercontent.com/quickjs-ng/quickjs/6d46d07d04041b40f4f49eaa7fdebe44c314c699/LICENSE",
+  "sha256": {
+    "LICENSE": "96f73f9d2a16c21a36b418f06073be26e7d6d5e7c1bc99756b21a4f2c74ef171",
+    "quickjs-amalgam.c": "7c853a67ce7b6db463018e44f1425cd019d9f004a012ca013f47e415eb43446c",
+    "quickjs.h": "747a77444ff04a910b57ca51dd998d7ee46895b1b9592d7d6051fd180317c44d"
+  },
+  "shared_sha256": {
+    "web/custom_fx.js": "f719e32f063bdbdb4d7cb9bb7aff1087dde2152ade7449b2819f2d3a6cc4424e",
+    "web/native_livefx_context.js": "2bf0d1eacceceea2932304505b2c68d01b8d1be174a93a09d0af7432361318f1"
+  },
+  "transformation": "Replace the sole export class LiveFX with class LiveFX; C-string encode without modifying rack behavior."
+}

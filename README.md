@@ -70,6 +70,17 @@ CPALの音声コールバックで生成・変換・ミックスしてシステ�
 AudioWorklet／WebSocketでPCMを転送する現行Audifyとは別の経路です。
 Nativeを使う間はWeb Audio用のAudio outputメニューを表示しません。
 
+QuickJS-NGの`liveFx`ホストは、別のオフライン試作としてビルドに含めています。
+Native音声やIPCからの呼出しはまだ接続せず、通常再生ではJSRuntimeを作りません。
+試作では既存の`custom_fx.js`を共有し、初回登録時だけVMを生成、最後の削除で解放します。
+由来とMITライセンスは`src-tauri/native-livefx/`に保存し、ライセンスをアプリにも同梱します。
+共有ソースとエンジンの照合・デバイスを使わないRustテストは次で実行できます。
+
+```sh
+python3 scripts/sync_native_genesis_livefx.py --check --source ../..
+cargo test --offline --locked --manifest-path src-tauri/Cargo.toml native_live_fx_probe
+```
+
 `noise.create()`は共通C DSPのwhite／pink／brown／gray／clipを32声まで生成します。
 filter・ramp・attack／releaseに対応し、loop取消しではrelease後に領域を回収します。
 圧縮サンプルは読込み時だけブラウザーのofflineデコーダーを使い、Native側で再生します。
