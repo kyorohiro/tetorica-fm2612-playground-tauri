@@ -56,14 +56,14 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 
 ## 音声出力
 
-### 試験用Native Genesisエンジン
+### 試験用Nativeエンジン
 
 **安定するまではWeb Audioが既定です。** Menu → **Audio engine…** から
-**Native Genesis / Mega CD (experimental)** を明示的に選べます。切替時は演奏を停止し、
+**Native (experimental)** を明示的に選べます。切替時は演奏を停止し、
 編集中のプロジェクトを引き継いでページを開き直します。選択だけではデバイスを開かず、
 RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
-Native選択中のModeには、対応するGenesis／Mega CDを表示します。他modeへ移るときは先にWeb Audioへ戻してください。
-Genesis／Mega CD以外ではNativeを選べません。Web Audioでは全Modeを選べます。
+Native選択中のModeには、対応するGenesis／Mega CD／DX7を表示します。他modeへ移るときは先にWeb Audioへ戻してください。
+Genesis／Mega CD／DX7以外ではNativeを選べません。Web Audioでは全Modeを選べます。
 
 NativeはGenesis modeのYM2612＋Sega PSG、Main／Worker実行、音色・レジスター操作、Keyboard、
 DAC・サンプル・noise、組込みFX・JavaScriptの`liveFx`、Audioモニターと最終出力の録音に対応します。
@@ -78,6 +78,13 @@ KeyboardのChip／CH選択、`loadSample`、ミキサー、RFのclock変更に�
 RFの音も共通FX・最終出力monitor・録音へ入ります。StopはRAMと設定を保持して発音を止めます。
 音声のファイル選択・マイク入力・編集は既存のWebView側、再生はNative側で行います。
 Nativeコアの由来とBSD-3-Clauseライセンスは`src-tauri/native-megacd/`に保存し、ライセンスをアプリにも同梱します。
+
+DX7 modeではMSFAのC++音源を直接使い、16音ポリフォニーで生成します。
+`dx7`／`useSoundChip('dx7')`、音色・SysEx、オペレーター・feedback編集、Keyboard／Operatorsに対応します。
+Main／Workerとも共通FX・liveFx・Audioモニター・最終出力録音を通ります。
+Stopは音色バンクと選択を保持して発音を止めます。YM2612／PSGは生成しません。
+内部44,100 Hz固定で出力機器のsample rateへ変換します。`createSoundChip('dx7')`による独立音源の追加はWeb Audioを使ってください。
+由来とApache-2.0ライセンスは`src-tauri/native-dx7/`に保存し、ライセンスをアプリにも同梱します。
 
 `liveFx`は既存の`custom_fx.js`をQuickJS-NGで実行します。
 使用中だけNativeの専用workerで処理し、2048フレーム（48kHzで約42.7ms）の遅延が加わります。

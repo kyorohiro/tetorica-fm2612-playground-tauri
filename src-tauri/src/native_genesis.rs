@@ -15,6 +15,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "native_genesis_dx7.rs"]
+mod dx7;
+#[cfg(test)]
+#[path = "native_genesis_dx7_tests.rs"]
+mod dx7_tests;
 #[path = "native_genesis_livefx.rs"]
 mod livefx;
 #[path = "native_genesis_media.rs"]
@@ -78,7 +83,20 @@ impl Core {
         sample[1] *= master;
         sample
     }
+    fn empty() -> Self {
+        Self(std::ptr::null_mut())
+    }
+    fn master(&self) -> f32 {
+        if self.0.is_null() {
+            1.0
+        } else {
+            unsafe { native_genesis_master(self.0) }
+        }
+    }
     fn sample_bus(&mut self) -> [f32; 2] {
+        if self.0.is_null() {
+            return [0.0; 2];
+        }
         let mut sample = [0.0; 2];
         unsafe {
             native_genesis_sample(self.0, sample.as_mut_ptr());
@@ -86,6 +104,9 @@ impl Core {
         sample
     }
     fn apply(&mut self, action: Action) {
+        if self.0.is_null() {
+            return;
+        }
         unsafe {
             match action {
                 Action::Write(port, register, value) => {
@@ -104,13 +125,16 @@ impl Core {
 impl Drop for Core {
     fn drop(&mut self) {
         unsafe {
-            native_genesis_destroy(self.0);
+            if !self.0.is_null() {
+                native_genesis_destroy(self.0);
+            }
         }
     }
 }
 
 #[derive(Clone, Debug)]
 enum Action {
+    Dx7(Arc<dx7::Prepared>),
     RfWrite(u8, u8, bool),
     RfWriteMemory(u16, u8),
     RfLoad(Arc<rf5c164::Memory>),
@@ -189,6 +213,9 @@ pub struct Command {
 #[derive(Deserialize, Debug)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum CommandAction {
+    Dx7 {
+        message: dx7::Message,
+    },
     Rf5c164Write {
         register: u8,
         value: u8,
@@ -280,6 +307,7 @@ impl Command {
             return Err("Invalid native command frame".into());
         }
         Ok(match self.action {
+            CommandAction::Dx7 { ref message } => Action::Dx7(message.prepare()?),
             CommandAction::Rf5c164Write {
                 register,
                 value,
@@ -468,6 +496,7 @@ impl Command {
 
 struct Shared {
     mega_cd: bool,
+    dx7: Option<dx7::Shared>,
     rf5c164: rf5c164::Shared,
     rf_memory: Mutex<Vec<Arc<rf5c164::Memory>>>,
     retired_rf: ArrayQueue<Arc<rf5c164::Memory>>,
@@ -504,9 +533,14 @@ impl Shared {
     fn new(rate: u32, session: u64) -> Self {
         Self::new_mode(rate, session, false)
     }
+    #[cfg(test)]
     fn new_mode(rate: u32, session: u64, mega_cd: bool) -> Self {
+        Self::new_primary(rate, session, mega_cd, false)
+    }
+    fn new_primary(rate: u32, session: u64, mega_cd: bool, dx7: bool) -> Self {
         Self {
             mega_cd,
+            dx7: dx7.then(dx7::Shared::default),
             rf5c164: rf5c164::Shared::default(),
             rf_memory: Mutex::new(Vec::new()),
             retired_rf: ArrayQueue::new(MAX_BATCH),
@@ -624,6 +658,26 @@ impl Shared {
                 {
                     return Err("Native RF5C164 requires Mega CD mode".into());
                 }
+                if matches!(&action, Action::Dx7(_)) && self.dx7.is_none() {
+                    return Err("Native DX7 commands require DX7 mode".into());
+                }
+                if self.dx7.is_some()
+                    && matches!(
+                        &action,
+                        Action::Write(..)
+                            | Action::PsgWrite(_)
+                            | Action::PsgStereo(_)
+                            | Action::PsgReset
+                            | Action::DacPlay { .. }
+                            | Action::DacStream(_)
+                            | Action::DacStop
+                    )
+                {
+                    return Err(
+                        "Genesis FM, PSG and DAC commands are unavailable in Native DX7 mode"
+                            .into(),
+                    );
+                }
                 if let Action::SamplePlay(reservation) = &action {
                     if !voices.insert(reservation.voice) {
                         return Err("Duplicate native sample voice ID in batch".into());
@@ -652,6 +706,22 @@ impl Shared {
         {
             self.overflows.fetch_add(1, Ordering::Relaxed);
             return Err("Native command queue is full; playback was not silently truncated".into());
+        }
+        if let Some(dx7) = &self.dx7 {
+            let prepared: Vec<_> = actions
+                .iter()
+                .filter_map(|(action, _)| {
+                    if let Action::Dx7(command) = action {
+                        Some(command.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Err(error) = dx7.retain(&prepared) {
+                self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
+                return Err(error);
+            }
         }
         *noise_control = noise_plan;
         self.dac_streams.fetch_add(streams, Ordering::AcqRel);
@@ -834,6 +904,11 @@ impl Shared {
     }
     fn retire_action(&self, action: Action) {
         match action {
+            Action::Dx7(command) => {
+                if let Some(dx7) = &self.dx7 {
+                    dx7.retire(command);
+                }
+            }
             Action::RfLoad(memory) => {
                 self.retired_rf
                     .push(memory)
@@ -917,7 +992,13 @@ impl Shared {
     fn status(&self) -> Status {
         Status {
             session: self.session,
-            mode: if self.mega_cd { "mega-cd" } else { "genesis" },
+            mode: if self.dx7.is_some() {
+                "dx7"
+            } else if self.mega_cd {
+                "mega-cd"
+            } else {
+                "genesis"
+            },
             rf5c164_clock: self.mega_cd.then(|| self.rf5c164.clock()),
             sample_rate: self.rate,
             frame: self.frame.load(Ordering::Acquire),
@@ -985,6 +1066,10 @@ struct DacStream {
 
 struct Renderer {
     core: Core,
+    dx7: Option<dx7::Renderer>,
+    dx7_master: f32,
+    dx7_master_target: f32,
+    dx7_master_ramp: u32,
     rf5c164: Option<rf5c164::Renderer>,
     fx: FxRenderer,
     livefx: livefx::Renderer,
@@ -1014,9 +1099,21 @@ impl Renderer {
     fn new(rate: u32) -> Result<Self, String> {
         Self::new_mode(rate, false)
     }
+    #[cfg(test)]
     fn new_mode(rate: u32, mega_cd: bool) -> Result<Self, String> {
+        Self::new_primary(rate, mega_cd, false)
+    }
+    fn new_primary(rate: u32, mega_cd: bool, dx7: bool) -> Result<Self, String> {
         Ok(Self {
-            core: Core::new(rate)?,
+            core: if dx7 { Core::empty() } else { Core::new(rate)? },
+            dx7: if dx7 {
+                Some(dx7::Renderer::new(rate)?)
+            } else {
+                None
+            },
+            dx7_master: 1.0,
+            dx7_master_target: 1.0,
+            dx7_master_ramp: 0,
             rf5c164: if mega_cd {
                 Some(rf5c164::Renderer::new(rate)?)
             } else {
@@ -1097,9 +1194,14 @@ impl Renderer {
                 if self.psg_owners[channel].is_some()
                     && !shared.valid_owner(self.psg_owners[channel])
                 {
-                    unsafe { native_genesis_psg_mute(self.core.0, channel as u8) };
+                    if !self.core.0.is_null() {
+                        unsafe { native_genesis_psg_mute(self.core.0, channel as u8) };
+                    }
                     self.psg_owners[channel] = None;
                 }
+            }
+            if let (Some(dx7), Some(state)) = (&mut self.dx7, &shared.dx7) {
+                dx7.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
             self.noise.cancel_invalid(|owner| shared.valid_owner(owner));
             if let Some(rf) = &mut self.rf5c164 {
@@ -1175,6 +1277,12 @@ impl Renderer {
         let owner = event.owner;
         let sequence = event.sequence;
         match event.action.into_inner() {
+            Action::Dx7(command) => {
+                if let (Some(dx7), Some(state)) = (&mut self.dx7, &shared.dx7) {
+                    dx7.apply(&command, owner, state);
+                }
+                shared.retire_action(Action::Dx7(command));
+            }
             Action::RfWrite(register, value, audition) => {
                 if let Some(rf) = &mut self.rf5c164 {
                     rf.write(register, value, owner, audition, &shared.rf5c164);
@@ -1344,8 +1452,15 @@ impl Renderer {
                         self.psg_owners = [None; 4];
                         self.psg_latch = 0;
                     }
+                    Action::Mix(gains) if self.dx7.is_some() => {
+                        self.dx7_master_target = gains[4];
+                        self.dx7_master_ramp = (shared.rate / 200).max(1);
+                    }
                     Action::Reset => {
                         self.clear_media(shared);
+                        if let (Some(dx7), Some(state)) = (&mut self.dx7, &shared.dx7) {
+                            dx7.stop(state);
+                        }
                         if let Some(rf) = &mut self.rf5c164 {
                             rf.reset(&shared.rf5c164);
                         }
@@ -1426,6 +1541,7 @@ impl Renderer {
                 let action = event.action.borrow();
                 match &*action {
                     Action::Noise(command) => command.is_some_and(|command| command.starts()),
+                    Action::Dx7(command) => command.starts(),
                     Action::Mix(_)
                     | Action::RfMix(_)
                     | Action::RfLoad(_)
@@ -1456,6 +1572,9 @@ impl Renderer {
         }
         self.advance_dac(shared);
         let mut pcm = self.core.sample_bus();
+        if let Some(dx7) = &mut self.dx7 {
+            dx7.mix(&mut pcm);
+        }
         if let Some(rf) = &mut self.rf5c164 {
             rf.mix(&mut pcm);
         }
@@ -1475,7 +1594,16 @@ impl Renderer {
         pcm = self
             .livefx
             .process(pcm, self.frame, shared.rate, &shared.livefx.transport);
-        let master = unsafe { native_genesis_master(self.core.0) };
+        let master = if self.dx7.is_some() {
+            if self.dx7_master_ramp > 0 {
+                self.dx7_master +=
+                    (self.dx7_master_target - self.dx7_master) / self.dx7_master_ramp as f32;
+                self.dx7_master_ramp -= 1;
+            }
+            self.dx7_master
+        } else {
+            self.core.master()
+        };
         pcm[0] *= master;
         pcm[1] *= master;
         if self.fade_remaining > 0 {
@@ -1485,9 +1613,14 @@ impl Renderer {
             self.fade_remaining -= 1;
             if self.fade_remaining == 0 {
                 unsafe {
-                    native_genesis_stop_voices(self.core.0);
+                    if !self.core.0.is_null() {
+                        native_genesis_stop_voices(self.core.0);
+                    }
                 }
                 self.clear_media(shared);
+                if let (Some(dx7), Some(state)) = (&mut self.dx7, &shared.dx7) {
+                    dx7.stop(state);
+                }
                 if let Some(rf) = &mut self.rf5c164 {
                     rf.stop(&shared.rf5c164);
                 }
@@ -1578,12 +1711,13 @@ impl NativeGenesis {
         self.replace_running(Self::launch)
     }
     fn start_mode(&self, mode: Option<&str>) -> Result<Status, String> {
-        let mega_cd = match mode.unwrap_or("genesis") {
-            "genesis" => false,
-            "mega-cd" => true,
-            _ => return Err("Native output supports Genesis and Mega CD modes".into()),
+        let (mega_cd, dx7) = match mode.unwrap_or("genesis") {
+            "genesis" => (false, false),
+            "mega-cd" => (true, false),
+            "dx7" => (false, true),
+            _ => return Err("Native output supports Genesis, Mega CD and DX7 modes".into()),
         };
-        self.replace_running(|session| Self::launch_mode(session, mega_cd))
+        self.replace_running(|session| Self::launch_primary(session, mega_cd, dx7))
     }
     fn replace_running(
         &self,
@@ -1606,10 +1740,14 @@ impl NativeGenesis {
     fn launch(session: u64) -> Result<Running, String> {
         Self::launch_mode(session, false)
     }
+    #[cfg(test)]
     fn launch_mode(session: u64, mega_cd: bool) -> Result<Running, String> {
+        Self::launch_primary(session, mega_cd, false)
+    }
+    fn launch_primary(session: u64, mega_cd: bool, dx7: bool) -> Result<Running, String> {
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let (stop, stopped) = mpsc::channel();
-        let thread = std::thread::spawn(move || match start_device(session, mega_cd) {
+        let thread = std::thread::spawn(move || match start_device(session, mega_cd, dx7) {
             Ok((stream, shared)) => {
                 let _ = ready_tx.send(Ok(shared));
                 let _ = stopped.recv();
@@ -1679,7 +1817,11 @@ impl NativeGenesis {
     }
 }
 
-fn start_device(session: u64, mega_cd: bool) -> Result<(cpal::Stream, Arc<Shared>), String> {
+fn start_device(
+    session: u64,
+    mega_cd: bool,
+    dx7: bool,
+) -> Result<(cpal::Stream, Arc<Shared>), String> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     let device = cpal::default_host()
         .default_output_device()
@@ -1688,7 +1830,12 @@ fn start_device(session: u64, mega_cd: bool) -> Result<(cpal::Stream, Arc<Shared
         .default_output_config()
         .map_err(|e| format!("Native audio configuration failed: {e}"))?;
     let config: cpal::StreamConfig = supported.clone().into();
-    let shared = Arc::new(Shared::new_mode(config.sample_rate.0, session, mega_cd));
+    let shared = Arc::new(Shared::new_primary(
+        config.sample_rate.0,
+        session,
+        mega_cd,
+        dx7,
+    ));
     let stream = match supported.sample_format() {
         cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config, shared.clone()),
         cpal::SampleFormat::I16 => build_stream::<i16>(&device, &config, shared.clone()),
@@ -1708,7 +1855,8 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
     shared: Arc<Shared>,
 ) -> Result<cpal::Stream, String> {
     use cpal::traits::DeviceTrait;
-    let mut renderer = Renderer::new_mode(config.sample_rate.0, shared.mega_cd)?;
+    let mut renderer =
+        Renderer::new_primary(config.sample_rate.0, shared.mega_cd, shared.dx7.is_some())?;
     let channels = config.channels as usize;
     if channels == 0 {
         return Err("Native audio device has no output channels".into());
@@ -1753,6 +1901,21 @@ pub async fn native_genesis_start(
     tauri::async_runtime::spawn_blocking(move || state.start_mode(mode.as_deref()))
         .await
         .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+pub fn native_genesis_dx7_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<NativeGenesis>,
+    session: u64,
+) -> Result<dx7::Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| {
+        shared
+            .dx7
+            .as_ref()
+            .ok_or("Native DX7 requires DX7 mode")?
+            .status(shared.frame.load(Ordering::Acquire))
+    })
 }
 #[tauri::command]
 pub fn native_genesis_rf5c164_status(

@@ -95,6 +95,7 @@ fn main() {
             native_genesis::native_genesis_start,
             native_genesis::native_genesis_status,
             native_genesis::native_genesis_rf5c164_status,
+            native_genesis::native_genesis_dx7_status,
             native_genesis::native_genesis_commands,
             native_genesis::native_genesis_stop,
             native_genesis::native_genesis_shutdown,

@@ -39,6 +39,37 @@ fn main() {
         .file("native-megacd/rf5c164_wasm.cpp")
         .warnings(false)
         .compile("tetorica_native_megacd");
+    println!("cargo:rerun-if-changed=native-dx7");
+    println!("cargo:rerun-if-changed=src/native_genesis_dx7.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_dx7.h");
+    let mut dx7 = cc::Build::new();
+    dx7.cpp(true)
+        .std("c++17")
+        .opt_level(2)
+        .define("MSFA_FORCE_SCALAR", None)
+        .flag_if_supported("-fwrapv")
+        .flag_if_supported("-fno-strict-aliasing")
+        .flag_if_supported("-ffp-contract=off")
+        .include("native-dx7")
+        .file("src/native_genesis_dx7.cpp");
+    for source in [
+        "dx7note",
+        "env",
+        "exp2",
+        "fm_core",
+        "fm_op_kernel",
+        "freqlut",
+        "lfo",
+        "patch",
+        "pitchenv",
+        "resofilter",
+        "ringbuffer",
+        "sin",
+        "synth_unit",
+    ] {
+        dx7.file(format!("native-dx7/{source}.cc"));
+    }
+    dx7.warnings(false).compile("tetorica_native_dx7");
     // LiveFX executes only on its generation/probe owner thread, never the
     // output callback. The host creates a JSRuntime only on first register.
     cc::Build::new()

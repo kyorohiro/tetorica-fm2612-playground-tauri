@@ -49,6 +49,7 @@
       "../audio-sidecar-bundle/": "audio-sidecar/",
       "native-livefx/quickjs-ng/LICENSE": "quickjs-ng-LICENSE.txt",
       "native-megacd/LICENSE": "rf5c164-LICENSE.txt",
+      "native-dx7/COPYING": "msfa-dx7-LICENSE.txt",
       "../desktop/git-licenses.txt": "git-licenses.txt",
       "../desktop/git-js-licenses.txt": "git-js-licenses.txt"
     }
