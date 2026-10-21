@@ -47,6 +47,8 @@ fn main() {
         .std("c++17")
         .opt_level(2)
         .define("MSFA_FORCE_SCALAR", None)
+        // MSVC exposes M_PI in math.h only when this is defined first.
+        .define("_USE_MATH_DEFINES", None)
         .flag_if_supported("-fwrapv")
         .flag_if_supported("-fno-strict-aliasing")
         .flag_if_supported("-ffp-contract=off")
