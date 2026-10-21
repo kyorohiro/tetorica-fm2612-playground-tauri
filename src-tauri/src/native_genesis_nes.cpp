@@ -3,7 +3,7 @@
 // FDS portions: Copyright (C) 2017-2020 FIX94, MIT.
 // SPDX-License-Identifier: Apache-2.0 AND MIT
 // Direct C++ port of the pinned JSNES/Tetorica NES APU and MIT fixNES FDS
-// JavaScript adaptation. See native-nes/README.md and retained source notices.
+// JavaScript adaptation. See the accompanying provenance and license notices.
 #include "native_genesis_nes.h"
 #include <algorithm>
 #include <array>

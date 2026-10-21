@@ -5,6 +5,7 @@ Browser Git: isomorphic-git and bundled dependencies. See js/tetorica_virtual_fi
 
 NES APU: JSNES, Apache-2.0. See licenses/jsnes/.
 FDS: fixNES-derived, MIT. See licenses/fixnes-fds/.
+The default NES/FDS WASM uses the shared C++ port. See licenses/tetorica-nes/ and sources/NES-FDS.md for source and rebuilding.
 
 DX7: tetorica-msfa-dx7-wasm 0.1.0 / Google MSFA, Apache-2.0.
 See js/msfa_dx7/LICENSE, THIRD_PARTY_NOTICES.md and README.vendor.md.

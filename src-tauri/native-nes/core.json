@@ -1,0 +1,16 @@
+{
+  "source": "hello_ymfm/third_party/tetorica-nes",
+  "adaptation": "nes_core.h include renamed to native_genesis_nes.h; DSP unchanged",
+  "files": {
+    "third_party/tetorica-nes/nes_core.cpp": {
+      "mirror": "src-tauri/src/native_genesis_nes.cpp",
+      "canonicalSha256": "e34cc1bba1d9141575883603797dacfd20aadee5956a1f20697c3629fcaef47e",
+      "sha256": "0e8c43179de99ff787ded5774659a71de5adb2d0181fb3fb5e987bd60563838f"
+    },
+    "third_party/tetorica-nes/nes_core.h": {
+      "mirror": "src-tauri/src/native_genesis_nes.h",
+      "canonicalSha256": "01310f11b3b8fedf42e6c7e0dc3e6be04b16796c8bec78f6e0b01987c3a66ad1",
+      "sha256": "01310f11b3b8fedf42e6c7e0dc3e6be04b16796c8bec78f6e0b01987c3a66ad1"
+    }
+  }
+}

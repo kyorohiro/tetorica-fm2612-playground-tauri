@@ -1,7 +1,9 @@
 # Native NES + FDS
 
-`../src/native_genesis_nes.cpp` is a direct C++ port of the deployed JavaScript
-NES/FDS implementation. It does not substitute a different emulator. The
+`../src/native_genesis_nes.cpp` is the standalone Native mirror of the canonical
+`hello_ymfm/third_party/tetorica-nes/nes_core.cpp`. This is a direct C++ port of
+the pinned JavaScript NES/FDS implementation, shared with Browser WASM. It does
+not substitute a different emulator. The
 original source files and source notices are retained under `snapshot/`, with
 SHA-256 hashes in `sources.json`.
 
@@ -40,9 +42,15 @@ python3 scripts/sync_native_nes.py --source ../..
 python3 scripts/sync_native_nes.py --check --source ../..
 ```
 
-Synchronizing updates the **reference snapshot**, not the hand-ported C++.
-When the reference changes, review/port it and rerun the offline PCM comparison
-before accepting the new hashes. From `hello_ymfm`:
+Synchronizing updates the **C++ mirror**, adapting only the local header include.
+`core.json` records canonical and mirrored SHA-256 hashes. The original JavaScript
+reference is retained and checked against `sources.json`; it need not match the
+current Browser wrapper, which now loads WASM. Native `--check` without `--source`
+verifies the local mirror and pinned reference without the root repository.
+
+Replacing the pinned JavaScript reference requires `--refresh-reference`:
+review/port any DSP changes and rerun the offline PCM comparison before accepting
+the new hashes. From `hello_ymfm`:
 
 ```sh
 node scripts/check_native_nes.mjs --out /private/tmp/native-nes-parity.json
