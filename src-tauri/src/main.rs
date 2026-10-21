@@ -101,6 +101,7 @@ fn main() {
             native_genesis::native_genesis_record_stop,
             native_genesis::native_genesis_performance,
             native_genesis::native_genesis_fx,
+            native_genesis::native_genesis_monitor,
             git_http::git_https_begin,
             git_http::git_https_request,
             git_http::git_https_end,

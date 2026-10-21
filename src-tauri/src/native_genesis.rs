@@ -17,6 +17,8 @@ use std::{
 
 #[path = "native_genesis_media.rs"]
 mod media;
+#[path = "native_genesis_monitor.rs"]
+mod monitor;
 #[path = "native_genesis_recording.rs"]
 mod recording;
 const OWNERS: usize = 512;
@@ -360,6 +362,7 @@ impl Command {
 
 struct Shared {
     queue: ArrayQueue<Event>,
+    monitor: monitor::Monitor,
     media: Mutex<media::Store>,
     fx: Mutex<FxController>,
     retired: ArrayQueue<Arc<media::Reservation>>,
@@ -387,6 +390,7 @@ impl Shared {
     fn new(rate: u32, session: u64) -> Self {
         Self {
             queue: ArrayQueue::new(CAPACITY),
+            monitor: monitor::Monitor::new(rate),
             media: Mutex::new(media::Store::default()),
             fx: Mutex::new(FxController::default()),
             retired: ArrayQueue::new(CAPACITY),
@@ -791,6 +795,7 @@ struct Renderer {
     psg_latch: u8,
     invalidation: u64,
     record: Option<Arc<recording::Capture>>,
+    monitor_writer: monitor::Writer,
     heap: BinaryHeap<Event>,
     frame: u64,
     epoch: u64,
@@ -815,6 +820,7 @@ impl Renderer {
             psg_latch: 0,
             invalidation: 0,
             record: None,
+            monitor_writer: monitor::Writer::default(),
             heap: BinaryHeap::with_capacity(CAPACITY),
             frame: 0,
             epoch: 0,
@@ -1215,6 +1221,9 @@ impl Renderer {
                     .unwrap_or_else(|_| unreachable!("Only one capture may be active"));
             }
         }
+        shared
+            .monitor
+            .write(&mut self.monitor_writer, self.frame, pcm);
         self.frame += 1;
         pcm
     }
@@ -1297,6 +1306,18 @@ impl NativeGenesis {
                 Err(error)
             }
         }
+    }
+    fn session_shared(&self, session: u64) -> Result<Arc<Shared>, String> {
+        let guard = self
+            .running
+            .lock()
+            .map_err(|_| "Native audio state is unavailable")?;
+        let shared = &guard
+            .as_ref()
+            .ok_or("Native Genesis output is not running")?
+            .shared;
+        shared.check_session(session)?;
+        Ok(shared.clone())
     }
     fn with_session<T>(
         &self,
@@ -1570,6 +1591,46 @@ pub fn native_genesis_fx(
         }
         Ok(shared.status())
     })
+}
+
+#[tauri::command]
+pub async fn native_genesis_monitor(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    mode: monitor::Mode,
+    channel: Option<usize>,
+) -> Result<Option<monitor::Snapshot>, String> {
+    crate::allowed(&window)?;
+    let state = state.inner().clone();
+    let shared = state.session_shared(session)?;
+    let channel = channel.unwrap_or(0);
+    if channel > 1 {
+        return Err("Native monitor channel must be 0 or 1".into());
+    }
+    if mode == monitor::Mode::Off {
+        shared.monitor.off();
+        return Ok(None);
+    }
+    let expected = shared.monitor.generation();
+    if !shared.monitor.try_reserve_read() {
+        return Ok(None);
+    }
+    // Snapshot/FFT work neither holds the running-session mutex nor executes
+    // on the device or WebView/UI thread. At most one read enters the FFT.
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        shared.monitor.read_reserved(
+            mode,
+            channel,
+            session,
+            shared.frame.load(Ordering::Acquire),
+            expected,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -2592,6 +2653,34 @@ mod tests {
         render(&mut renderer, &shared, 128);
         assert_eq!(shared.record_stop().unwrap().frames, 128);
         assert!(shared.record_start(31.0).is_err());
+    }
+    #[test]
+    fn enabling_native_monitor_leaves_rendered_audio_bit_identical() {
+        let a = Shared::new(48000, 1);
+        let b = Shared::new(48000, 2);
+        let mut expected = Renderer::new(48000).unwrap();
+        let mut observed = Renderer::new(48000).unwrap();
+        a.enqueue(1, &tone(0)).unwrap();
+        b.enqueue(2, &tone(0)).unwrap();
+        b.monitor.read(monitor::Mode::Waveform, 0, 2, 0).unwrap();
+        let left = render(&mut expected, &a, 8192);
+        let right = render(&mut observed, &b, 8192);
+        assert_eq!(left, right);
+        let snapshot = b
+            .monitor
+            .read(monitor::Mode::Waveform, 0, 2, 8192)
+            .unwrap()
+            .unwrap();
+        assert_eq!(snapshot.frames, 4096);
+        assert_eq!(
+            snapshot.samples.unwrap(),
+            right[4096..].iter().map(|v| v[0]).collect::<Vec<_>>()
+        );
+        b.monitor.off();
+        assert_eq!(
+            render(&mut expected, &a, 8192),
+            render(&mut observed, &b, 8192)
+        );
     }
     #[test]
     fn native_media_pcm_fixture() {
