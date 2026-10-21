@@ -1,0 +1,29 @@
+{
+  "source": "hello_ymfm",
+  "files": {
+    "third_party/mame-rf5c164/rf5c164.h": {
+      "source": "438829c9b8706a78c3ac71551f44a02a3bad0431bc1ec17df1e2b1ee7d91483d",
+      "native": "438829c9b8706a78c3ac71551f44a02a3bad0431bc1ec17df1e2b1ee7d91483d"
+    },
+    "third_party/mame-rf5c164/rf5c164.cpp": {
+      "source": "9e8867bbbc74c60cf92f1300da9c01d59c0e820f69fd2a4461dfd08e3f6b8aea",
+      "native": "9e8867bbbc74c60cf92f1300da9c01d59c0e820f69fd2a4461dfd08e3f6b8aea"
+    },
+    "third_party/mame-rf5c164/LICENSE": {
+      "source": "0a2b34be38b92350c6503001de126a201bcd297203b839ac1dfc6ebd005dd853",
+      "native": "0a2b34be38b92350c6503001de126a201bcd297203b839ac1dfc6ebd005dd853"
+    },
+    "third_party/mame-rf5c164/README.md": {
+      "source": "3be506399ecf8d36c6724c82673436c7e122d82c84c1263114f1628ac1282af6",
+      "native": "3be506399ecf8d36c6724c82673436c7e122d82c84c1263114f1628ac1282af6"
+    },
+    "src/chip_state.h": {
+      "source": "ecf7cd301fc1c790af663cedfbbccd3f7403392b459baaf82e2581ee652816b1",
+      "native": "ecf7cd301fc1c790af663cedfbbccd3f7403392b459baaf82e2581ee652816b1"
+    },
+    "wasm/rf5c164_wasm.cpp": {
+      "source": "09351371671187946edc2b7cfb9bcb6093136ba59f220add9f54b79c1e69a055",
+      "native": "09351371671187946edc2b7cfb9bcb6093136ba59f220add9f54b79c1e69a055"
+    }
+  }
+}

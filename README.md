@@ -59,9 +59,11 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 ### 試験用Native Genesisエンジン
 
 **安定するまではWeb Audioが既定です。** Menu → **Audio engine…** から
-**Native Genesis (experimental)** を明示的に選べます。切替時は演奏を停止し、
+**Native Genesis / Mega CD (experimental)** を明示的に選べます。切替時は演奏を停止し、
 編集中のプロジェクトを引き継いでページを開き直します。選択だけではデバイスを開かず、
 RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
+Native選択中のModeには、対応するGenesis／Mega CDを表示します。他modeへ移るときは先にWeb Audioへ戻してください。
+Genesis／Mega CD以外ではNativeを選べません。Web Audioでは全Modeを選べます。
 
 NativeはGenesis modeのYM2612＋Sega PSG、Main／Worker実行、音色・レジスター操作、Keyboard、
 DAC・サンプル・noise、組込みFX・JavaScriptの`liveFx`、Audioモニターと最終出力の録音に対応します。
@@ -69,6 +71,13 @@ DAC・サンプル・noise、組込みFX・JavaScriptの`liveFx`、Audioモニ�
 CPALの音声コールバックで生成・変換・ミックスしてシステム既定の出力機器へ送ります。
 AudioWorklet／WebSocketでPCMを転送する現行Audifyとは別の経路です。
 Nativeを使う間はWeb Audio用のAudio outputメニューを表示しません。
+
+Mega CDではRF5C164（8声・64 KiB RAM）もNativeで生成します。
+`await useSoundChip('rf5c164')`で内蔵PCMを借り、既存の初期コード・サンプラーをMain／Workerで使えます。
+KeyboardのChip／CH選択、`loadSample`、ミキサー、RFのclock変更に対応します。
+RFの音も共通FX・最終出力monitor・録音へ入ります。StopはRAMと設定を保持して発音を止めます。
+音声のファイル選択・マイク入力・編集は既存のWebView側、再生はNative側で行います。
+Nativeコアの由来とBSD-3-Clauseライセンスは`src-tauri/native-megacd/`に保存し、ライセンスをアプリにも同梱します。
 
 `liveFx`は既存の`custom_fx.js`をQuickJS-NGで実行します。
 使用中だけNativeの専用workerで処理し、2048フレーム（48kHzで約42.7ms）の遅延が加わります。
@@ -90,7 +99,7 @@ cargo test --offline --locked --manifest-path src-tauri/Cargo.toml native_live_f
 `noise.create()`は共通C DSPのwhite／pink／brown／gray／clipを32声まで生成します。
 filter・ramp・attack／releaseに対応し、loop取消しではrelease後に領域を回収します。
 圧縮サンプルは読込み時だけブラウザーのofflineデコーダーを使い、Native側で再生します。
-追加チップ、stream、chip clock変更、独立した音色ファイルの試聴、
+追加チップ、stream、FM／PSGのchip clock変更、独立した音色ファイルの試聴、
 PSGの適用済み状態表示は未対応です。
 対応するWeb Audioへ設定で切り戻してください。FMの編集情報はJS側の設定値であり、
 Native内部のエンベロープ等の観測ではありません。

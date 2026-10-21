@@ -7,7 +7,7 @@ import {createPlaygroundChipTabs} from './playground_chip_tabs.js?v=operator-tab
 import {installPlaygroundShell} from './playground_shell.js?v=compact-shell-1';
 import {installPlaygroundGit} from './playground_git.js';
 import {resolvePlaygroundAudioEngine, createPlaygroundAudioEngineUrl,
-  installPlaygroundAudioEngineSettings} from './playground_audio_engine.js';
+  installPlaygroundAudioEngineSettings, supportsPlaygroundAudioEngineMode} from './playground_audio_engine.js';
 import {openDraftStore, createProjectAutosave} from './playground_autosave.js?v=mode-handoff-1';
 import {PLAYGROUND_MODES, resolvePlaygroundMode, createModeSynthOptions,
   createPlaygroundModeUrl, isSimplePlaygroundLayout} from './playground_mode.js?v=audio-numeric-bindings-1';
@@ -270,10 +270,16 @@ const useNukedEngine = selectedMode.engine === 'nuked';
 const synthOptions = createModeSynthOptions(selectedMode);
 const audioEngineSelection = resolvePlaygroundAudioEngine({search:window.location.search,
   desktop:typeof window.__TAURI_INTERNALS__?.invoke === 'function', modeId:selectedMode.id});
+if (audioEngineSelection.requested === 'native' && !audioEngineSelection.available) {
+  // An old link must not carry a latent Native selection into a later mode.
+  const url = createPlaygroundAudioEngineUrl(window.location.href, 'webaudio');
+  window.history.replaceState(window.history.state, '', url);
+}
 const useNativeGenesis = audioEngineSelection.engine === 'native';
 const megaDrive = useNativeGenesis
   ? new (await import('./js/native_genesis_synth.js?v=audio-numeric-bindings-1')).NativeGenesisSynth({
     invoke:window.__TAURI_INTERNALS__.invoke.bind(window.__TAURI_INTERNALS__),
+    megaCD:selectedMode.id === 'mega-cd',
     onError(error) {
       setStatus(`Native audio failed: ${error.message}. Select Web Audio in Audio engine to switch back.`);
       logLine(`[Native audio] ${error.message}`);
@@ -292,7 +298,8 @@ const pageTitle = document.getElementById('pageTitle');
 if (pageTitle) pageTitle.firstChild.textContent = document.title;
 operatorTabButton.textContent = selectedChip.toUpperCase();
 const modeSelect = document.getElementById('playgroundMode');
-const modeOptions = selectedMode.legacy ? [...PLAYGROUND_MODES, selectedMode] : PLAYGROUND_MODES;
+const modeOptions = (selectedMode.legacy ? [...PLAYGROUND_MODES, selectedMode] : PLAYGROUND_MODES)
+  .filter(mode => supportsPlaygroundAudioEngineMode(audioEngineSelection.engine, mode.id));
 modeSelect.replaceChildren(...modeOptions.map(mode => new Option(mode.label, mode.id)));
 modeSelect.value = selectedMode.id;
 document.getElementById('playgroundModeDetails').textContent =
@@ -1076,7 +1083,7 @@ async function importVgmFile(file, options) {
     source: exportNesVgm(buffer, {mode: options.nesMode}),
     statusMessage: 'for NES APU' + (detection.fds ? ' + FDS' : '') + ' (including DMC RAM; one pass)',
   } : (detection.rf5c164 && options.includeRf5c164) || detection.family === 'rf5c164' ? {
-    source: exportRf5c164Vgm(buffer, {...options, writeDacFile(bytes) {
+    source: exportRf5c164Vgm(buffer, {...options, useBuiltInPcm:selectedMode.id === 'mega-cd', writeDacFile(bytes) {
       let path;
       do { path = `/vgmdat-${crypto.randomUUID()}.dat`; } while (virtualFiles.has(path));
       dacFiles.push({path, bytes}); return path;
@@ -2871,6 +2878,9 @@ async function changePlaygroundMode(id) {
 }
 
 async function changePlaygroundAudioEngine(engine) {
+  if (!supportsPlaygroundAudioEngineMode(engine, selectedMode.id) || engine === 'native' && !audioEngineSelection.available) {
+    throw new Error('Native is available in Genesis and Mega CD modes only.');
+  }
   if (changingMode) throw new Error('A mode or engine change is already in progress.');
   changingMode = true;
   modeSelect.disabled = true;

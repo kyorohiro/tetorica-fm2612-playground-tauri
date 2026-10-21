@@ -7,6 +7,9 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_fx.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_fx.h");
     println!("cargo:rerun-if-changed=src/native_genesis_core.cpp");
+    println!("cargo:rerun-if-changed=native-megacd");
+    println!("cargo:rerun-if-changed=src/native_genesis_rf5c164.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_rf5c164.h");
     println!("cargo:rerun-if-changed=native-livefx");
     println!("cargo:rerun-if-changed=src/native_genesis_livefx.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_livefx.h");
@@ -26,6 +29,16 @@ fn main() {
         .file("native-genesis/segapsg.cpp")
         .warnings(false)
         .compile("tetorica_native_genesis");
+    cc::Build::new()
+        .cpp(true)
+        .std("c++14")
+        .opt_level(2)
+        .include("native-megacd")
+        .file("src/native_genesis_rf5c164.cpp")
+        .file("native-megacd/rf5c164.cpp")
+        .file("native-megacd/rf5c164_wasm.cpp")
+        .warnings(false)
+        .compile("tetorica_native_megacd");
     // LiveFX executes only on its generation/probe owner thread, never the
     // output callback. The host creates a JSRuntime only on first register.
     cc::Build::new()

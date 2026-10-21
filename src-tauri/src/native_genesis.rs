@@ -28,6 +28,11 @@ mod noise;
 mod noise_tests;
 #[path = "native_genesis_recording.rs"]
 mod recording;
+#[path = "native_genesis_rf5c164.rs"]
+mod rf5c164;
+#[cfg(test)]
+#[path = "native_genesis_rf5c164_tests.rs"]
+mod rf5c164_tests;
 const OWNERS: usize = 512;
 const CAPACITY: usize = 65_536;
 const MAX_BATCH: usize = 4096;
@@ -106,6 +111,14 @@ impl Drop for Core {
 
 #[derive(Clone, Debug)]
 enum Action {
+    RfWrite(u8, u8, bool),
+    RfWriteMemory(u16, u8),
+    RfLoad(Arc<rf5c164::Memory>),
+    RfReset,
+    RfClearMemory,
+    RfClock(u32),
+    RfMix([f32; 2]),
+    RfKey(u8, bool, Option<u64>),
     Write(u8, u8, u8),
     PsgWrite(u8),
     PsgStereo(u8),
@@ -176,6 +189,37 @@ pub struct Command {
 #[derive(Deserialize, Debug)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum CommandAction {
+    Rf5c164Write {
+        register: u8,
+        value: u8,
+        #[serde(default)]
+        audition: bool,
+    },
+    Rf5c164WriteMemory {
+        offset: u16,
+        value: u8,
+    },
+    Rf5c164LoadMemory {
+        offset: u32,
+        data: Vec<u8>,
+    },
+    Rf5c164Reset,
+    Rf5c164ClearMemory,
+    Rf5c164Clock {
+        hz: u32,
+    },
+    Rf5c164Mix {
+        left: f32,
+        right: f32,
+    },
+    Rf5c164KeyOn {
+        channel: u8,
+        voice: Option<u64>,
+    },
+    Rf5c164KeyOff {
+        channel: u8,
+        voice: Option<u64>,
+    },
     Write {
         #[serde(default)]
         port: u8,
@@ -236,6 +280,53 @@ impl Command {
             return Err("Invalid native command frame".into());
         }
         Ok(match self.action {
+            CommandAction::Rf5c164Write {
+                register,
+                value,
+                audition,
+            } => {
+                if register > 8 {
+                    return Err("RF5C164 register must be 0–8".into());
+                }
+                Action::RfWrite(register, value, audition)
+            }
+            CommandAction::Rf5c164WriteMemory { offset, value } => {
+                Action::RfWriteMemory(offset, value)
+            }
+            CommandAction::Rf5c164LoadMemory { offset, ref data } => {
+                Action::RfLoad(rf5c164::Memory::new(offset, data)?)
+            }
+            CommandAction::Rf5c164Reset => Action::RfReset,
+            CommandAction::Rf5c164ClearMemory => Action::RfClearMemory,
+            CommandAction::Rf5c164Clock { hz } => {
+                if !(100_000..=100_000_000).contains(&hz) {
+                    return Err("RF5C164 clock must be 100000–100000000 Hz".into());
+                }
+                Action::RfClock(hz)
+            }
+            CommandAction::Rf5c164Mix { left, right } => {
+                if [left, right]
+                    .iter()
+                    .any(|v| !v.is_finite() || !(0.0..=2.0).contains(v))
+                {
+                    return Err("RF5C164 source gains must be 0–2".into());
+                }
+                Action::RfMix([left, right])
+            }
+            CommandAction::Rf5c164KeyOn { channel, voice }
+            | CommandAction::Rf5c164KeyOff { channel, voice } => {
+                if channel > 7 {
+                    return Err("RF5C164 channel must be 0–7".into());
+                }
+                if voice.is_some_and(|voice| voice == 0 || voice > MAX_SAFE_INTEGER) {
+                    return Err("Invalid RF5C164 voice lease".into());
+                }
+                Action::RfKey(
+                    channel,
+                    matches!(self.action, CommandAction::Rf5c164KeyOn { .. }),
+                    voice,
+                )
+            }
             CommandAction::Write {
                 port,
                 register,
@@ -376,6 +467,10 @@ impl Command {
 }
 
 struct Shared {
+    mega_cd: bool,
+    rf5c164: rf5c164::Shared,
+    rf_memory: Mutex<Vec<Arc<rf5c164::Memory>>>,
+    retired_rf: ArrayQueue<Arc<rf5c164::Memory>>,
     queue: ArrayQueue<Event>,
     monitor: monitor::Monitor,
     livefx: livefx::Control,
@@ -405,8 +500,16 @@ struct Shared {
     session: u64,
 }
 impl Shared {
+    #[cfg(test)]
     fn new(rate: u32, session: u64) -> Self {
+        Self::new_mode(rate, session, false)
+    }
+    fn new_mode(rate: u32, session: u64, mega_cd: bool) -> Self {
         Self {
+            mega_cd,
+            rf5c164: rf5c164::Shared::default(),
+            rf_memory: Mutex::new(Vec::new()),
+            retired_rf: ArrayQueue::new(MAX_BATCH),
             queue: ArrayQueue::new(CAPACITY),
             monitor: monitor::Monitor::new(rate),
             livefx: livefx::Control::new(),
@@ -456,6 +559,45 @@ impl Shared {
             .map_err(|_| "Native noise state is unavailable")?;
         let mut noise_plan = noise_control.clone();
         noise_plan.collect(&self.noise_completed);
+        let mut rf_memory = self
+            .rf_memory
+            .lock()
+            .map_err(|_| "Native RF5C164 RAM uploads are unavailable")?;
+        let mut retired_rf = HashSet::new();
+        while let Some(retired) = self.retired_rf.pop() {
+            // The control registry remains a lifetime guard until retain below.
+            retired_rf.insert(Arc::as_ptr(&retired) as usize);
+        }
+        if !retired_rf.is_empty() {
+            rf_memory.retain(|memory| !retired_rf.contains(&(Arc::as_ptr(memory) as usize)));
+        }
+        let upload_bytes: usize = commands
+            .iter()
+            .filter_map(|command| {
+                if let CommandAction::Rf5c164LoadMemory { data, .. } = &command.action {
+                    Some(data.len())
+                } else {
+                    None
+                }
+            })
+            .sum();
+        let upload_count = commands
+            .iter()
+            .filter(|command| matches!(&command.action, CommandAction::Rf5c164LoadMemory { .. }))
+            .count();
+        if upload_count + rf_memory.len() > MAX_BATCH
+            || upload_bytes > rf5c164::RAM
+            || rf_memory
+                .iter()
+                .map(|memory| memory.bytes.len())
+                .sum::<usize>()
+                + upload_bytes
+                > rf5c164::PENDING_BYTES
+        {
+            return Err(
+                "Native RF5C164 upload limit reached (64 KiB per batch, 8 MiB pending)".into(),
+            );
+        }
         // Resolve every bank, tag and range before admission or state mutation.
         let mut voices = HashSet::new();
         let mut streams = 0;
@@ -468,6 +610,20 @@ impl Shared {
                 } else {
                     command.resolve(&store, self.rate, owner)?
                 };
+                if matches!(
+                    &action,
+                    Action::RfWrite(..)
+                        | Action::RfWriteMemory(..)
+                        | Action::RfLoad(..)
+                        | Action::RfReset
+                        | Action::RfClearMemory
+                        | Action::RfClock(..)
+                        | Action::RfMix(..)
+                        | Action::RfKey(..)
+                ) && !self.mega_cd
+                {
+                    return Err("Native RF5C164 requires Mega CD mode".into());
+                }
                 if let Action::SamplePlay(reservation) = &action {
                     if !voices.insert(reservation.voice) {
                         return Err("Duplicate native sample voice ID in batch".into());
@@ -502,6 +658,7 @@ impl Shared {
         let epoch = self.epoch.load(Ordering::Acquire);
         for (command, (mut action, owner)) in commands.iter().zip(actions) {
             match &action {
+                Action::RfLoad(memory) => rf_memory.push(memory.clone()),
                 Action::SamplePlay(reservation) => {
                     store
                         .reservations
@@ -677,6 +834,11 @@ impl Shared {
     }
     fn retire_action(&self, action: Action) {
         match action {
+            Action::RfLoad(memory) => {
+                self.retired_rf
+                    .push(memory)
+                    .unwrap_or_else(|_| unreachable!("Bounded RF5C164 upload retirement"));
+            }
             Action::Record(capture) => {
                 capture.stop.store(true, Ordering::Release);
                 capture.sample(self.frame.load(Ordering::Acquire), [0.0; 2]);
@@ -755,6 +917,8 @@ impl Shared {
     fn status(&self) -> Status {
         Status {
             session: self.session,
+            mode: if self.mega_cd { "mega-cd" } else { "genesis" },
+            rf5c164_clock: self.mega_cd.then(|| self.rf5c164.clock()),
             sample_rate: self.rate,
             frame: self.frame.load(Ordering::Acquire),
             ym_clock: 7_670_454,
@@ -821,6 +985,7 @@ struct DacStream {
 
 struct Renderer {
     core: Core,
+    rf5c164: Option<rf5c164::Renderer>,
     fx: FxRenderer,
     livefx: livefx::Renderer,
     noise: noise::Renderer,
@@ -845,9 +1010,18 @@ struct Renderer {
     idle: bool,
 }
 impl Renderer {
+    #[cfg(test)]
     fn new(rate: u32) -> Result<Self, String> {
+        Self::new_mode(rate, false)
+    }
+    fn new_mode(rate: u32, mega_cd: bool) -> Result<Self, String> {
         Ok(Self {
             core: Core::new(rate)?,
+            rf5c164: if mega_cd {
+                Some(rf5c164::Renderer::new(rate)?)
+            } else {
+                None
+            },
             fx: FxRenderer::new(rate),
             livefx: livefx::Renderer::new(),
             noise: noise::Renderer::new(rate)?,
@@ -928,6 +1102,9 @@ impl Renderer {
                 }
             }
             self.noise.cancel_invalid(|owner| shared.valid_owner(owner));
+            if let Some(rf) = &mut self.rf5c164 {
+                rf.cancel_invalid(|owner| shared.valid_owner(owner), &shared.rf5c164);
+            }
             for voice in self.voices.iter_mut().flatten() {
                 if !shared.valid_owner(voice.owner) {
                     voice.reservation.cancel();
@@ -998,6 +1175,50 @@ impl Renderer {
         let owner = event.owner;
         let sequence = event.sequence;
         match event.action.into_inner() {
+            Action::RfWrite(register, value, audition) => {
+                if let Some(rf) = &mut self.rf5c164 {
+                    rf.write(register, value, owner, audition, &shared.rf5c164);
+                }
+            }
+            Action::RfWriteMemory(offset, value) => {
+                if let Some(rf) = &mut self.rf5c164 {
+                    rf.write_memory(offset, value);
+                }
+            }
+            Action::RfLoad(memory) => {
+                if let Some(rf) = &mut self.rf5c164 {
+                    rf.load(&memory);
+                }
+                shared
+                    .retired_rf
+                    .push(memory)
+                    .unwrap_or_else(|_| unreachable!("Bounded RF5C164 upload retirement"));
+            }
+            Action::RfReset => {
+                if let Some(rf) = &mut self.rf5c164 {
+                    rf.reset(&shared.rf5c164);
+                }
+            }
+            Action::RfClearMemory => {
+                if let Some(rf) = &mut self.rf5c164 {
+                    rf.clear_memory();
+                }
+            }
+            Action::RfClock(clock) => {
+                if let Some(rf) = &mut self.rf5c164 {
+                    rf.set_clock(clock, &shared.rf5c164);
+                }
+            }
+            Action::RfMix(gains) => {
+                if let Some(rf) = &mut self.rf5c164 {
+                    rf.set_mix(gains);
+                }
+            }
+            Action::RfKey(channel, on, voice) => {
+                if let Some(rf) = &mut self.rf5c164 {
+                    rf.key(channel, on, owner, voice, &shared.rf5c164);
+                }
+            }
             Action::DacPlay {
                 bank,
                 offset,
@@ -1125,6 +1346,9 @@ impl Renderer {
                     }
                     Action::Reset => {
                         self.clear_media(shared);
+                        if let Some(rf) = &mut self.rf5c164 {
+                            rf.reset(&shared.rf5c164);
+                        }
                         self.pan_register = 0;
                         self.fm_owners = [None; 6];
                         self.psg_owners = [None; 4];
@@ -1203,6 +1427,12 @@ impl Renderer {
                 match &*action {
                     Action::Noise(command) => command.is_some_and(|command| command.starts()),
                     Action::Mix(_)
+                    | Action::RfMix(_)
+                    | Action::RfLoad(_)
+                    | Action::RfWriteMemory(..)
+                    | Action::RfClearMemory
+                    | Action::RfClock(_)
+                    | Action::RfReset
                     | Action::Reset
                     | Action::Record(_)
                     | Action::Fx(_)
@@ -1226,6 +1456,9 @@ impl Renderer {
         }
         self.advance_dac(shared);
         let mut pcm = self.core.sample_bus();
+        if let Some(rf) = &mut self.rf5c164 {
+            rf.mix(&mut pcm);
+        }
         self.noise.mix(&mut pcm, &shared.noise_completed);
         for slot in &mut self.voices {
             if let Some(voice) = slot {
@@ -1255,6 +1488,9 @@ impl Renderer {
                     native_genesis_stop_voices(self.core.0);
                 }
                 self.clear_media(shared);
+                if let Some(rf) = &mut self.rf5c164 {
+                    rf.stop(&shared.rf5c164);
+                }
                 self.noise.reset(&shared.noise_completed);
                 self.fx.stop();
                 self.livefx.end_stop();
@@ -1304,6 +1540,9 @@ impl Renderer {
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     session: u64,
+    mode: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rf5c164_clock: Option<u32>,
     sample_rate: u32,
     frame: u64,
     ym_clock: u32,
@@ -1334,8 +1573,17 @@ pub struct NativeGenesis {
     running: Arc<Mutex<Option<Running>>>,
 }
 impl NativeGenesis {
+    #[cfg(test)]
     fn start(&self) -> Result<Status, String> {
         self.replace_running(Self::launch)
+    }
+    fn start_mode(&self, mode: Option<&str>) -> Result<Status, String> {
+        let mega_cd = match mode.unwrap_or("genesis") {
+            "genesis" => false,
+            "mega-cd" => true,
+            _ => return Err("Native output supports Genesis and Mega CD modes".into()),
+        };
+        self.replace_running(|session| Self::launch_mode(session, mega_cd))
     }
     fn replace_running(
         &self,
@@ -1354,10 +1602,14 @@ impl NativeGenesis {
         *guard = Some(running);
         Ok(status)
     }
+    #[cfg(test)]
     fn launch(session: u64) -> Result<Running, String> {
+        Self::launch_mode(session, false)
+    }
+    fn launch_mode(session: u64, mega_cd: bool) -> Result<Running, String> {
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let (stop, stopped) = mpsc::channel();
-        let thread = std::thread::spawn(move || match start_device(session) {
+        let thread = std::thread::spawn(move || match start_device(session, mega_cd) {
             Ok((stream, shared)) => {
                 let _ = ready_tx.send(Ok(shared));
                 let _ = stopped.recv();
@@ -1427,7 +1679,7 @@ impl NativeGenesis {
     }
 }
 
-fn start_device(session: u64) -> Result<(cpal::Stream, Arc<Shared>), String> {
+fn start_device(session: u64, mega_cd: bool) -> Result<(cpal::Stream, Arc<Shared>), String> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     let device = cpal::default_host()
         .default_output_device()
@@ -1436,7 +1688,7 @@ fn start_device(session: u64) -> Result<(cpal::Stream, Arc<Shared>), String> {
         .default_output_config()
         .map_err(|e| format!("Native audio configuration failed: {e}"))?;
     let config: cpal::StreamConfig = supported.clone().into();
-    let shared = Arc::new(Shared::new(config.sample_rate.0, session));
+    let shared = Arc::new(Shared::new_mode(config.sample_rate.0, session, mega_cd));
     let stream = match supported.sample_format() {
         cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config, shared.clone()),
         cpal::SampleFormat::I16 => build_stream::<i16>(&device, &config, shared.clone()),
@@ -1456,7 +1708,7 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
     shared: Arc<Shared>,
 ) -> Result<cpal::Stream, String> {
     use cpal::traits::DeviceTrait;
-    let mut renderer = Renderer::new(config.sample_rate.0)?;
+    let mut renderer = Renderer::new_mode(config.sample_rate.0, shared.mega_cd)?;
     let channels = config.channels as usize;
     if channels == 0 {
         return Err("Native audio device has no output channels".into());
@@ -1494,12 +1746,29 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
 pub async fn native_genesis_start(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, NativeGenesis>,
+    mode: Option<String>,
 ) -> Result<Status, String> {
     crate::allowed(&window)?;
     let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || state.start())
+    tauri::async_runtime::spawn_blocking(move || state.start_mode(mode.as_deref()))
         .await
         .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+pub fn native_genesis_rf5c164_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<NativeGenesis>,
+    session: u64,
+) -> Result<rf5c164::Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| {
+        if !shared.mega_cd {
+            return Err("Native RF5C164 requires Mega CD mode".into());
+        }
+        shared
+            .rf5c164
+            .status(shared.rate, shared.frame.load(Ordering::Acquire))
+    })
 }
 #[tauri::command]
 pub fn native_genesis_status(
