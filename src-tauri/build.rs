@@ -1,3 +1,19 @@
 fn main() {
+    println!("cargo:rerun-if-changed=native-genesis");
+    println!("cargo:rerun-if-changed=src/native_genesis_core.cpp");
+    cc::Build::new()
+        .cpp(true)
+        .std("c++14")
+        .opt_level(2)
+        .include("native-genesis")
+        .file("src/native_genesis_core.cpp")
+        .file("native-genesis/ym2612_wasm.cpp")
+        .file("native-genesis/segapsg_wasm.cpp")
+        .file("native-genesis/ymfm_opn.cpp")
+        .file("native-genesis/ymfm_adpcm.cpp")
+        .file("native-genesis/ymfm_ssg.cpp")
+        .file("native-genesis/segapsg.cpp")
+        .warnings(false)
+        .compile("tetorica_native_genesis");
     tauri_build::build()
 }

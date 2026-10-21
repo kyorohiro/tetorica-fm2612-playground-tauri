@@ -1,44 +1,44 @@
 import {createSpcAudio} from './playground_spc_audio.js?v=spc-events-1';
 import {createSpcClient} from './playground_spc.js?v=spc-events-1';
-import {createSnesAudio} from './playground_snes_audio.js?v=msx-modes-2';
-import {createSnesClient} from './playground_snes.js?v=msx-modes-2';
-import {createChipInspector} from './playground_chip_inspector.js?v=msx-modes-2';
-import {createPerformanceHost} from './playground_performance_host.js?v=msx-modes-2';
-import {DEFAULT_WORKER_LOOKAHEAD_SECONDS, validateWorkerLookahead} from './playground_performance_sender.js?v=msx-modes-2';
+import {createSnesAudio} from './playground_snes_audio.js?v=audio-numeric-bindings-1';
+import {createSnesClient} from './playground_snes.js?v=audio-numeric-bindings-1';
+import {createChipInspector} from './playground_chip_inspector.js?v=audio-numeric-bindings-1';
+import {createPerformanceHost} from './playground_performance_host.js?v=audio-numeric-bindings-1';
+import {DEFAULT_WORKER_LOOKAHEAD_SECONDS, validateWorkerLookahead} from './playground_performance_sender.js?v=audio-numeric-bindings-1';
 import {midiToOpnPitch, opnPitchFromHz} from './soundchip_pitch.js';
-import {attachChipClock, CHIP_CLOCKS} from './playground_chip_clock.js?v=msx-modes-2';
-import {createNesAudio} from './playground_nes_audio.js?v=msx-modes-2';
-import {createNesClient} from './playground_nes.js?v=msx-modes-2';
-import {createDx7Audio} from './playground_dx7_audio.js?v=msx-modes-2';
-import {createDx7Client} from './playground_dx7.js?v=msx-modes-2';
-import {createPWM32XAudio} from './playground_pwm_audio.js?v=msx-modes-2';
-import {createPWM32XClient} from './pwm32x_playback.js?v=msx-modes-2';
-import {createYm2151Audio} from './playground_ym2151_audio.js?v=msx-modes-2';
-import {createAy8910Audio} from './playground_ay8910_audio.js?v=msx-modes-2';
-import {createYm2413Audio} from './playground_ym2413_audio.js?v=msx-modes-2';
-import {createOplAudio} from './playground_opl_audio.js?v=msx-modes-2';
-import {OPL_CHIPS} from './playground_opl.js?v=msx-modes-2';
-import {YM2413_INSTRUMENTS as OPLL_INSTRUMENTS,YM2413_USER_PRESETS as OPLL_USER_PRESETS} from './ym2413synth.js?v=msx-modes-2';
-import {OPL_PRESETS} from './opl_synth.js?v=msx-modes-2';
-import {createYm2151Client} from './playground_ym2151.js?v=msx-modes-2';
-import {createSegaPsgAudio} from './playground_segapsg_audio.js?v=msx-modes-2';
-import {createSegaPsgClient} from './playground_segapsg.js?v=msx-modes-2';
+import {attachChipClock, CHIP_CLOCKS} from './playground_chip_clock.js?v=audio-numeric-bindings-1';
+import {createNesAudio} from './playground_nes_audio.js?v=audio-numeric-bindings-1';
+import {createNesClient} from './playground_nes.js?v=audio-numeric-bindings-1';
+import {createDx7Audio} from './playground_dx7_audio.js?v=audio-numeric-bindings-1';
+import {createDx7Client} from './playground_dx7.js?v=audio-numeric-bindings-1';
+import {createPWM32XAudio} from './playground_pwm_audio.js?v=audio-numeric-bindings-1';
+import {createPWM32XClient} from './pwm32x_playback.js?v=audio-numeric-bindings-1';
+import {createYm2151Audio} from './playground_ym2151_audio.js?v=audio-numeric-bindings-1';
+import {createAy8910Audio} from './playground_ay8910_audio.js?v=audio-numeric-bindings-1';
+import {createYm2413Audio} from './playground_ym2413_audio.js?v=audio-numeric-bindings-1';
+import {createOplAudio} from './playground_opl_audio.js?v=audio-numeric-bindings-1';
+import {OPL_CHIPS} from './playground_opl.js?v=audio-numeric-bindings-1';
+import {YM2413_INSTRUMENTS as OPLL_INSTRUMENTS,YM2413_USER_PRESETS as OPLL_USER_PRESETS} from './ym2413synth.js?v=audio-numeric-bindings-1';
+import {OPL_PRESETS} from './opl_synth.js?v=audio-numeric-bindings-1';
+import {createYm2151Client} from './playground_ym2151.js?v=audio-numeric-bindings-1';
+import {createSegaPsgAudio} from './playground_segapsg_audio.js?v=audio-numeric-bindings-1';
+import {createSegaPsgClient} from './playground_segapsg.js?v=audio-numeric-bindings-1';
 import {createLoopAsyncTasks} from './playground_async_tasks.js';
-import {createOpnAudio} from './playground_opn_audio.js?v=msx-modes-2';
-import {createOpnClient} from './playground_opn.js?v=msx-modes-2';
+import {createOpnAudio} from './playground_opn_audio.js?v=audio-numeric-bindings-1';
+import {createOpnClient} from './playground_opn.js?v=audio-numeric-bindings-1';
 import {createSoundChipRegistry} from './playground_soundchips.js?v=native-modes-3';
-import {createMusicalKeyboard, createKeyboardApiGuard, keyboardBinding, registerKeyboardScope} from './playground_keyboard.js?v=msx-modes-2';
-import {createSampleInstrument as createSampleInstrumentFactory} from './playground_sample_instrument.js?v=msx-modes-2';
-import {createGameboyAudio} from './playground_gameboy_audio.js?v=msx-modes-2';
-import {createPrimaryGameboyApi} from './playground_gameboy.js?v=msx-modes-2';
-import {createGameboyClient} from './playground_gameboy.js?v=msx-modes-2';
-import {borrowNativeApi, createNativePrimaryClient} from './playground_native_primary.js?v=msx-modes-2';
-import {createHuc6280Audio} from './playground_huc6280_audio.js?v=msx-modes-2';
-import {createOki6258Audio} from './playground_okim6258_audio.js?v=msx-modes-2';
-import {createYm2608Audio} from './playground_ym2608_audio.js?v=msx-modes-2';
-import {createYm2608Client} from './playground_ym2608.js?v=msx-modes-2';
-import {createRf5c164Client} from './playground_rf5c164.js?v=msx-modes-2';
-import {createRf5c164Audio} from './playground_rf5c164_audio.js?v=msx-modes-2';
+import {createMusicalKeyboard, createKeyboardApiGuard, keyboardBinding, registerKeyboardScope} from './playground_keyboard.js?v=audio-numeric-bindings-1';
+import {createSampleInstrument as createSampleInstrumentFactory} from './playground_sample_instrument.js?v=audio-numeric-bindings-1';
+import {createGameboyAudio} from './playground_gameboy_audio.js?v=audio-numeric-bindings-1';
+import {createPrimaryGameboyApi} from './playground_gameboy.js?v=audio-numeric-bindings-1';
+import {createGameboyClient} from './playground_gameboy.js?v=audio-numeric-bindings-1';
+import {borrowNativeApi, createNativePrimaryClient} from './playground_native_primary.js?v=audio-numeric-bindings-1';
+import {createHuc6280Audio} from './playground_huc6280_audio.js?v=audio-numeric-bindings-1';
+import {createOki6258Audio} from './playground_okim6258_audio.js?v=audio-numeric-bindings-1';
+import {createYm2608Audio} from './playground_ym2608_audio.js?v=audio-numeric-bindings-1';
+import {createYm2608Client} from './playground_ym2608.js?v=audio-numeric-bindings-1';
+import {createRf5c164Client} from './playground_rf5c164.js?v=audio-numeric-bindings-1';
+import {createRf5c164Audio} from './playground_rf5c164_audio.js?v=audio-numeric-bindings-1';
 import {samplePCM} from './native_sample.js?v=audio-stability-2';
 import {formatLogArgs} from './playground_log.js';
 import {createLiveFxLifecycle} from './native_fx.js?v=live-fx-definitions-1';
@@ -48,16 +48,16 @@ import {createLiveFxLifecycle} from './native_fx.js?v=live-fx-definitions-1';
  * 依存: window のイベント処理、Web Audio 対応 Synth、Worker（Worker モード時）。
  * import とブラウザー上の実行・音声初期化は別。Node.js での実再生用ではない。
  */
-import {createMidiRack, createMidiApi, validateBendRange, MIDI_SUPPORTED_CC} from './playground_midi.js?v=sega-modes-1';
-import {parseMidiFile} from './midi_file.js?v=sega-modes-1';
+import {createMidiRack, createMidiApi, validateBendRange, MIDI_SUPPORTED_CC} from './playground_midi.js?v=audio-numeric-bindings-1';
+import {parseMidiFile} from './midi_file.js?v=audio-numeric-bindings-1';
 import { createAudioScheduler } from "./playground_audio_scheduler.js";
 import {
   FM_PRESETS,
-} from "./megasynth.js?v=msx-modes-2";
-import { createTetoricaSynth } from "./tetorica_synth.js?v=msx-modes-2";
+} from "./megasynth.js?v=audio-numeric-bindings-1";
+import { createTetoricaSynth } from "./tetorica_synth.js?v=audio-numeric-bindings-1";
 import { createPlaygroundClock, createSecondsTimeline } from "./playground_clock.js?v=spc-song-timing-1";
 import { capturePlaygroundNativeIpc, executeWithPlaygroundGuards } from "./playground_execution.js";
-import { createPlaygroundLive } from "./playground_live.js?v=msx-modes-2";
+import { createPlaygroundLive } from "./playground_live.js?v=audio-numeric-bindings-1";
 import { createPlaygroundMusic } from "./playground_music.js?v=audio-stability-2";
 import { createPlaygroundNoiseApi } from "./playground_noise.js";
 import { createFmProxy } from "./playground_sync.js?v=audio-stability-2";
@@ -151,11 +151,11 @@ export function createPlaygroundRuntime(
       workletUrl:
         options.audioWorkletUrl ??
         options.workletUrl ??
-        (['nes','snes','x68000','huc6280','segapsg','dx7','ym3526','ym3812','y8950','ymf262','ym2413','ay8910','msx','msx-audio'].includes(options.chip) ? undefined : options.chip === 'gameboy' ? new URL('./playground_gameboy_worklet.js?v=msx-modes-2', import.meta.url).href
-          : options.chip === 'ym2203' ? './ym2203-worklet.js?v=msx-modes-2'
-          : options.chip === 'ym2608' ? './ym2608-worklet.js?v=msx-modes-2'
+        (['nes','snes','x68000','huc6280','segapsg','dx7','ym3526','ym3812','y8950','ymf262','ym2413','ay8910','msx','msx-audio'].includes(options.chip) ? undefined : options.chip === 'gameboy' ? new URL('./playground_gameboy_worklet.js?v=audio-numeric-bindings-1', import.meta.url).href
+          : options.chip === 'ym2203' ? './ym2203-worklet.js?v=audio-numeric-bindings-1'
+          : options.chip === 'ym2608' ? './ym2608-worklet.js?v=audio-numeric-bindings-1'
           : ['ym2610','ym2610b'].includes(options.chip)
-            ? "./ym2610b-worklet.js?v=msx-modes-2" : "./ym2612-worklet.js?v=msx-modes-2"),
+            ? "./ym2610b-worklet.js?v=audio-numeric-bindings-1" : "./ym2612-worklet.js?v=audio-numeric-bindings-1"),
       ym2612WasmUrl:
         options.ym2612WasmUrl ??
         "./generated/ym2612_wasm.wasm",
@@ -172,8 +172,11 @@ export function createPlaygroundRuntime(
             : undefined),
       segaPsgWasmUrl:
         options.segaPsgWasmUrl ??
-        "./generated/segapsg_wasm.wasm?v=sega-modes-1",
+        "./generated/segapsg_wasm.wasm?v=audio-numeric-bindings-1",
     });
+  // Audio backends provide timing explicitly; a native backend does not
+  // manufacture an AudioContext or an AudioNode to satisfy browser APIs.
+  const getAudioClock = () => megaDrive.clock ?? megaDrive.audioContext;
   const presets = {
     ...FM_PRESETS,
     ...(options.presets ?? {}),
@@ -212,7 +215,7 @@ export function createPlaygroundRuntime(
     ),
   };
   const audioScheduler = createAudioScheduler({
-    now: () => megaDrive.audioContext?.currentTime ?? 0,
+    now: () => getAudioClock()?.currentTime ?? 0,
     send: (entries) => synth.scheduleWrites(entries),
   });
   audioScheduler.setTiming({ lookaheadSeconds: runtime.dacLookaheadSeconds, schedulerIntervalMs: Math.min(10, Math.max(1, runtime.dacLookaheadSeconds * 1000)) });
@@ -241,7 +244,7 @@ export function createPlaygroundRuntime(
     options.execution ?? "main";
   const defaultLogicWorkerUrl =
     new URL(
-      "./playground_logic_worker.js?v=msx-modes-2",
+      "./playground_logic_worker.js?v=audio-numeric-bindings-1",
       import.meta.url
     );
   const logicWorkerUrl =
@@ -313,7 +316,7 @@ export function createPlaygroundRuntime(
   let playbackState = "stopped";
   let logicWorker = null;
   let workerGlobals = null;
-  const performanceHost = createPerformanceHost({getContext: () => megaDrive.audioContext,
+  const performanceHost = createPerformanceHost({getContext: getAudioClock,
     onSuspended: () => { stop(); emitStatus('Audio suspended. Press Run to start again.'); }});
   const pcmDevices = new Set();
   const spcLoopOwners = new WeakMap();
@@ -328,7 +331,7 @@ export function createPlaygroundRuntime(
   const pendingPcmDisposals = new Map();
   let pcmSequence = 0;
   const soundChips = createSoundChipRegistry();
-  const chipInspector = createChipInspector({decode:decodePcm,endpoints:()=>{
+  const chipInspector = megaDrive.chipInspector ?? createChipInspector({decode:decodePcm,endpoints:()=>{
     const entries=[];
     if(hasOpn&&megaDrive.node?.port)entries.push({id:capabilities.chip,kind:capabilities.chip,label:`${capabilities.chip.toUpperCase()} (primary)`,port:megaDrive.node.port});
     if(capabilities.chip==='gameboy'&&megaDrive.gameboy&&megaDrive.node?.port)entries.push({id:'gameboy',kind:'gameboy',label:'Game Boy (primary)',port:megaDrive.node.port});
@@ -501,6 +504,7 @@ export function createPlaygroundRuntime(
   function clearAuditions() {
     auditionTokens.clear();
     if (hasOpn) megaDrive.node?.port?.postMessage({type: 'clear-auditions'});
+    megaDrive.clearAuditions?.();
     options.onAuditionReset?.();
   }
   const auditionSynth = {
@@ -514,11 +518,12 @@ export function createPlaygroundRuntime(
         throw new RangeError('Invalid audition pitch');
       }
       const port = megaDrive.node?.port;
-      if (!port) throw new Error('Audition audio is not ready');
+      if (!port && typeof megaDrive.auditionNoteOn !== 'function') throw new Error('Audition audio is not ready');
       if (auditionSequence >= Number.MAX_SAFE_INTEGER) throw new RangeError('Audition token limit reached');
       const token = ++auditionSequence;
       auditionTokens.set(channel, token);
-      port.postMessage({type: 'audition-note-on', channel: physicalChannel, block, fnum, token});
+      if (port) port.postMessage({type: 'audition-note-on', channel: physicalChannel, block, fnum, token});
+      else megaDrive.auditionNoteOn(physicalChannel, block, fnum, token);
     },
     noteOff(channel) {
       const physicalChannel = auditionChannel(channel);
@@ -526,9 +531,11 @@ export function createPlaygroundRuntime(
       if (token === undefined) return;
       auditionTokens.delete(channel);
       megaDrive.node?.port?.postMessage({type: 'audition-note-off', channel: physicalChannel, token});
+      megaDrive.auditionNoteOff?.(physicalChannel, token);
     },
   };
   async function openPcm(name, token = currentRunToken, options = {}) {
+    if (capabilities.dynamicSoundChips === false) throw new Error('Additional sound chips are unavailable in the experimental Native Genesis backend. Select Web Audio to use them.');
     if (!options || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(k => !['id', ...(name === 'nes' ? ['fds', 'clock'] : [])].includes(k))) throw new TypeError('createSoundChip supports {id}, and {fds, clock} for NES');
     if (name === 'nes' && options.fds !== undefined && typeof options.fds !== 'boolean') throw new TypeError('fds must be boolean');
     if(!['ym2612', 'ym2203', 'ym2610', 'rf5c164', 'ym2608', 'gameboy', 'segapsg', 'ym2151', 'pwm', 'nes', 'dx7', 'snes', 'spc', 'huc6280', 'okim6258', 'ym3526','ym3812','y8950','ymf262','ym2413','ay8910'].includes(name)) throw new Error('Unsupported Playground sound chip: ' + name);
@@ -878,7 +885,15 @@ export function createPlaygroundRuntime(
       synth?.clearDacPlayback?.();
       synth?.write?.(0, 0x2b, 0x00);
     }
-    stopAllNotes();
+    if (typeof megaDrive.stopNativeAudio === 'function') {
+      clearAuditions(); activeNotes.clear();
+      const pending = megaDrive.stopNativeAudio();
+      primaryPcmSilence = Promise.all([primaryPcmSilence,Promise.resolve(pending)]).then(()=>{}).catch(error=>{
+        emitLog(formatLogArgs([error]));
+      });
+      // Stop remains synchronous for browser callers; the next Run, audition,
+      // stopWithFade and finalize await this native callback barrier.
+    } else stopAllNotes();
     megaDrive.pcm?._cancelClockRequests?.('Run stopped');
     if (megaDrive.pcm?._stopVoices) {
       const stopped=megaDrive.pcm._stopVoices();
@@ -919,8 +934,7 @@ export function createPlaygroundRuntime(
   const clockApi =
     createPlaygroundClock({
       runtime,
-      getAudioContext: () =>
-        megaDrive.audioContext,
+      getAudioContext: getAudioClock,
       getCurrentRunToken: () =>
         currentRunToken,
       getCurrentLoopContext: () =>
@@ -1112,6 +1126,9 @@ export function createPlaygroundRuntime(
   }
 
   function createFxApi() {
+    if (capabilities.backend === 'native-genesis') return new Proxy({}, {
+      get: () => () => {throw new Error('FX is unavailable in the experimental Native Genesis backend. Select Web Audio to use it.');},
+    });
     if (megaDrive.audio?.createFXApi) {
       return megaDrive.audio.createFXApi({
         getBeatSeconds: () =>
@@ -1416,7 +1433,7 @@ export function createPlaygroundRuntime(
         // its musical Keyboard callback is still releasing the old client.
         if(pendingPcmDisposals.get(args[0])!==pending){finish();return;}
         if(performance && performanceHost.clock?.session===performance.session &&
-            megaDrive.audioContext.currentTime < performance.time) {setTimeout(cleanup,10);return;}
+            getAudioClock().currentTime < performance.time) {setTimeout(cleanup,10);return;}
         try {for(const device of devices){performanceHost.detach(device.node?.port);device.dispose();}}
         catch(error){emitLog(formatLogArgs([error]));}
         finally {if(pendingPcmDisposals.get(args[0])===pending)pendingPcmDisposals.delete(args[0]);finish();}
@@ -1782,12 +1799,12 @@ export function createPlaygroundRuntime(
     }
     midiFilePlaying = true;
     for (const warning of song.warnings) emitLog(warning);
-    const origin=megaDrive.audioContext.currentTime+runtime.dacLookaheadSeconds;
+    const origin=getAudioClock().currentTime+runtime.dacLookaheadSeconds;
     let cursor=0;
     try {
       while(cursor<song.events.length) {
         if(runToken!==currentRunToken)throw new DOMException('Run stopped','AbortError');
-        const horizon=megaDrive.audioContext.currentTime+runtime.dacLookaheadSeconds;
+        const horizon=getAudioClock().currentTime+runtime.dacLookaheadSeconds;
         let count=0;
         midiWriteBatch=[];
         while(cursor<song.events.length && origin+song.events[cursor].seconds<=horizon && count++<4096) {
@@ -1814,7 +1831,7 @@ export function createPlaygroundRuntime(
         await clockApi.sleep(.01,runToken);
       }
       rack.stop(origin+song.seconds);
-      await clockApi.sleep(Math.max(0,origin+song.seconds-megaDrive.audioContext.currentTime),runToken);
+      await clockApi.sleep(Math.max(0,origin+song.seconds-getAudioClock().currentTime),runToken);
     } finally {midiWriteBatch=null;if(runToken===currentRunToken)midiFilePlaying=false;}
   }
 
@@ -1842,6 +1859,10 @@ export function createPlaygroundRuntime(
     }
     if (hasOpn && sharedFmSynth !== synth) {
       sharedFm = createFmProxy(synth);
+      if (megaDrive.clock && !megaDrive.node?.port) Object.defineProperty(sharedFm,'clock',{
+        enumerable:true, get:()=>synth.clock,
+        set:()=>{throw new Error('Changing the chip clock is unavailable in the experimental Native Genesis backend. Select Web Audio to use it.');},
+      });
       if (megaDrive.node?.port) attachChipClock(sharedFm, megaDrive.node.port, CHIP_CLOCKS[capabilities.chip ?? 'ym2612'], {
         primary:true,
         onApplied: hz => {
@@ -1926,7 +1947,7 @@ export function createPlaygroundRuntime(
       playStream: (name, { atSamples = 0 } = {}) => {
         requireDac();
         const origin = runtime.sampleClockStartTime ??
-          (megaDrive.audioContext.currentTime +
+          (getAudioClock().currentTime +
             runtime.dacLookaheadSeconds);
         runtime.sampleClockStartTime = origin;
         fm.playDacBank(
@@ -2010,8 +2031,9 @@ export function createPlaygroundRuntime(
           if (chipName === 'rf5c164' && megaDrive.pcm) return keyboardApi(primaryPcmApi());
           if (chipName === 'gameboy' && isGameboy) return gameboy;
           if (['ym2612', 'ym2203', 'ym2610'].includes(chipName) && capabilities.chip === chipName) return fm;
+          if (chipName === 'segapsg' && capabilities.backend === 'native-genesis') return psg;
           return pg.createSoundChip(chipName, {id:`${chipName}:shared`});
-        }, {evictOnDispose: !(name === 'rf5c164' && megaDrive.pcm) && !megaDrive.primaryEndpoints?.some(endpoint => endpoint.name === name) && !((['ym2612', 'ym2203', 'ym2610'].includes(name) || name === 'gameboy') && capabilities.chip === name)});
+        }, {evictOnDispose: !(name === 'rf5c164' && megaDrive.pcm) && !(name === 'segapsg' && capabilities.backend === 'native-genesis') && !megaDrive.primaryEndpoints?.some(endpoint => endpoint.name === name) && !((['ym2612', 'ym2203', 'ym2610'].includes(name) || name === 'gameboy') && capabilities.chip === name)});
         check();
         return chip;
       },
@@ -2348,7 +2370,7 @@ export function createPlaygroundRuntime(
   function beginSampleSchedule() {
     if (runtime.sampleClockStartTime === null) {
       runtime.sampleClockStartTime =
-        megaDrive.audioContext.currentTime +
+        getAudioClock().currentTime +
         runtime.dacLookaheadSeconds;
     }
     return Math.round(
@@ -2359,7 +2381,7 @@ export function createPlaygroundRuntime(
   function scheduleWritesSamples(fm, startSamples, entries) {
     const start = Math.max(0, Number(startSamples) || 0);
     const origin = runtime.sampleClockStartTime ??
-      (megaDrive.audioContext.currentTime +
+      (getAudioClock().currentTime +
         runtime.dacLookaheadSeconds);
     runtime.sampleClockStartTime = origin;
     audioScheduler.enqueue(entries.map(([offset, port, register, value]) => {
@@ -2508,6 +2530,7 @@ export function createPlaygroundRuntime(
       playOptions.execution ??
       defaultExecution;
     if (execution === "worker") {
+      if (capabilities.worker === false) throw new Error('Worker execution is unavailable in the experimental Native Genesis backend. Select Web Audio or use Main execution.');
       const pending = playSourceInWorker(sourceCode);
       const runToken = currentRunToken;
       try {
@@ -2577,6 +2600,8 @@ export function createPlaygroundRuntime(
           nativeIpc,
         }
       );
+
+      await megaDrive.flush?.();
 
       evaluationState.collectingKeyboardBinding = false;
       if (runToken !== currentRunToken) return;
@@ -2729,7 +2754,7 @@ export function createPlaygroundRuntime(
     const context = megaDrive.audioContext;
     if (!stopFadeNode || context?.state !== 'running') {
       stop();
-      return Promise.resolve();
+      return primaryPcmSilence;
     }
     const runToken = currentRunToken;
     const now = context.currentTime, duration = 0.12, end = now + duration;

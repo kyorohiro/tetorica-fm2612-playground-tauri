@@ -1,8 +1,8 @@
-import {OpnKeyboardInspector} from './playground_opn_inspector.js?v=msx-modes-2';
-import {PsgInspectorState, receiveChipInspector} from './playground_chip_inspector_state.js?v=msx-modes-2';
-import {validateChipClock} from './playground_chip_clock.js?v=msx-modes-2';
+import {OpnKeyboardInspector} from './playground_opn_inspector.js?v=audio-numeric-bindings-1';
+import {PsgInspectorState, receiveChipInspector} from './playground_chip_inspector_state.js?v=audio-numeric-bindings-1';
+import {validateChipClock} from './playground_chip_clock.js?v=audio-numeric-bindings-1';
 import {createPerformanceQueue, createPerformanceChipOwnership} from './playground_performance_queue.js';
-import {createOpnAuditionGuard, receiveOpnAuditionCommand, createPsgAuditionGuard} from './playground_audition_guard.js?v=msx-modes-2';
+import {createOpnAuditionGuard, receiveOpnAuditionCommand, createPsgAuditionGuard} from './playground_audition_guard.js?v=audio-numeric-bindings-1';
 import {YM2612DacPlayer, receiveDacCommand} from "./ym2612_dac.js";
 import {createChipPortReceiver} from "./playground_chip_port.js?v=audio-stability-2";
 /**
@@ -12,9 +12,9 @@ import {createChipPortReceiver} from "./playground_chip_port.js?v=audio-stabilit
  * AudioContext.audioWorklet.addModule() で読み込む専用エントリーポイント。音源コアの WASM も必要。
  */
 import ym2612ModuleFactory from "../generated/ym2612_wasm.js";
-import { createYm2612 } from "./ym2612.js";
-import segaPsgModuleFactory from "../generated/segapsg_wasm.js?v=sega-modes-1";
-import { SegaPSG, SEGAPSG_CLOCK } from "./segapsg.js?v=sega-modes-1";
+import { createYm2612 } from "./ym2612.js?v=audio-numeric-bindings-1";
+import segaPsgModuleFactory from "../generated/segapsg_wasm.js?v=audio-numeric-bindings-1";
+import { SegaPSG, SEGAPSG_CLOCK } from "./segapsg.js?v=audio-numeric-bindings-1";
 
 // Same mix balance as GenesisAudioEngine.process() in genesisaudioengine.js.
 const YM_GAIN = 0.9;
@@ -43,6 +43,9 @@ class YM2612Processor extends AudioWorkletProcessor {
     this.resampleRemainder = 0;
     this.lastLeft = 0;
     this.lastRight = 0;
+    this.psgRemainder = 0;
+    this.psgLeft = 0;
+    this.psgRight = 0;
     this.idleLeft = 0;
     this.idleRight = 0;
     this.mixTargets = {ym2612: [1, 1], segapsg: [1, 1]};
@@ -349,6 +352,9 @@ class YM2612Processor extends AudioWorkletProcessor {
       this.resampleRemainder = 0;
       this.lastLeft = 0;
       this.lastRight = 0;
+      this.psgRemainder = 0;
+      this.psgLeft = 0;
+      this.psgRight = 0;
       this.ym2612.reset();
       this.psg?.reset();
       return;
@@ -498,8 +504,6 @@ class YM2612Processor extends AudioWorkletProcessor {
     if (frames <= 0) return;
     const chipRate = this.ym2612.sampleRate(this.clock);
     const psgRate = this.ym2612.sampleRate();
-    this.psgRemainder ??= 0;
-    this.psgLeft ??= 0; this.psgRight ??= 0;
     const psgFrames = Math.floor((this.psgRemainder + frames * psgRate) / sampleRate);
     const sourceFrames = Math.floor((this.resampleRemainder + frames * chipRate) / sampleRate);
     const pcm = sourceFrames > 0 ? this.ym2612.generateStereoView(sourceFrames) : null;

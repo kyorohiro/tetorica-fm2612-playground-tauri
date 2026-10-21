@@ -5,6 +5,7 @@ mod git_dialog;
 mod git_http;
 mod git_tokens;
 mod mcp;
+mod native_genesis;
 
 use tauri::{menu::Menu, Manager, WebviewWindow};
 
@@ -51,6 +52,7 @@ fn window_top_set(window: tauri::WebviewWindow, enabled: bool) -> Result<bool, S
 #[tauri::command]
 fn window_reload(window: WebviewWindow) -> Result<(), String> {
     allowed(&window)?;
+    window.state::<native_genesis::NativeGenesis>().shutdown();
     window.reload().map_err(|e| e.to_string())
 }
 
@@ -58,6 +60,7 @@ fn window_reload(window: WebviewWindow) -> Result<(), String> {
 fn window_close(window: WebviewWindow) -> Result<(), String> {
     allowed(&window)?;
     window.state::<audio::Audio>().shutdown();
+    window.state::<native_genesis::NativeGenesis>().shutdown();
     window.destroy().map_err(|e| e.to_string())
 }
 
@@ -86,6 +89,11 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             audio::audio_request,
             audio::audio_shutdown,
+            native_genesis::native_genesis_start,
+            native_genesis::native_genesis_status,
+            native_genesis::native_genesis_commands,
+            native_genesis::native_genesis_stop,
+            native_genesis::native_genesis_shutdown,
             git_http::git_https_begin,
             git_http::git_https_request,
             git_http::git_https_end,
@@ -115,6 +123,7 @@ fn main() {
             app.manage(git_http::Transport::default());
             app.manage(git_tokens::setup(app.handle()).map_err(std::io::Error::other)?);
             app.manage(audio::Audio::default());
+            app.manage(native_genesis::NativeGenesis::default());
             app.manage(std::sync::Mutex::new(mcp::Mcp::load(
                 &app.path().app_data_dir()?,
             )?));

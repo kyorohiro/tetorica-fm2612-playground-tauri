@@ -5,6 +5,7 @@ edition = "2021"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+cc = "1"
 
 [dependencies]
 tauri = { version = "2", features = [] }
@@ -16,6 +17,8 @@ base64 = "0.22"
 zeroize = "1"
 rfd = "0.16"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+cpal = "0.15.3"
+crossbeam-queue = "0.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3.7"

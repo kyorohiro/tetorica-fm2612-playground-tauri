@@ -3,6 +3,8 @@
   const mainMenu=document.getElementById('mainMenu');
   const menu=document.getElementById('desktopSettingsMenu')??document.querySelector('#mainMenu > .toolbar-menu-panel');
   if(!menu||!window.__TAURI_INTERNALS__||document.getElementById('desktop-audio-mode'))return;
+  // Native Genesis owns its device and never supplies Web Audio PCM to Audify.
+  if(runtime.megaDrive.backend==='native-genesis')return;
   const invoke=(op,args)=>window.__TAURI_INTERNALS__.invoke('audio_request',{op,args:args??null});
   // User-code network guards replace the global constructor while loops run.
   // This connection belongs to the desktop output, not to the user script.

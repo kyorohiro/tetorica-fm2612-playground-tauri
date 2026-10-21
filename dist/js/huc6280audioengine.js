@@ -13,7 +13,7 @@
 export class Huc6280AudioEngine {
   /**
    * Create the chip instances required by this engine.
-   * @param {{moduleFactory: import('./soundchip.js?v=msx-modes-2').WasmModuleFactory, clock: number, outputSampleRate?: number, masterVolume?: number}} options Chip factories, clocks in Hz and loader settings.
+   * @param {{moduleFactory: import('./soundchip.js?v=audio-numeric-bindings-1').WasmModuleFactory, clock: number, outputSampleRate?: number, masterVolume?: number}} options Chip factories, clocks in Hz and loader settings.
    * @param {number} [options.outputSampleRate=44100] Output stereo frames per second.
    * @param {number} [options.masterVolume=1] Linear output gain, not dB.
    * @returns {Promise<Huc6280AudioEngine>} Initialized engine owned by the caller.
@@ -28,7 +28,7 @@ export class Huc6280AudioEngine {
     return new Huc6280AudioEngine(module, clock, outputSampleRate, masterVolume);
   }
 
-  /** @param {import('./soundchip.js?v=msx-modes-2').WasmChipModule} module
+  /** @param {import('./soundchip.js?v=audio-numeric-bindings-1').WasmChipModule} module
    * @param {number} clock
    * @param {number} rate
    * @param {number} volume */
@@ -135,9 +135,12 @@ export class Huc6280AudioEngine {
     this.module._huc6280_generate(this.handle, this.ptr, rightPtr, frames);
     // Read the current heap after allocation/generation, which may grow memory.
     const heap = this.module.HEAPF32;
-    return {
-      left: Float32Array.from(heap.subarray(this.ptr / 4, this.ptr / 4 + frames), v => v * this.volume),
-      right: Float32Array.from(heap.subarray(rightPtr / 4, rightPtr / 4 + frames), v => v * this.volume),
-    };
+    const left = new Float32Array(frames), right = new Float32Array(frames);
+    const leftOffset = this.ptr / 4, rightOffset = rightPtr / 4;
+    for (let i = 0; i < frames; i++) {
+      left[i] = heap[leftOffset + i] * this.volume;
+      right[i] = heap[rightOffset + i] * this.volume;
+    }
+    return {left, right};
   }
 }

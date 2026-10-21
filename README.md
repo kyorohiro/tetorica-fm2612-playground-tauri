@@ -56,6 +56,46 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 
 ## 音声出力
 
+### 試験用Native Genesisエンジン
+
+**安定するまではWeb Audioが既定です。** Menu → **Audio engine…** から
+**Native Genesis (experimental)** を明示的に選べます。切替時は演奏を停止し、
+編集中のプロジェクトを引き継いでページを開き直します。選択だけではデバイスを開かず、
+RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
+
+NativeはGenesis modeのYM2612＋Sega PSG、Main実行、音色・レジスター操作、Keyboard、
+ミキサー・音量・停止に対応します。既存のPlayground用C++音源を直接ビルドし、
+CPALの音声コールバックで生成・変換・ミックスしてシステム既定の出力機器へ送ります。
+AudioWorklet／WebSocketでPCMを転送する現行Audifyとは別の経路です。
+Nativeを使う間はWeb Audio用のAudio outputメニューを表示しません。
+
+初期段階ではWorker、追加チップ、DAC／サンプル／stream／noise、FX、音声記録、
+chip clock変更、独立した音色ファイルの試聴、PSGの適用済み状態表示は未対応です。
+対応するWeb Audioへ設定で切り戻してください。FMの編集情報はJS側の設定値であり、
+Native内部のエンベロープ等の観測ではありません。
+Keyboardは物理CHを共有し、scriptの未来の書込みが手動演奏を上書きする場合があるため、
+演奏中は空いているCHを選んでください。Native開始失敗は表示し、自動で別エンジンを鳴らしません。
+
+デバイスを開かない検証:
+
+```sh
+cargo test --locked --manifest-path src-tauri/Cargo.toml native_genesis
+node scripts/check_native_genesis_core.mjs ../..
+python3 scripts/sync_native_genesis.py --check --source ../..
+```
+
+機器を無音で開いて時計・停止・解放だけ確認する場合は、明示的に実行します。
+音符の発音・録音・出力機器の変更は行いません。
+
+```sh
+cargo test --offline --locked --manifest-path src-tauri/Cargo.toml native_genesis::tests::native_device_silent_smoke -- --ignored --exact --nocapture --test-threads=1
+```
+
+C++のスナップショットは`src-tauri/native-genesis/`に由来・ハッシュを記録しています。
+共有UI／Runtimeの変更は上流のPlayground ZIPを通常のimport手順で取り込みます。
+
+### Web Audioの出力先
+
 起動時は **WebView (default)** です。Menu → **Audio output** で **Audify** を
 選び、Audio output device から機器を選択して **Apply output** を押します。
 接続表示を確認して Run で演奏を再開してください。出力の変更・機器一覧の更新は

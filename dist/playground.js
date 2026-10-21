@@ -1,14 +1,16 @@
-import {createPlaygroundKeyboardRouting,playgroundPrimaryKeyboardChips} from './playground_mode_keyboard.js?v=msx-modes-2';
+import {createPlaygroundKeyboardRouting,playgroundPrimaryKeyboardChips} from './playground_mode_keyboard.js?v=operator-tab-keyboard-1';
 import {installFileExplorerResize} from './playground_file_resize.js';
 import {installFileExplorerMenu} from './playground_file_menu.js?v=file-menu-1';
-import {installPlaygroundWorkbench} from './playground_workbench.js?v=msx-modes-2';
+import {installPlaygroundWorkbench} from './playground_workbench.js?v=operator-tab-keyboard-1';
 import {createPlaygroundMixer} from './playground_mixer.js?v=chip-tabs-2';
-import {createPlaygroundChipTabs} from './playground_chip_tabs.js?v=msx-modes-2';
+import {createPlaygroundChipTabs} from './playground_chip_tabs.js?v=operator-tab-keyboard-1';
 import {installPlaygroundShell} from './playground_shell.js?v=compact-shell-1';
 import {installPlaygroundGit} from './playground_git.js';
+import {resolvePlaygroundAudioEngine, createPlaygroundAudioEngineUrl,
+  installPlaygroundAudioEngineSettings} from './playground_audio_engine.js';
 import {openDraftStore, createProjectAutosave} from './playground_autosave.js?v=mode-handoff-1';
 import {PLAYGROUND_MODES, resolvePlaygroundMode, createModeSynthOptions,
-  createPlaygroundModeUrl, isSimplePlaygroundLayout} from './playground_mode.js?v=msx-modes-2';
+  createPlaygroundModeUrl, isSimplePlaygroundLayout} from './playground_mode.js?v=audio-numeric-bindings-1';
 import {saveModeProject, consumeModeProject} from './playground_mode_project.js?v=mode-handoff-1';
 import {reconcileModeProject} from './playground_mode_starters.js?v=mode-choice-1';
 let desktopAutosave = null;
@@ -26,8 +28,8 @@ const cassetteSampleNames = new Set();
 import {exportYm2608FullVgm} from './ym2608_vgm_import.js?v=vgm-frequency-order-2';
 import {prepareVgmImport, exportGameboyVgm, exportNesVgm, exportRf5c164Vgm, addVgmSoundChipSetup, exportYm2203FullVgm} from './playground_vgm_import.js?v=vgm-frequency-order-2';
 import {installPlaygroundPageLifecycle} from "./playground_page_lifecycle.js";
-import {createPlaygroundAudioInput} from './playground_audio_input.js?v=msx-modes-2';
-import {createPlaygroundSampleAssets, DEFAULT_SAMPLE_ASSET} from './playground_sample_assets.js?v=msx-modes-2';
+import {createPlaygroundAudioInput} from './playground_audio_input.js?v=audio-numeric-bindings-1';
+import {createPlaygroundSampleAssets, DEFAULT_SAMPLE_ASSET} from './playground_sample_assets.js?v=audio-numeric-bindings-1';
 import {createFXMonitor} from './playground_fx_monitor.js?v=vertical-range-1';
 import {createAudioMonitor} from './playground_audio_monitor.js?v=vertical-range-1';
 import {installMidiImport} from './playground_midi_import.js?v=midi-sections-1';
@@ -35,10 +37,10 @@ import {installSpcImport} from './playground_spc_import.js?v=spc-reference-tunin
 import {
   FM_PRESET_ORDER,
   FM_PRESETS,
-} from "./js/megasynth.js?v=msx-modes-2";
+} from "./js/megasynth.js?v=audio-numeric-bindings-1";
 import {
   createTetoricaSynth,
-} from "./js/tetorica_synth.js?v=msx-modes-2";
+} from "./js/tetorica_synth.js?v=audio-numeric-bindings-1";
 import {
   createTfiOperatorObjectText,
   createTfiPresetObjectText,
@@ -49,10 +51,10 @@ import { createVgiFromPreset, parseVgi } from "./js/vgi.js?v=audio-stability-2";
 import {
   createPlaygroundOperatorTab,
 } from "./playground_operator_tab.js?v=audio-stability-2";
-import { createPlaygroundOperatorKeyboard } from "./playground_operator_keyboard.js?v=msx-modes-2";
-import { CHIP_CLOCKS } from "./js/playground_chip_clock.js?v=msx-modes-2";
-import { DEFAULT_CODE, EXAMPLES, EXAMPLE_FILES, MODE_DEFAULT_CODES, MODE_DEFAULT_HISTORY, MODE_EXAMPLE_FILES } from "./playground_examples.js?v=msx-modes-2";
-import { initializePlaygroundMonaco } from "./playground_monaco.js?v=msx-modes-2";
+import { createPlaygroundOperatorKeyboard } from "./playground_operator_keyboard.js?v=operator-tab-keyboard-1";
+import { CHIP_CLOCKS } from "./js/playground_chip_clock.js?v=audio-numeric-bindings-1";
+import { DEFAULT_CODE, EXAMPLES, EXAMPLE_FILES, MODE_DEFAULT_CODES, MODE_DEFAULT_HISTORY, MODE_EXAMPLE_FILES } from "./playground_examples.js?v=audio-numeric-bindings-1";
+import { initializePlaygroundMonaco } from "./playground_monaco.js?v=audio-numeric-bindings-1";
 import {
   decodeBase64Bytes,
   loadTfiPresetsFromQuery,
@@ -83,12 +85,12 @@ import { exportYm2608VgmToPlaygroundJavaScript } from "./js/ym2608vgm.js?v=vgm-f
 import { exportYm2610BVgmToPlaygroundJavaScript } from "./js/ym2610bvgm.js?v=vgm-frequency-order-2";
 import {
   createPlaygroundRuntime,
-} from "./js/playground_runtime.js?v=msx-modes-2";
-import {DEFAULT_WORKER_LOOKAHEAD_SECONDS} from './js/playground_performance_sender.js?v=msx-modes-2';
+} from "./js/playground_runtime.js?v=audio-numeric-bindings-1";
+import {DEFAULT_WORKER_LOOKAHEAD_SECONDS} from './js/playground_performance_sender.js?v=audio-numeric-bindings-1';
 import { createVgmPresetFiles } from "./playground_vgm_presets.js?v=vgm-frequency-order-2";
-import { createTfiFileEditor, instrumentToEditorPreset } from "./playground_tfi_editor.js?v=audio-stability-2";
+import { createTfiFileEditor, instrumentToEditorPreset } from "./playground_tfi_editor.js?v=operator-tab-keyboard-1";
 import { renderFileTree } from "./playground_file_tree.js?v=opnb-primary-1";
-import { createPlaygroundUi, applyPlaygroundLayout } from "./playground_ui.js?v=msx-modes-2";
+import { createPlaygroundUi, applyPlaygroundLayout } from "./playground_ui.js?v=operator-tab-keyboard-1";
 import {
   handleMegaSynthEvent,
 } from "./playground_sync.js?v=audio-stability-2";
@@ -161,6 +163,8 @@ const exportTfiButton = document.getElementById("exportTfiButton");
 const exportVgiButton = document.getElementById("exportVgiButton");
 const fileExplorer = document.getElementById("fileExplorer");
 const workbench = installPlaygroundWorkbench(document.getElementById("workPanels"));
+let audioDiagnostics = null;
+let audioDiagnosticsLoading = null;
 installFileExplorerResize(fileExplorer, document.getElementById("fileExplorerDivider"));
 const cassetteExportDialog = document.getElementById("cassetteExportDialog");
 const cassetteLicenseSelect = document.getElementById("cassetteLicenseSelect");
@@ -264,7 +268,19 @@ const selectedChip = selectedMode.chip;
 const selectedChipClock = selectedMode.clock;
 const useNukedEngine = selectedMode.engine === 'nuked';
 const synthOptions = createModeSynthOptions(selectedMode);
-const megaDrive = createTetoricaSynth(synthOptions);
+const audioEngineSelection = resolvePlaygroundAudioEngine({search:window.location.search,
+  desktop:typeof window.__TAURI_INTERNALS__?.invoke === 'function', modeId:selectedMode.id});
+const useNativeGenesis = audioEngineSelection.engine === 'native';
+const megaDrive = useNativeGenesis
+  ? new (await import('./js/native_genesis_synth.js')).NativeGenesisSynth({
+    invoke:window.__TAURI_INTERNALS__.invoke.bind(window.__TAURI_INTERNALS__),
+    onError(error) {
+      setStatus(`Native audio failed: ${error.message}. Select Web Audio in Audio engine to switch back.`);
+      logLine(`[Native audio] ${error.message}`);
+      void stopRun().catch(error => logLine(`[Native audio cleanup] ${error.message}`));
+    },
+  })
+  : createTetoricaSynth(synthOptions);
 const hasPrimaryFM = megaDrive.capabilities.fmChannels > 0;
 const initialCode = MODE_DEFAULT_CODES[selectedMode.id];
 if (typeof initialCode !== 'string') throw new Error(`Missing default example for ${selectedMode.label}`);
@@ -505,6 +521,7 @@ const operatorTab = hasPrimaryFM ?
     },
   }) : null;
 const primaryKeyboardChips = playgroundPrimaryKeyboardChips(selectedMode,megaDrive.capabilities);
+let editorKeyboardSelection = null;
 const keyboardRouting = createPlaygroundKeyboardRouting({
   primaryChips:primaryKeyboardChips, getInspector:() => keyboardInspector,
   onTargetChange:target => operatorKeyboard.attachNoteTarget(target),
@@ -514,7 +531,9 @@ const operatorKeyboard = createPlaygroundOperatorKeyboard({
   root: operatorKeyboardRoot,
   auditionPriority: true,
   minimizeHost: keyboardPanel,
-  onControlsMinimizedChange: minimized => operatorPanel.classList.toggle('keyboard-controls-minimized', minimized),
+  onControlsMinimizedChange: minimized => {
+    for (const panel of document.querySelectorAll('#operatorPanel, .chip-editor')) panel.classList.toggle('keyboard-controls-minimized', minimized);
+  },
   // The opened instrument's independent preview owns computer keys while visible.
   // The main Keyboard panel remains available for pointer auditions.
   canHandleComputerKeys: () => !(activeTfiFilePath && !codePanel.hidden),
@@ -547,6 +566,14 @@ const operatorKeyboard = createPlaygroundOperatorKeyboard({
 });
 
 operatorKeyboard.attachNoteTarget(keyboardRouting.getTarget());
+function syncEditorKeyboard(selection = editorKeyboardSelection) {
+  editorKeyboardSelection = selection;
+  // Primary metadata exists before the audio device is prepared. Keep that
+  // first key's target stable when the real instance connects asynchronously.
+  const instance = selection?.id || primaryKeyboardChips.find(entry => entry.kind === selection?.kind)?.id;
+  operatorKeyboard.attachEditorTarget(instance ? keyboardRouting.getEditorTarget(instance, selection.channel) : null);
+}
+keyboardRouting.subscribe(() => syncEditorKeyboard());
 
 operatorTabRoot.addEventListener("change", () => operatorKeyboard?.syncChannel());
 
@@ -557,7 +584,10 @@ const tfiFileEditor = createTfiFileEditor({
   keyboardRoot: document.getElementById("tfiFileKeyboard"),
   minimizableKeyboard: true,
   title: document.getElementById("tfiFileTitle"),
-  createAudio: () => createTetoricaSynth({...instrumentSynthOptions, megaCD:false, mega32X:false}),
+  createAudio: () => {
+    if (useNativeGenesis) throw new Error('Independent instrument preview is unavailable in Native Genesis. Select Web Audio to use it.');
+    return createTetoricaSynth({...instrumentSynthOptions, megaCD:false, mega32X:false});
+  },
   clock: instrumentClock,
   clockDivider: selectedChip === 'ym2203' ? 72 : 144,
   onSave(path, bytes) {
@@ -567,7 +597,9 @@ const tfiFileEditor = createTfiFileEditor({
   onStatus: message => setStatus(message),
 });
 window.addEventListener("pagehide", event => {
+  audioDiagnostics?.cancel();
   if (!event.persisted) {
+    audioDiagnostics?.dispose();
     operatorTab?.dispose();
     mixerPanel?.dispose();
     chipTabs?.dispose();
@@ -594,7 +626,8 @@ function updateMasterVolumeUi() {
 }
 
 function applyMasterVolume() {
-  megaDrive.audio.setListeningVolume(listeningVolume);
+  if (useNativeGenesis) megaDrive.setListeningVolume(listeningVolume);
+  else megaDrive.audio.setListeningVolume(listeningVolume);
 }
 
 function createTextareaEditorAdapter(
@@ -1851,6 +1884,38 @@ function createRuntime() {
 }
 
 const runtime = createRuntime();
+if (typeof window.__TAURI_INTERNALS__?.invoke === 'function') {
+  installPlaygroundAudioEngineSettings({document,
+    host:document.getElementById('desktopSettingsMenu'), selection:audioEngineSelection,
+    onChange:changePlaygroundAudioEngine});
+}
+if (useNativeGenesis) {
+  document.getElementById('playgroundModeDetails').textContent += ' · Native (experimental)';
+  const diagnosticsButton = document.getElementById('audioDiagnosticsButton');
+  if (diagnosticsButton) {diagnosticsButton.disabled = true; diagnosticsButton.title = 'Audio diagnostics records the Web Audio engine.';}
+}
+async function showAudioDiagnostics() {
+  if (audioDiagnostics && audioDiagnostics.getState().phase !== 'disposed') return;
+  if (!audioDiagnosticsLoading) {
+    audioDiagnosticsLoading = import('./playground_audio_diagnostics.js').then(({createAudioDiagnostics}) => {
+      audioDiagnostics = createAudioDiagnostics({
+        host: document.body,
+        getSynth: () => runtime.megaDrive,
+        getMetadata: () => ({modeId:selectedMode.id, worker:workerExecution.checked,
+          userAgent:navigator.userAgent, listeningVolume}),
+      });
+    }).finally(() => { audioDiagnosticsLoading = null; });
+  }
+  await audioDiagnosticsLoading;
+}
+document.getElementById('audioDiagnosticsButton')?.addEventListener('click', () => {
+  mainMenu.open = false;
+  void showAudioDiagnostics().catch(error => setStatus(`Audio diagnostics could not load: ${error.message}`));
+});
+if (new URLSearchParams(window.location.search).get('audio-diagnostic') === '1') {
+  try { await showAudioDiagnostics(); }
+  catch (error) { setStatus(`Audio diagnostics could not load: ${error.message}`); }
+}
 keyboardInspector = runtime.chipInspector;
 keyboardRouting.refresh();
 mixerPanel = createPlaygroundMixer({
@@ -1873,6 +1938,7 @@ chipTabs = createPlaygroundChipTabs({
   listFiles: () => virtualFiles.list().filter(file => !isCheckpointVirtualPath(file.path)),
   readFile: path => virtualFiles.get(path),
   ensureAudioReady: () => runtime.prepareAudition(),
+  onAuditionTargetChange: syncEditorKeyboard,
   onKeyboardTargetChange: target => {
     keyboardRouting.setCustomTarget('panel',target);
     if (target) setBottomTab('keyboard');
@@ -1901,7 +1967,11 @@ function syncWorkerExecutionLock() {
   updateWorkerLookaheadSummary();
   if (workerExecution) {
     workerExecution.disabled =
-      runtime.getState().playback === "running";
+      runtime.getState().playback === "running" || megaDrive.capabilities.worker === false;
+    if (megaDrive.capabilities.worker === false) {
+      workerExecution.checked = false;
+      workerExecution.title = 'Native Genesis currently supports Main execution. Select Web Audio to use Worker.';
+    }
   }
 }
 
@@ -1909,6 +1979,7 @@ function updateWorkerLookaheadSummary() {
   if (workerLookaheadValue) workerLookaheadValue.textContent = `${runtime.getTiming().workerLookaheadSeconds * 1000} ms`;
 }
 updateWorkerLookaheadSummary();
+syncWorkerExecutionLock();
 workerLookaheadButton?.addEventListener("click", () => {
   mainMenu.open = false;
   workerLookaheadInput.value = String(runtime.getTiming().workerLookaheadSeconds * 1000);
@@ -1989,6 +2060,10 @@ async function runCode({propagateError = false} = {}) {
     );
   } catch (error) {
     console.error(error);
+    if (error?.name !== 'AbortError') {
+      setStatus(`Playback failed: ${error?.message ?? error}`);
+      setRuntimeState('Error');
+    }
     if(propagateError)throw error;
   } finally {
     runButton.disabled = false;
@@ -2763,6 +2838,7 @@ async function changePlaygroundMode(id) {
     });
     if (!['initial','keep'].includes(codeChoice)) return;
     switching = true;
+    audioDiagnostics?.cancel();
     invalidateSampleEditor('Mode changed');
     saveActiveVirtualFile();
     playgroundShell?.invalidate('Mode changed');
@@ -2790,6 +2866,35 @@ async function changePlaygroundMode(id) {
     modeSelect.disabled = false;
     modeSelect.value = selectedMode.id;
     if (!switching) mainMenu.querySelector('summary').focus();
+  }
+}
+
+async function changePlaygroundAudioEngine(engine) {
+  if (changingMode) throw new Error('A mode or engine change is already in progress.');
+  changingMode = true;
+  modeSelect.disabled = true;
+  try {
+    audioDiagnostics?.cancel();
+    invalidateSampleEditor('Audio engine changed');
+    saveActiveVirtualFile();
+    playgroundShell?.invalidate('Audio engine changed');
+    await stopRun();
+    runButton.disabled = stopButton.disabled = true;
+    await desktopAutosave?.flush();
+    const url = createPlaygroundAudioEngineUrl(window.location.href, engine);
+    for (const key of ['cassette','src','code','source','example']) url.searchParams.delete(key);
+    const token = await saveModeProject(window.indexedDB, selectedMode.id,
+      prepareModeProject(captureProjectSnapshot(), selectedMode.id, 'keep'));
+    url.searchParams.set('modeProject', token);
+    await runtime.finalize();
+    desktopAutosave?.dispose();
+    window.location.assign(url.href);
+  } catch (error) {
+    changingMode = false;
+    modeSelect.disabled = false;
+    runButton.disabled = stopButton.disabled = false;
+    syncWorkerExecutionLock();
+    throw error;
   }
 }
 
