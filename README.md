@@ -62,8 +62,8 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 **Native (experimental)** を明示的に選べます。切替時は演奏を停止し、
 編集中のプロジェクトを引き継いでページを開き直します。選択だけではデバイスを開かず、
 RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
-Native選択中のModeには、対応するGenesis／Mega CD／DX7を表示します。他modeへ移るときは先にWeb Audioへ戻してください。
-Genesis／Mega CD／DX7以外ではNativeを選べません。Web Audioでは全Modeを選べます。
+Native選択中のModeには、対応するGenesis／Mega CD／NES＋FDS／DX7を表示します。他modeへ移るときは先にWeb Audioへ戻してください。
+Genesis／Mega CD／NES＋FDS／DX7以外ではNativeを選べません。Web Audioでは全Modeを選べます。
 
 NativeはGenesis modeのYM2612＋Sega PSG、Main／Worker実行、音色・レジスター操作、Keyboard、
 DAC・サンプル・noise、組込みFX・JavaScriptの`liveFx`、Audioモニターと最終出力の録音に対応します。
@@ -85,6 +85,15 @@ Main／Workerとも共通FX・liveFx・Audioモニター・最終出力録音を
 Stopは音色バンクと選択を保持して発音を止めます。YM2612／PSGは生成しません。
 内部44,100 Hz固定で出力機器のsample rateへ変換します。`createSoundChip('dx7')`による独立音源の追加はWeb Audioを使ってください。
 由来とApache-2.0ライセンスは`src-tauri/native-dx7/`に保存し、ライセンスをアプリにも同梱します。
+
+NES＋FDS modeでは、現在のJSNES APUとFDSのJS実装をC++へ移植した音源を使います。
+Pulse 2声、Triangle、Noise、DMC、FDSの6CH、DMC用64 KiB RAM、FDS波形・変調、clock変更に対応します。
+Main／Workerの`nes`／`useSoundChip('nes')`、KeyboardのChip／CH選択、Operatorsの編集・試聴を使えます。
+StopはRAM・波形・変調表・設定・clockを保持し、resetはRAMと波形も初期化します。
+音は共通FX／liveFx・monitor・録音へ入り、YM2612／PSG／DX7は生成しません。
+VGM取込みは基準clockが1,789,773 Hzのときに主音源を借用します。PALや別の基準clockのVGMはWeb Audioを使ってください。
+Browser版のJS音源は比較基準として維持しています。Nativeコア・原典・ハッシュは`src-tauri/native-nes/`に保存し、
+JSNESのApache-2.0、FDSのMITライセンスとJSNES著作者情報をアプリへ同梱します。
 
 `liveFx`は既存の`custom_fx.js`をQuickJS-NGで実行します。
 使用中だけNativeの専用workerで処理し、2048フレーム（48kHzで約42.7ms）の遅延が加わります。

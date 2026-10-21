@@ -26,6 +26,11 @@ mod livefx;
 mod media;
 #[path = "native_genesis_monitor.rs"]
 mod monitor;
+#[path = "native_genesis_nes.rs"]
+mod nes;
+#[cfg(test)]
+#[path = "native_genesis_nes_tests.rs"]
+mod nes_tests;
 #[path = "native_genesis_noise.rs"]
 mod noise;
 #[cfg(test)]
@@ -135,6 +140,7 @@ impl Drop for Core {
 #[derive(Clone, Debug)]
 enum Action {
     Dx7(Arc<dx7::Prepared>),
+    Nes(Arc<nes::Prepared>),
     RfWrite(u8, u8, bool),
     RfWriteMemory(u16, u8),
     RfLoad(Arc<rf5c164::Memory>),
@@ -215,6 +221,9 @@ pub struct Command {
 enum CommandAction {
     Dx7 {
         message: dx7::Message,
+    },
+    Nes {
+        message: nes::Message,
     },
     Rf5c164Write {
         register: u8,
@@ -308,6 +317,7 @@ impl Command {
         }
         Ok(match self.action {
             CommandAction::Dx7 { ref message } => Action::Dx7(message.prepare()?),
+            CommandAction::Nes { ref message } => Action::Nes(message.prepare()?),
             CommandAction::Rf5c164Write {
                 register,
                 value,
@@ -497,6 +507,7 @@ impl Command {
 struct Shared {
     mega_cd: bool,
     dx7: Option<dx7::Shared>,
+    nes: Option<nes::Shared>,
     rf5c164: rf5c164::Shared,
     rf_memory: Mutex<Vec<Arc<rf5c164::Memory>>>,
     retired_rf: ArrayQueue<Arc<rf5c164::Memory>>,
@@ -516,6 +527,8 @@ struct Shared {
     cancelled_owners: [AtomicBool; OWNERS],
     dac_cancel_before: AtomicU64,
     owner_dac_cancel_before: [AtomicU64; OWNERS],
+    nes_cancel_before: AtomicU64,
+    owner_nes_cancel_before: [AtomicU64; OWNERS],
     dac_streams: AtomicUsize,
     producer: Mutex<u64>,
     pending: AtomicUsize,
@@ -537,10 +550,15 @@ impl Shared {
     fn new_mode(rate: u32, session: u64, mega_cd: bool) -> Self {
         Self::new_primary(rate, session, mega_cd, false)
     }
+    #[cfg(test)]
     fn new_primary(rate: u32, session: u64, mega_cd: bool, dx7: bool) -> Self {
+        Self::new_config(rate, session, mega_cd, dx7, false)
+    }
+    fn new_config(rate: u32, session: u64, mega_cd: bool, dx7: bool, nes: bool) -> Self {
         Self {
             mega_cd,
             dx7: dx7.then(dx7::Shared::default),
+            nes: nes.then(nes::Shared::default),
             rf5c164: rf5c164::Shared::default(),
             rf_memory: Mutex::new(Vec::new()),
             retired_rf: ArrayQueue::new(MAX_BATCH),
@@ -560,6 +578,8 @@ impl Shared {
             cancelled_owners: std::array::from_fn(|_| AtomicBool::new(false)),
             dac_cancel_before: AtomicU64::new(0),
             owner_dac_cancel_before: std::array::from_fn(|_| AtomicU64::new(0)),
+            nes_cancel_before: AtomicU64::new(0),
+            owner_nes_cancel_before: std::array::from_fn(|_| AtomicU64::new(0)),
             dac_streams: AtomicUsize::new(0),
             producer: Mutex::new(0),
             pending: AtomicUsize::new(0),
@@ -661,7 +681,10 @@ impl Shared {
                 if matches!(&action, Action::Dx7(_)) && self.dx7.is_none() {
                     return Err("Native DX7 commands require DX7 mode".into());
                 }
-                if self.dx7.is_some()
+                if matches!(&action, Action::Nes(_)) && self.nes.is_none() {
+                    return Err("Native NES commands require NES mode".into());
+                }
+                if (self.dx7.is_some() || self.nes.is_some())
                     && matches!(
                         &action,
                         Action::Write(..)
@@ -674,7 +697,7 @@ impl Shared {
                     )
                 {
                     return Err(
-                        "Genesis FM, PSG and DAC commands are unavailable in Native DX7 mode"
+                        "Genesis FM, PSG and DAC commands are unavailable in this Native mode"
                             .into(),
                     );
                 }
@@ -719,6 +742,22 @@ impl Shared {
                 })
                 .collect();
             if let Err(error) = dx7.retain(&prepared) {
+                self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
+                return Err(error);
+            }
+        }
+        if let Some(nes) = &self.nes {
+            let prepared: Vec<_> = actions
+                .iter()
+                .filter_map(|(action, _)| {
+                    if let Action::Nes(command) = action {
+                        Some(command.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Err(error) = nes.retain(&prepared) {
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
@@ -883,6 +922,15 @@ impl Shared {
         }
         self.invalidation.fetch_add(1, Ordering::Release);
     }
+    fn cancel_nes_before(&self, owner: Option<Owner>, sequence: u64) {
+        if let Some(owner) = owner {
+            self.owner_nes_cancel_before[(owner.owner - 1) as usize]
+                .fetch_max(sequence, Ordering::AcqRel);
+        } else {
+            self.nes_cancel_before.fetch_max(sequence, Ordering::AcqRel);
+        }
+        self.invalidation.fetch_add(1, Ordering::Release);
+    }
     fn valid_owner(&self, owner: Option<Owner>) -> bool {
         owner.is_none_or(|owner| {
             self.active_performance.load(Ordering::Acquire) == owner.performance
@@ -893,6 +941,13 @@ impl Shared {
         let action = event.action.borrow();
         self.valid_owner(event.owner)
             && event.epoch == self.epoch.load(Ordering::Acquire)
+            && (!matches!(*action, Action::Nes(_))
+                || event.sequence >= self.nes_cancel_before.load(Ordering::Acquire)
+                    && event.owner.is_none_or(|owner| {
+                        event.sequence
+                            >= self.owner_nes_cancel_before[(owner.owner - 1) as usize]
+                                .load(Ordering::Acquire)
+                    }))
             && (!matches!(*action, Action::DacPlay { .. } | Action::DacStream(_))
                 || event.sequence >= self.dac_cancel_before.load(Ordering::Acquire)
                     && event.owner.is_none_or(|owner| {
@@ -904,6 +959,11 @@ impl Shared {
     }
     fn retire_action(&self, action: Action) {
         match action {
+            Action::Nes(command) => {
+                if let Some(nes) = &self.nes {
+                    nes.retire(command);
+                }
+            }
             Action::Dx7(command) => {
                 if let Some(dx7) = &self.dx7 {
                     dx7.retire(command);
@@ -956,6 +1016,9 @@ impl Shared {
                 for cancelled in &self.owner_dac_cancel_before {
                     cancelled.store(0, Ordering::Release);
                 }
+                for cancelled in &self.owner_nes_cancel_before {
+                    cancelled.store(0, Ordering::Release);
+                }
                 for cancelled in &self.cancelled_owners {
                     cancelled.store(false, Ordering::Release);
                 }
@@ -994,12 +1057,15 @@ impl Shared {
             session: self.session,
             mode: if self.dx7.is_some() {
                 "dx7"
+            } else if self.nes.is_some() {
+                "nes"
             } else if self.mega_cd {
                 "mega-cd"
             } else {
                 "genesis"
             },
             rf5c164_clock: self.mega_cd.then(|| self.rf5c164.clock()),
+            nes_clock: self.nes.as_ref().map(nes::Shared::clock),
             sample_rate: self.rate,
             frame: self.frame.load(Ordering::Acquire),
             ym_clock: 7_670_454,
@@ -1067,6 +1133,7 @@ struct DacStream {
 struct Renderer {
     core: Core,
     dx7: Option<dx7::Renderer>,
+    nes: Option<nes::Renderer>,
     dx7_master: f32,
     dx7_master_target: f32,
     dx7_master_ramp: u32,
@@ -1103,9 +1170,22 @@ impl Renderer {
     fn new_mode(rate: u32, mega_cd: bool) -> Result<Self, String> {
         Self::new_primary(rate, mega_cd, false)
     }
+    #[cfg(test)]
     fn new_primary(rate: u32, mega_cd: bool, dx7: bool) -> Result<Self, String> {
+        Self::new_config(rate, mega_cd, dx7, false)
+    }
+    fn new_config(rate: u32, mega_cd: bool, dx7: bool, nes: bool) -> Result<Self, String> {
         Ok(Self {
-            core: if dx7 { Core::empty() } else { Core::new(rate)? },
+            core: if dx7 || nes {
+                Core::empty()
+            } else {
+                Core::new(rate)?
+            },
+            nes: if nes {
+                Some(nes::Renderer::new(rate)?)
+            } else {
+                None
+            },
             dx7: if dx7 {
                 Some(dx7::Renderer::new(rate)?)
             } else {
@@ -1203,6 +1283,9 @@ impl Renderer {
             if let (Some(dx7), Some(state)) = (&mut self.dx7, &shared.dx7) {
                 dx7.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
+            if let (Some(nes), Some(state)) = (&mut self.nes, &shared.nes) {
+                nes.cancel_invalid(|owner| shared.valid_owner(owner), state);
+            }
             self.noise.cancel_invalid(|owner| shared.valid_owner(owner));
             if let Some(rf) = &mut self.rf5c164 {
                 rf.cancel_invalid(|owner| shared.valid_owner(owner), &shared.rf5c164);
@@ -1249,6 +1332,11 @@ impl Renderer {
             }
         }
     }
+    fn publish_primary(&self, shared: &Shared) {
+        if let (Some(nes), Some(state)) = (&self.nes, &shared.nes) {
+            nes.publish(state);
+        }
+    }
     fn stop_dac(&mut self) {
         if self.dac.take().is_some() || self.raw_dac_enabled {
             self.core.apply(Action::Write(0, 0x2a, 128));
@@ -1277,6 +1365,15 @@ impl Renderer {
         let owner = event.owner;
         let sequence = event.sequence;
         match event.action.into_inner() {
+            Action::Nes(command) => {
+                if command.stops() {
+                    shared.cancel_nes_before(owner, sequence.saturating_add(1));
+                }
+                if let (Some(nes), Some(state)) = (&mut self.nes, &shared.nes) {
+                    nes.apply(&command, owner, state);
+                }
+                shared.retire_action(Action::Nes(command));
+            }
             Action::Dx7(command) => {
                 if let (Some(dx7), Some(state)) = (&mut self.dx7, &shared.dx7) {
                     dx7.apply(&command, owner, state);
@@ -1452,7 +1549,7 @@ impl Renderer {
                         self.psg_owners = [None; 4];
                         self.psg_latch = 0;
                     }
-                    Action::Mix(gains) if self.dx7.is_some() => {
+                    Action::Mix(gains) if self.dx7.is_some() || self.nes.is_some() => {
                         self.dx7_master_target = gains[4];
                         self.dx7_master_ramp = (shared.rate / 200).max(1);
                     }
@@ -1460,6 +1557,9 @@ impl Renderer {
                         self.clear_media(shared);
                         if let (Some(dx7), Some(state)) = (&mut self.dx7, &shared.dx7) {
                             dx7.stop(state);
+                        }
+                        if let (Some(nes), Some(state)) = (&mut self.nes, &shared.nes) {
+                            nes.stop(state);
                         }
                         if let Some(rf) = &mut self.rf5c164 {
                             rf.reset(&shared.rf5c164);
@@ -1542,6 +1642,7 @@ impl Renderer {
                 match &*action {
                     Action::Noise(command) => command.is_some_and(|command| command.starts()),
                     Action::Dx7(command) => command.starts(),
+                    Action::Nes(command) => command.starts(),
                     Action::Mix(_)
                     | Action::RfMix(_)
                     | Action::RfLoad(_)
@@ -1575,6 +1676,9 @@ impl Renderer {
         if let Some(dx7) = &mut self.dx7 {
             dx7.mix(&mut pcm);
         }
+        if let Some(nes) = &mut self.nes {
+            nes.mix(&mut pcm);
+        }
         if let Some(rf) = &mut self.rf5c164 {
             rf.mix(&mut pcm);
         }
@@ -1594,7 +1698,7 @@ impl Renderer {
         pcm = self
             .livefx
             .process(pcm, self.frame, shared.rate, &shared.livefx.transport);
-        let master = if self.dx7.is_some() {
+        let master = if self.dx7.is_some() || self.nes.is_some() {
             if self.dx7_master_ramp > 0 {
                 self.dx7_master +=
                     (self.dx7_master_target - self.dx7_master) / self.dx7_master_ramp as f32;
@@ -1620,6 +1724,9 @@ impl Renderer {
                 self.clear_media(shared);
                 if let (Some(dx7), Some(state)) = (&mut self.dx7, &shared.dx7) {
                     dx7.stop(state);
+                }
+                if let (Some(nes), Some(state)) = (&mut self.nes, &shared.nes) {
+                    nes.stop(state);
                 }
                 if let Some(rf) = &mut self.rf5c164 {
                     rf.stop(&shared.rf5c164);
@@ -1676,6 +1783,8 @@ pub struct Status {
     mode: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     rf5c164_clock: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nes_clock: Option<u32>,
     sample_rate: u32,
     frame: u64,
     ym_clock: u32,
@@ -1711,13 +1820,14 @@ impl NativeGenesis {
         self.replace_running(Self::launch)
     }
     fn start_mode(&self, mode: Option<&str>) -> Result<Status, String> {
-        let (mega_cd, dx7) = match mode.unwrap_or("genesis") {
-            "genesis" => (false, false),
-            "mega-cd" => (true, false),
-            "dx7" => (false, true),
-            _ => return Err("Native output supports Genesis, Mega CD and DX7 modes".into()),
+        let (mega_cd, dx7, nes) = match mode.unwrap_or("genesis") {
+            "genesis" => (false, false, false),
+            "mega-cd" => (true, false, false),
+            "dx7" => (false, true, false),
+            "nes" => (false, false, true),
+            _ => return Err("Native output supports Genesis, Mega CD, DX7 and NES modes".into()),
         };
-        self.replace_running(|session| Self::launch_primary(session, mega_cd, dx7))
+        self.replace_running(|session| Self::launch_config(session, mega_cd, dx7, nes))
     }
     fn replace_running(
         &self,
@@ -1744,10 +1854,14 @@ impl NativeGenesis {
     fn launch_mode(session: u64, mega_cd: bool) -> Result<Running, String> {
         Self::launch_primary(session, mega_cd, false)
     }
+    #[cfg(test)]
     fn launch_primary(session: u64, mega_cd: bool, dx7: bool) -> Result<Running, String> {
+        Self::launch_config(session, mega_cd, dx7, false)
+    }
+    fn launch_config(session: u64, mega_cd: bool, dx7: bool, nes: bool) -> Result<Running, String> {
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let (stop, stopped) = mpsc::channel();
-        let thread = std::thread::spawn(move || match start_device(session, mega_cd, dx7) {
+        let thread = std::thread::spawn(move || match start_device(session, mega_cd, dx7, nes) {
             Ok((stream, shared)) => {
                 let _ = ready_tx.send(Ok(shared));
                 let _ = stopped.recv();
@@ -1821,6 +1935,7 @@ fn start_device(
     session: u64,
     mega_cd: bool,
     dx7: bool,
+    nes: bool,
 ) -> Result<(cpal::Stream, Arc<Shared>), String> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     let device = cpal::default_host()
@@ -1830,11 +1945,12 @@ fn start_device(
         .default_output_config()
         .map_err(|e| format!("Native audio configuration failed: {e}"))?;
     let config: cpal::StreamConfig = supported.clone().into();
-    let shared = Arc::new(Shared::new_primary(
+    let shared = Arc::new(Shared::new_config(
         config.sample_rate.0,
         session,
         mega_cd,
         dx7,
+        nes,
     ));
     let stream = match supported.sample_format() {
         cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config, shared.clone()),
@@ -1855,8 +1971,14 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
     shared: Arc<Shared>,
 ) -> Result<cpal::Stream, String> {
     use cpal::traits::DeviceTrait;
-    let mut renderer =
-        Renderer::new_primary(config.sample_rate.0, shared.mega_cd, shared.dx7.is_some())?;
+    let mut renderer = Renderer::new_config(
+        config.sample_rate.0,
+        shared.mega_cd,
+        shared.dx7.is_some(),
+        shared.nes.is_some(),
+    )?;
+    // Publish the actual initialized core before start() exposes the session.
+    renderer.publish_primary(&shared);
     let channels = config.channels as usize;
     if channels == 0 {
         return Err("Native audio device has no output channels".into());
@@ -1881,6 +2003,7 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
                     }
                 }
                 shared.frame.store(renderer.frame, Ordering::Release);
+                renderer.publish_primary(&shared);
             },
             move |_| {
                 errors.failed.store(true, Ordering::Release);
@@ -1901,6 +2024,27 @@ pub async fn native_genesis_start(
     tauri::async_runtime::spawn_blocking(move || state.start_mode(mode.as_deref()))
         .await
         .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+pub async fn native_genesis_nes_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    after: Option<u64>,
+) -> Result<nes::Status, String> {
+    crate::allowed(&window)?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.with_session(session, |shared| {
+            let nes = shared.nes.as_ref().ok_or("Native NES requires NES mode")?;
+            if let Some(id) = after {
+                nes.wait_applied(id)?;
+            }
+            nes.status(shared.frame.load(Ordering::Acquire))
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 #[tauri::command]
 pub fn native_genesis_dx7_status(

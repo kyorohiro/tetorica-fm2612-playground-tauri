@@ -70,6 +70,19 @@ fn main() {
         dx7.file(format!("native-dx7/{source}.cc"));
     }
     dx7.warnings(false).compile("tetorica_native_dx7");
+    println!("cargo:rerun-if-changed=native-nes");
+    println!("cargo:rerun-if-changed=src/native_genesis_nes.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_nes.h");
+    cc::Build::new()
+        .cpp(true)
+        .std("c++17")
+        .opt_level(2)
+        .flag_if_supported("-fwrapv")
+        .flag_if_supported("-fno-strict-aliasing")
+        .flag_if_supported("-ffp-contract=off")
+        .file("src/native_genesis_nes.cpp")
+        .warnings(false)
+        .compile("tetorica_native_nes");
     // LiveFX executes only on its generation/probe owner thread, never the
     // output callback. The host creates a JSRuntime only on first register.
     cc::Build::new()

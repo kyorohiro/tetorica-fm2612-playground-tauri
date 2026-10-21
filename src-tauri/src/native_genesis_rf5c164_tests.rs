@@ -489,7 +489,9 @@ fn native_megacd_keyboard_base_is_applied_at_due_frame_and_survives_audition_and
             .unwrap(),
         Action::RfWrite(2, 7, false)
     ));
-    assert!(NativeGenesis::default().start_mode(Some("nes")).is_err());
+    assert!(NativeGenesis::default()
+        .start_mode(Some("unsupported-test-mode"))
+        .is_err());
 }
 
 #[test]

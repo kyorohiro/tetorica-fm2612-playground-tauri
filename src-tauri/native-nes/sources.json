@@ -1,0 +1,71 @@
+{
+  "source": "hello_ymfm current deployed JS NES/FDS",
+  "jsnes_revision": "b8a45d088e922b6abcd87c4eb1b7237919e9d3d2",
+  "fixnes_revision": "156fcaca9f4cd9c23d423737994c45cfb05d16ca",
+  "licenses": [
+    "Apache-2.0",
+    "MIT"
+  ],
+  "files": {
+    "docs/js/nes_apu_vendor/index.js": {
+      "snapshot": "snapshot/docs/js/nes_apu_vendor/index.js",
+      "sha256": "04b0d09d5a3a8dad0667d764decc6e261c81c83ab493e2423191f259f2a98122"
+    },
+    "docs/js/nes_apu_vendor/channel-square.js": {
+      "snapshot": "snapshot/docs/js/nes_apu_vendor/channel-square.js",
+      "sha256": "668da0573d064a3c6a7afe777f84d1635c7d541cfae315ee477b2209adbc6317"
+    },
+    "docs/js/nes_apu_vendor/channel-triangle.js": {
+      "snapshot": "snapshot/docs/js/nes_apu_vendor/channel-triangle.js",
+      "sha256": "4729ea94c099b7c08b6f74c3d96249212261c1f1bbf3ba53dd261e18347c6506"
+    },
+    "docs/js/nes_apu_vendor/channel-noise.js": {
+      "snapshot": "snapshot/docs/js/nes_apu_vendor/channel-noise.js",
+      "sha256": "9955835564f858bbb74927d0ffc202f815c24f67d63d17be09308a7cd5ccb812"
+    },
+    "docs/js/nes_apu_vendor/channel-dm.js": {
+      "snapshot": "snapshot/docs/js/nes_apu_vendor/channel-dm.js",
+      "sha256": "94eed4be74f42c3a12f0559e736cefa73598be4b49bb83cd95ff619183b7cae7"
+    },
+    "docs/js/nes_apu_vendor/utils.js": {
+      "snapshot": "snapshot/docs/js/nes_apu_vendor/utils.js",
+      "sha256": "3e97884bae801319ac802378ace60591f489dec533aec2e26663685ab08f378c"
+    },
+    "docs/js/nesapuaudioengine.js": {
+      "snapshot": "snapshot/docs/js/nesapuaudioengine.js",
+      "sha256": "5c0f6d91170b339cca384d5cdf99180af39c2b6a0b2afdb14b8582a04676c947"
+    },
+    "docs/js/fds_audio.js": {
+      "snapshot": "snapshot/docs/js/fds_audio.js",
+      "sha256": "a40594267909ec49f07897913877e3e27aee345ed783f8044d7f5f6e13c09ee9"
+    },
+    "web/nesapu.js": {
+      "snapshot": "snapshot/web/nesapu.js",
+      "sha256": "6ba617e00884d56e8aab0326f02f0c7b1e0026b68c8ce95a23d765b37b07625e"
+    },
+    "web/playground_chip_clock.js": {
+      "snapshot": "snapshot/web/playground_chip_clock.js",
+      "sha256": "a26dfc6fa3bf97d35cd1255691fa11227744e2a59fe91261735e885561eff1b4"
+    },
+    "third_party/jsnes/README.md": {
+      "snapshot": "snapshot/third_party/jsnes/README.md",
+      "sha256": "58808d4249949339577eff9a5312ebc357755cd328d8bfa59621d399f2bac792"
+    },
+    "third_party/jsnes/AUTHORS.md": {
+      "snapshot": "snapshot/third_party/jsnes/AUTHORS.md",
+      "sha256": "7d65bfd33da03428907b8213520832c26c9531f08c1f1dd2794dd477b9764b6a"
+    },
+    "third_party/jsnes/LICENSE": {
+      "snapshot": "snapshot/third_party/jsnes/LICENSE",
+      "sha256": "530136cec696ac1fcdeb792a77472cb273f9f814ad0ed795dccdc95db7423e0a"
+    },
+    "third_party/fixnes-fds/README.md": {
+      "snapshot": "snapshot/third_party/fixnes-fds/README.md",
+      "sha256": "012c4710304da747754bc21ab7683e41f406e83de42b03b0bc4531c0ba5e1316"
+    },
+    "third_party/fixnes-fds/LICENSE": {
+      "snapshot": "snapshot/third_party/fixnes-fds/LICENSE",
+      "sha256": "f906a51cbcf80751c1d3cba9920e5ff87b95a2721587a509b632a76af09e89ce"
+    }
+  }
+}
