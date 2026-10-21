@@ -1,5 +1,8 @@
 fn main() {
     println!("cargo:rerun-if-changed=native-genesis");
+    println!("cargo:rerun-if-changed=native-fx");
+    println!("cargo:rerun-if-changed=src/native_genesis_fx.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_fx.h");
     println!("cargo:rerun-if-changed=src/native_genesis_core.cpp");
     cc::Build::new()
         .cpp(true)
@@ -7,6 +10,7 @@ fn main() {
         .opt_level(2)
         .include("native-genesis")
         .file("src/native_genesis_core.cpp")
+        .file("src/native_genesis_fx.cpp")
         .file("native-genesis/ym2612_wasm.cpp")
         .file("native-genesis/segapsg_wasm.cpp")
         .file("native-genesis/ymfm_opn.cpp")

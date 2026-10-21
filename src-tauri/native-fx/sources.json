@@ -1,0 +1,12 @@
+{
+  "source": "hello_ymfm",
+  "sha256": {
+    "native/audio_effect/gain.c": "1a769210e885c1f3a0c47dba745bcfa395eb5c6d9306ddcc2d5c101a88fde6a3",
+    "native/audio_effect/eq.c": "0ade21edfddf0aab6d3c6d145e9464ba1a03cc9e78f85a12ee0fa95e7e998d0f",
+    "native/audio_effect/noise_gate.c": "6fc3d87e6d0f0b418ab405c7f24163958e54c82e92b6ae58c524c66d86b24325",
+    "native/audio_effect/compressor.c": "6e3e2c7588f0be7f35378b6698340e7aea21cecce1cd6be7cb6ebe046b670784",
+    "native/audio_effect/reverb.c": "983469a02979c04189b7e0ca6c3b1a3360f8ab8bb2cf34cfe1b3154a0b587d19",
+    "native/audio_effect/extra_fx.c": "1b6cad91d18f3080bb921f39398312830b72b0775b47ebf34f80ffe2966577b3",
+    "native/audio_effect/graph.c": "8637dff231d3960961f043b1f2738d79264a6f5d8abe6de3f3029d15e7cd9f61"
+  }
+}

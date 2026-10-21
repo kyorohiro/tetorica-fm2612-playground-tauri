@@ -1,10 +1,12 @@
 //! Experimental Genesis output: the device callback owns both chips and PCM.
 //! The control side only submits bounded timestamped register events.
+use crate::native_genesis_fx::{FxAction, FxController, FxMessage, FxRenderer};
 use crossbeam_queue::ArrayQueue;
 use serde::{Deserialize, Serialize};
 use std::{
+    cell::RefCell,
     cmp::Ordering as Compare,
-    collections::BinaryHeap,
+    collections::{BinaryHeap, HashSet},
     ffi::c_void,
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
@@ -13,6 +15,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "native_genesis_media.rs"]
+mod media;
+#[path = "native_genesis_recording.rs"]
+mod recording;
+const OWNERS: usize = 512;
 const CAPACITY: usize = 65_536;
 const MAX_BATCH: usize = 4096;
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
@@ -26,8 +33,11 @@ extern "C" {
     fn native_genesis_write(core: *mut c_void, port: u8, register: u8, value: u8);
     fn native_genesis_psg_write(core: *mut c_void, value: u8);
     fn native_genesis_psg_stereo(core: *mut c_void, value: u8);
+    fn native_genesis_psg_mute(core: *mut c_void, channel: u8);
+    fn native_genesis_psg_reset(core: *mut c_void);
     fn native_genesis_mix(core: *mut c_void, gains: *const f32);
     fn native_genesis_sample(core: *mut c_void, output: *mut f32);
+    fn native_genesis_master(core: *mut c_void) -> f32;
 }
 
 struct Core(*mut c_void);
@@ -46,7 +56,15 @@ impl Core {
             Ok(Self(ptr))
         }
     }
+    #[cfg(test)]
     fn sample(&mut self) -> [f32; 2] {
+        let mut sample = self.sample_bus();
+        let master = unsafe { native_genesis_master(self.0) };
+        sample[0] *= master;
+        sample[1] *= master;
+        sample
+    }
+    fn sample_bus(&mut self) -> [f32; 2] {
         let mut sample = [0.0; 2];
         unsafe {
             native_genesis_sample(self.0, sample.as_mut_ptr());
@@ -61,8 +79,10 @@ impl Core {
                 }
                 Action::PsgWrite(value) => native_genesis_psg_write(self.0, value),
                 Action::PsgStereo(value) => native_genesis_psg_stereo(self.0, value),
+                Action::PsgReset => native_genesis_psg_reset(self.0),
                 Action::Reset => native_genesis_reset(self.0),
                 Action::Mix(gains) => native_genesis_mix(self.0, gains.as_ptr()),
+                _ => unreachable!("Media actions are owned by Renderer"),
             }
         }
     }
@@ -75,20 +95,45 @@ impl Drop for Core {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 enum Action {
     Write(u8, u8, u8),
     PsgWrite(u8),
     PsgStereo(u8),
+    PsgReset,
     Reset,
     Mix([f32; 5]),
+    DacPlay {
+        bank: Arc<media::Bank>,
+        offset: usize,
+        size: usize,
+        pan: u8,
+    },
+    DacStream(Arc<media::Bank>),
+    DacStop,
+    SamplePlay(Arc<media::Reservation>),
+    SampleStop {
+        voice: Option<u64>,
+        name: Option<String>,
+    },
+    SampleRelease,
+    SampleTimedStop(Arc<media::StopTargets>),
+    Record(Arc<recording::Capture>),
+    Fx(FxAction),
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Owner {
+    performance: u64,
+    owner: u32,
+}
+
+#[derive(Clone, Debug)]
 struct Event {
     frame: u64,
     sequence: u64,
     epoch: u64,
-    action: Action,
+    action: RefCell<Action>,
+    owner: Option<Owner>,
 }
 impl PartialEq for Event {
     fn eq(&self, other: &Self) -> bool {
@@ -110,6 +155,10 @@ impl Ord for Event {
 #[derive(Deserialize, Debug)]
 pub struct Command {
     frame: u64,
+    #[serde(default)]
+    performance: Option<u64>,
+    #[serde(default)]
+    owner: Option<u32>,
     #[serde(flatten)]
     action: CommandAction,
 }
@@ -128,7 +177,30 @@ enum CommandAction {
     PsgStereo {
         value: u8,
     },
+    PsgReset,
     Reset,
+    DacPlay {
+        name: String,
+        #[serde(default)]
+        offset: usize,
+        size: Option<usize>,
+        #[serde(default = "both")]
+        pan: String,
+    },
+    DacStreamPlay {
+        name: String,
+    },
+    DacStop,
+    SamplePlay {
+        name: String,
+        voice: u64,
+        #[serde(flatten)]
+        options: media::Options,
+    },
+    SampleStop {
+        voice: Option<u64>,
+        name: Option<String>,
+    },
     Mix {
         #[serde(rename = "fmLeft")]
         fm_left: f32,
@@ -140,6 +212,9 @@ enum CommandAction {
         psg_right: f32,
         master: f32,
     },
+}
+fn both() -> String {
+    "both".into()
 }
 impl Command {
     fn validate(&self) -> Result<Action, String> {
@@ -155,14 +230,27 @@ impl Command {
                 if port > 1 {
                     return Err("YM2612 port must be 0 or 1".into());
                 }
-                if port == 0 && register == 0x2b && value & 0x80 != 0 {
-                    return Err("YM2612 DAC playback is not supported by experimental native Genesis output".into());
-                }
                 Action::Write(port, register, value)
             }
             CommandAction::PsgWrite { value } => Action::PsgWrite(value),
             CommandAction::PsgStereo { value } => Action::PsgStereo(value),
+            CommandAction::PsgReset => Action::PsgReset,
             CommandAction::Reset => Action::Reset,
+            CommandAction::DacStop => Action::DacStop,
+            CommandAction::SampleStop { voice, ref name } => {
+                if voice.is_some_and(|v| v == 0 || v > MAX_SAFE_INTEGER) {
+                    return Err("Invalid native sample voice ID".into());
+                }
+                Action::SampleStop {
+                    voice,
+                    name: name.clone(),
+                }
+            }
+            CommandAction::DacPlay { .. }
+            | CommandAction::DacStreamPlay { .. }
+            | CommandAction::SamplePlay { .. } => {
+                return Err("Native media command requires a loaded bank".into())
+            }
             CommandAction::Mix {
                 fm_left,
                 fm_right,
@@ -185,8 +273,105 @@ impl Command {
     }
 }
 
+impl Command {
+    fn resolve(
+        &self,
+        store: &media::Store,
+        rate: u32,
+        owner: Option<Owner>,
+    ) -> Result<Action, String> {
+        if self.frame > MAX_SAFE_INTEGER {
+            return Err("Invalid native command frame".into());
+        }
+        match &self.action {
+            CommandAction::DacPlay {
+                name,
+                offset,
+                size,
+                pan,
+            } => {
+                let bank = store.get(media::Kind::Dac, name)?;
+                let size = size.unwrap_or_else(|| bank.frames.saturating_sub(*offset));
+                if size == 0 || offset.checked_add(size).is_none_or(|end| end > bank.frames) {
+                    return Err("PCM range is outside sample".into());
+                }
+                let pan = match pan.as_str() {
+                    "both" => 0xc0,
+                    "left" => 0x80,
+                    "right" => 0x40,
+                    _ => return Err("DAC pan must be both, left or right".into()),
+                };
+                Ok(Action::DacPlay {
+                    bank,
+                    offset: *offset,
+                    size,
+                    pan,
+                })
+            }
+            CommandAction::DacStreamPlay { name } => {
+                Ok(Action::DacStream(store.get(media::Kind::DacStream, name)?))
+            }
+            CommandAction::SamplePlay {
+                name,
+                voice,
+                options,
+            } => {
+                if *voice == 0
+                    || *voice > MAX_SAFE_INTEGER
+                    || store.reservations.contains_key(voice)
+                {
+                    return Err("Native sample voice ID must be unique and positive".into());
+                }
+                let bank = store.get(media::Kind::Sample, name)?;
+                options.validate(&bank, rate)?;
+                Ok(Action::SamplePlay(Arc::new(media::Reservation {
+                    voice: *voice,
+                    bank,
+                    options: *options,
+                    owner,
+                    cancelled: AtomicBool::new(false),
+                })))
+            }
+            _ => self.validate(),
+        }
+    }
+    fn owner(&self, shared: &Shared) -> Result<Option<Owner>, String> {
+        match (self.performance, self.owner) {
+            (None, None) => Ok(None),
+            (Some(performance), Some(owner))
+                if performance > 0
+                    && performance <= MAX_SAFE_INTEGER
+                    && owner > 0
+                    && owner <= OWNERS as u32 =>
+            {
+                let value = Owner { performance, owner };
+                if shared.valid_owner(Some(value)) {
+                    Ok(Some(value))
+                } else {
+                    Err("Native performance owner has expired".into())
+                }
+            }
+            _ => {
+                Err("Native performance commands require matching performance and owner IDs".into())
+            }
+        }
+    }
+}
+
 struct Shared {
     queue: ArrayQueue<Event>,
+    media: Mutex<media::Store>,
+    fx: Mutex<FxController>,
+    retired: ArrayQueue<Arc<media::Reservation>>,
+    retired_stops: ArrayQueue<Arc<media::StopTargets>>,
+    recording: Mutex<Option<Arc<recording::Capture>>>,
+    recorded: ArrayQueue<Arc<recording::Capture>>,
+    active_performance: AtomicU64,
+    invalidation: AtomicU64,
+    cancelled_owners: [AtomicBool; OWNERS],
+    dac_cancel_before: AtomicU64,
+    owner_dac_cancel_before: [AtomicU64; OWNERS],
+    dac_streams: AtomicUsize,
     producer: Mutex<u64>,
     pending: AtomicUsize,
     frame: AtomicU64,
@@ -202,6 +387,18 @@ impl Shared {
     fn new(rate: u32, session: u64) -> Self {
         Self {
             queue: ArrayQueue::new(CAPACITY),
+            media: Mutex::new(media::Store::default()),
+            fx: Mutex::new(FxController::default()),
+            retired: ArrayQueue::new(CAPACITY),
+            retired_stops: ArrayQueue::new(CAPACITY),
+            recording: Mutex::new(None),
+            recorded: ArrayQueue::new(2),
+            active_performance: AtomicU64::new(0),
+            invalidation: AtomicU64::new(0),
+            cancelled_owners: std::array::from_fn(|_| AtomicBool::new(false)),
+            dac_cancel_before: AtomicU64::new(0),
+            owner_dac_cancel_before: std::array::from_fn(|_| AtomicU64::new(0)),
+            dac_streams: AtomicUsize::new(0),
             producer: Mutex::new(0),
             pending: AtomicUsize::new(0),
             frame: AtomicU64::new(0),
@@ -219,15 +416,40 @@ impl Shared {
         if commands.len() > MAX_BATCH {
             return Err(format!("Native batch exceeds {MAX_BATCH} commands"));
         }
-        // Validate the entire batch before reserving or mutating the queue.
-        let actions: Vec<_> = commands
-            .iter()
-            .map(Command::validate)
-            .collect::<Result<_, _>>()?;
         let mut sequence = self
             .producer
             .lock()
             .map_err(|_| "Native producer state is unavailable")?;
+        let mut store = self
+            .media
+            .lock()
+            .map_err(|_| "Native PCM state is unavailable")?;
+        self.reclaim(&mut store);
+        // Resolve every bank, tag and range before admission or state mutation.
+        let mut voices = HashSet::new();
+        let mut streams = 0;
+        let actions: Vec<_> = commands
+            .iter()
+            .map(|command| {
+                let owner = command.owner(self)?;
+                let action = command.resolve(&store, self.rate, owner)?;
+                if let Action::SamplePlay(reservation) = &action {
+                    if !voices.insert(reservation.voice) {
+                        return Err("Duplicate native sample voice ID in batch".into());
+                    }
+                }
+                if matches!(action, Action::DacStream(_)) {
+                    streams += 1;
+                }
+                Ok((action, owner))
+            })
+            .collect::<Result<_, String>>()?;
+        if store.reservations.len() + voices.len() > media::VOICES {
+            return Err("Native sample reservation limit (64) reached".into());
+        }
+        if streams + self.dac_streams.load(Ordering::Acquire) > 8 {
+            return Err("Native DAC stream batch limit (8) reached".into());
+        }
         if self
             .pending
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |pending| {
@@ -240,13 +462,42 @@ impl Shared {
             self.overflows.fetch_add(1, Ordering::Relaxed);
             return Err("Native command queue is full; playback was not silently truncated".into());
         }
+        self.dac_streams.fetch_add(streams, Ordering::AcqRel);
         let epoch = self.epoch.load(Ordering::Acquire);
-        for (command, action) in commands.iter().zip(actions) {
+        for (command, (mut action, owner)) in commands.iter().zip(actions) {
+            match &action {
+                Action::SamplePlay(reservation) => {
+                    store
+                        .reservations
+                        .insert(reservation.voice, reservation.clone());
+                }
+                Action::SampleStop { voice, name } if command.frame == 0 => {
+                    store.cancel(*voice, name.as_deref(), owner);
+                    self.invalidation.fetch_add(1, Ordering::Release);
+                }
+                Action::DacStop if command.frame == 0 => self.cancel_dac_before(owner, *sequence),
+                _ => {}
+            }
+            // Sample-stop names belong to the control side. The render event
+            // is only an ordering marker; avoid freeing strings in the callback.
+            if let Action::SampleStop { voice, name } = &action {
+                action = if command.frame == 0 {
+                    Action::SampleRelease
+                } else {
+                    Action::SampleTimedStop(store.stop_targets(
+                        *sequence,
+                        *voice,
+                        name.as_deref(),
+                        owner,
+                    ))
+                };
+            }
             let event = Event {
                 frame: command.frame,
                 sequence: *sequence,
                 epoch,
-                action,
+                action: RefCell::new(action),
+                owner,
             };
             *sequence += 1;
             // Admission includes both the queue and callback heap, so capacity
@@ -256,6 +507,205 @@ impl Shared {
             }
         }
         Ok(())
+    }
+    fn enqueue_special(&self, action: Action) -> Result<(), String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |v| {
+                v.checked_add(1).filter(|v| *v <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let event = Event {
+            frame: 0,
+            sequence: *sequence,
+            epoch: self.epoch.load(Ordering::Acquire),
+            owner: None,
+            action: RefCell::new(action),
+        };
+        *sequence += 1;
+        self.queue
+            .push(event)
+            .unwrap_or_else(|_| unreachable!("Reserved native event capacity"));
+        Ok(())
+    }
+    fn load_media(
+        &self,
+        kind: media::Kind,
+        name: String,
+        rate: f64,
+        channels: Vec<Vec<f32>>,
+    ) -> Result<Status, String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let mut store = self
+            .media
+            .lock()
+            .map_err(|_| "Native PCM state is unavailable")?;
+        self.reclaim(&mut store);
+        store.load(kind, name, rate, channels)?;
+        Ok(self.status())
+    }
+    fn remove_media(&self, kind: media::Kind, name: &str) -> Result<Status, String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let mut store = self
+            .media
+            .lock()
+            .map_err(|_| "Native PCM state is unavailable")?;
+        self.reclaim(&mut store);
+        store.remove(kind, name);
+        Ok(self.status())
+    }
+    fn record_start(&self, seconds: f64) -> Result<Status, String> {
+        let mut slot = self
+            .recording
+            .lock()
+            .map_err(|_| "Native recording state is unavailable")?;
+        if slot.is_some() {
+            return Err("Finish the previous native recording before starting another".into());
+        }
+        let capture = recording::Capture::new(self.rate, seconds)?;
+        self.enqueue_special(Action::Record(capture.clone()))?;
+        *slot = Some(capture);
+        Ok(self.status())
+    }
+    fn record_stop(&self) -> Result<recording::Recorded, String> {
+        let mut slot = self
+            .recording
+            .lock()
+            .map_err(|_| "Native recording state is unavailable")?;
+        let capture = slot
+            .as_ref()
+            .ok_or("No native recording has been started")?;
+        capture.stop.store(true, Ordering::Release);
+        let start = Instant::now();
+        let finished = loop {
+            if let Some(finished) = self.recorded.pop() {
+                break finished;
+            }
+            if self.failed.load(Ordering::Acquire) {
+                return Err("Native audio stream failed during recording".into());
+            }
+            if start.elapsed() > Duration::from_secs(2) {
+                return Err("Native recording stop timed out".into());
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        };
+        let result = finished.result();
+        *slot = None;
+        result
+    }
+    fn reclaim(&self, store: &mut media::Store) {
+        while let Some(reservation) = self.retired.pop() {
+            store.reservations.remove(&reservation.voice);
+        }
+        while let Some(targets) = self.retired_stops.pop() {
+            store.stops.remove(&targets.id);
+        }
+        store.collect();
+    }
+    fn cancel_dac_before(&self, owner: Option<Owner>, sequence: u64) {
+        if let Some(owner) = owner {
+            self.owner_dac_cancel_before[(owner.owner - 1) as usize]
+                .fetch_max(sequence, Ordering::AcqRel);
+        } else {
+            self.dac_cancel_before.fetch_max(sequence, Ordering::AcqRel);
+        }
+        self.invalidation.fetch_add(1, Ordering::Release);
+    }
+    fn valid_owner(&self, owner: Option<Owner>) -> bool {
+        owner.is_none_or(|owner| {
+            self.active_performance.load(Ordering::Acquire) == owner.performance
+                && !self.cancelled_owners[(owner.owner - 1) as usize].load(Ordering::Acquire)
+        })
+    }
+    fn valid_event(&self, event: &Event) -> bool {
+        let action = event.action.borrow();
+        self.valid_owner(event.owner)
+            && event.epoch == self.epoch.load(Ordering::Acquire)
+            && (!matches!(*action, Action::DacPlay { .. } | Action::DacStream(_))
+                || event.sequence >= self.dac_cancel_before.load(Ordering::Acquire)
+                    && event.owner.is_none_or(|owner| {
+                        event.sequence
+                            >= self.owner_dac_cancel_before[(owner.owner - 1) as usize]
+                                .load(Ordering::Acquire)
+                    }))
+            && !matches!(&*action,Action::SamplePlay(reservation) if reservation.cancelled())
+    }
+    fn retire_action(&self, action: Action) {
+        match action {
+            Action::Record(capture) => {
+                capture.stop.store(true, Ordering::Release);
+                capture.sample(self.frame.load(Ordering::Acquire), [0.0; 2]);
+                self.recorded
+                    .push(capture)
+                    .unwrap_or_else(|_| unreachable!("Single recording completion"));
+            }
+            Action::SampleTimedStop(targets) => {
+                self.retired_stops
+                    .push(targets)
+                    .unwrap_or_else(|_| unreachable!("Bounded sample stop retirement"));
+            }
+            Action::SamplePlay(reservation) => {
+                self.retired
+                    .push(reservation)
+                    .unwrap_or_else(|_| unreachable!("Bounded reservation retirement"));
+            }
+            Action::DacStream(_) => {
+                self.dac_streams.fetch_sub(1, Ordering::AcqRel);
+            }
+            _ => {}
+        }
+    }
+    fn performance(
+        &self,
+        op: &str,
+        performance: u64,
+        owner: Option<u32>,
+    ) -> Result<Status, String> {
+        if performance == 0 || performance > MAX_SAFE_INTEGER {
+            return Err("Invalid native performance ID".into());
+        }
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        match op {
+            "start" => {
+                self.active_performance.store(0, Ordering::Release);
+                for cancelled in &self.owner_dac_cancel_before {
+                    cancelled.store(0, Ordering::Release);
+                }
+                for cancelled in &self.cancelled_owners {
+                    cancelled.store(false, Ordering::Release);
+                }
+                self.active_performance
+                    .store(performance, Ordering::Release);
+            }
+            "stop" if self.active_performance.load(Ordering::Acquire) == performance => {
+                self.active_performance.store(0, Ordering::Release);
+            }
+            "cancel-owner" if self.active_performance.load(Ordering::Acquire) == performance => {
+                let owner = owner
+                    .filter(|v| *v > 0 && *v <= OWNERS as u32)
+                    .ok_or("Invalid native performance owner")?;
+                self.cancelled_owners[(owner - 1) as usize].store(true, Ordering::Release);
+            }
+            // Stop can race a global Stop or a new performance across the
+            // admin and Worker ports. Stale cleanup must be harmless and must
+            // never invalidate the replacement performance.
+            "stop" | "cancel-owner" => return Ok(self.status()),
+            _ => return Err("Unknown native performance operation".into()),
+        }
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(self.status())
     }
     fn check_session(&self, session: u64) -> Result<(), String> {
         if self.session != session {
@@ -289,6 +739,7 @@ impl Shared {
             .lock()
             .map_err(|_| "Native producer state is unavailable")?;
         let epoch = self.epoch.fetch_add(1, Ordering::AcqRel) + 1;
+        self.active_performance.store(0, Ordering::Release);
         let start = Instant::now();
         while self.stopped_epoch.load(Ordering::Acquire) < epoch {
             if self.failed.load(Ordering::Acquire) {
@@ -299,12 +750,47 @@ impl Shared {
             }
             std::thread::sleep(Duration::from_millis(2));
         }
+        // Runtime Stop disposes run FX. The callback has released every graph
+        // at the fade barrier; clear the control model and reclaim off-thread.
+        let mut fx = self
+            .fx
+            .lock()
+            .map_err(|_| "Native FX state is unavailable")?;
+        let _ = fx.command(FxMessage::Reset, self.rate)?;
+        fx.collect();
         Ok(self.status())
     }
 }
 
+struct DacVoice {
+    bank: Arc<media::Bank>,
+    offset: usize,
+    size: usize,
+    index: usize,
+    start: u64,
+    owner: Option<Owner>,
+}
+struct DacStream {
+    bank: Arc<media::Bank>,
+    index: usize,
+    start: u64,
+    owner: Option<Owner>,
+}
+
 struct Renderer {
     core: Core,
+    fx: FxRenderer,
+    voices: [Option<media::Voice>; media::VOICES],
+    dac: Option<DacVoice>,
+    streams: [Option<DacStream>; 8],
+    pan_register: u8,
+    raw_dac_owner: Option<Owner>,
+    raw_dac_enabled: bool,
+    fm_owners: [Option<Owner>; 6],
+    psg_owners: [Option<Owner>; 4],
+    psg_latch: u8,
+    invalidation: u64,
+    record: Option<Arc<recording::Capture>>,
     heap: BinaryHeap<Event>,
     frame: u64,
     epoch: u64,
@@ -317,6 +803,18 @@ impl Renderer {
     fn new(rate: u32) -> Result<Self, String> {
         Ok(Self {
             core: Core::new(rate)?,
+            fx: FxRenderer::new(rate),
+            voices: std::array::from_fn(|_| None),
+            dac: None,
+            streams: std::array::from_fn(|_| None),
+            pan_register: 0,
+            raw_dac_owner: None,
+            raw_dac_enabled: false,
+            fm_owners: [None; 6],
+            psg_owners: [None; 4],
+            psg_latch: 0,
+            invalidation: 0,
+            record: None,
             heap: BinaryHeap::with_capacity(CAPACITY),
             frame: 0,
             epoch: 0,
@@ -331,13 +829,81 @@ impl Renderer {
         if epoch != self.epoch {
             self.epoch = epoch;
             let mut removed = self.heap.len();
-            self.heap.clear();
-            while shared.queue.pop().is_some() {
+            while let Some(event) = self.heap.pop() {
+                shared.retire_action(event.action.into_inner());
+            }
+            while let Some(event) = shared.queue.pop() {
+                shared.retire_action(event.action.into_inner());
                 removed += 1;
             }
             shared.pending.fetch_sub(removed, Ordering::AcqRel);
             self.fade_remaining = self.fade_frames;
             self.resume_remaining = 0;
+        }
+        let invalidation = shared.invalidation.load(Ordering::Acquire);
+        if invalidation != self.invalidation {
+            self.invalidation = invalidation;
+            // Invalidate cancelled performance owners and future media starts before
+            // processing new events. BinaryHeap::retain keeps its allocated capacity.
+            let mut removed = 0;
+            self.heap.retain(|event| {
+                let keep = shared.valid_event(event);
+                if !keep {
+                    removed += 1;
+                    // Move the reference out before publishing retirement.
+                    // Cloning then dropping the original could let control
+                    // reclaim first and leave the callback as final owner.
+                    shared.retire_action(event.action.replace(Action::Reset));
+                }
+                keep
+            });
+            shared.pending.fetch_sub(removed, Ordering::AcqRel);
+            for channel in 0..6 {
+                if self.fm_owners[channel].is_some() && !shared.valid_owner(self.fm_owners[channel])
+                {
+                    self.core.apply(Action::Write(
+                        0,
+                        0x28,
+                        (channel % 3 + if channel >= 3 { 4 } else { 0 }) as u8,
+                    ));
+                    self.fm_owners[channel] = None;
+                }
+            }
+            for channel in 0..4 {
+                if self.psg_owners[channel].is_some()
+                    && !shared.valid_owner(self.psg_owners[channel])
+                {
+                    unsafe { native_genesis_psg_mute(self.core.0, channel as u8) };
+                    self.psg_owners[channel] = None;
+                }
+            }
+            for voice in self.voices.iter_mut().flatten() {
+                if !shared.valid_owner(voice.owner) {
+                    voice.reservation.cancel();
+                }
+            }
+            if self
+                .dac
+                .as_ref()
+                .is_some_and(|v| !shared.valid_owner(v.owner))
+            {
+                self.stop_dac();
+            }
+            if self.raw_dac_enabled && !shared.valid_owner(self.raw_dac_owner) {
+                self.core.apply(Action::Write(0, 0x2a, 128));
+                self.core.apply(Action::Write(0, 0x2b, 0));
+                self.raw_dac_enabled = false;
+                self.raw_dac_owner = None;
+            }
+            for stream in &mut self.streams {
+                if stream
+                    .as_ref()
+                    .is_some_and(|v| !shared.valid_owner(v.owner))
+                {
+                    *stream = None;
+                    shared.dac_streams.fetch_sub(1, Ordering::AcqRel);
+                }
+            }
         }
         // Fixed admission bounds guarantee this never reallocates. Limit work
         // per callback; large incoming batches cannot monopolize audio forever.
@@ -345,10 +911,218 @@ impl Renderer {
             let Some(event) = shared.queue.pop() else {
                 break;
             };
-            if event.epoch == self.epoch {
+            if event.epoch == self.epoch && shared.valid_event(&event) {
                 self.heap.push(event);
             } else {
                 shared.pending.fetch_sub(1, Ordering::AcqRel);
+                shared.retire_action(event.action.into_inner());
+            }
+        }
+    }
+    fn stop_dac(&mut self) {
+        if self.dac.take().is_some() || self.raw_dac_enabled {
+            self.core.apply(Action::Write(0, 0x2a, 128));
+            self.core.apply(Action::Write(0, 0x2b, 0));
+        }
+        self.raw_dac_owner = None;
+        self.raw_dac_enabled = false;
+    }
+    fn clear_media(&mut self, shared: &Shared) {
+        self.stop_dac();
+        for stream in &mut self.streams {
+            if stream.take().is_some() {
+                shared.dac_streams.fetch_sub(1, Ordering::AcqRel);
+            }
+        }
+        for voice in &mut self.voices {
+            if let Some(voice) = voice.take() {
+                shared
+                    .retired
+                    .push(voice.reservation)
+                    .unwrap_or_else(|_| unreachable!("Bounded reservation retirement"));
+            }
+        }
+    }
+    fn apply(&mut self, event: Event, shared: &Shared) {
+        let owner = event.owner;
+        let sequence = event.sequence;
+        match event.action.into_inner() {
+            Action::DacPlay {
+                bank,
+                offset,
+                size,
+                pan,
+            } => {
+                self.dac = Some(DacVoice {
+                    bank,
+                    offset,
+                    size,
+                    index: 0,
+                    start: self.frame,
+                    owner,
+                });
+                self.raw_dac_owner = owner;
+                self.raw_dac_enabled = true;
+                self.core
+                    .apply(Action::Write(1, 0xb6, (self.pan_register & 0x3f) | pan));
+                self.core.apply(Action::Write(0, 0x2a, 128));
+                self.core.apply(Action::Write(0, 0x2b, 0x80));
+            }
+            Action::DacStream(bank) => {
+                if let Some(slot) = self.streams.iter_mut().find(|slot| slot.is_none()) {
+                    *slot = Some(DacStream {
+                        bank,
+                        index: 0,
+                        start: self.frame,
+                        owner,
+                    });
+                } else {
+                    shared.failed.store(true, Ordering::Release);
+                    shared.dac_streams.fetch_sub(1, Ordering::AcqRel);
+                }
+            }
+            Action::DacStop => {
+                shared.cancel_dac_before(owner, sequence);
+                if owner.is_none()
+                    || self.dac.as_ref().is_some_and(|v| v.owner == owner)
+                    || self.raw_dac_owner == owner
+                {
+                    self.stop_dac();
+                }
+                for stream in &mut self.streams {
+                    if stream
+                        .as_ref()
+                        .is_some_and(|v| owner.is_none() || v.owner == owner)
+                    {
+                        *stream = None;
+                        shared.dac_streams.fetch_sub(1, Ordering::AcqRel);
+                    }
+                }
+            }
+            Action::SamplePlay(reservation) => {
+                if reservation.cancelled() {
+                    shared
+                        .retired
+                        .push(reservation)
+                        .unwrap_or_else(|_| unreachable!("Bounded reservation retirement"));
+                } else if let Some(slot) = self.voices.iter_mut().find(|slot| slot.is_none()) {
+                    *slot = Some(media::Voice::new(reservation, shared.rate, owner));
+                } else {
+                    shared
+                        .retired
+                        .push(reservation)
+                        .unwrap_or_else(|_| unreachable!("Bounded reservation retirement"));
+                    shared.failed.store(true, Ordering::Release);
+                }
+            }
+            Action::SampleTimedStop(targets) => {
+                targets.cancel();
+                shared.invalidation.fetch_add(1, Ordering::Release);
+                shared
+                    .retired_stops
+                    .push(targets)
+                    .unwrap_or_else(|_| unreachable!("Bounded sample stop retirement"));
+            }
+            Action::SampleStop { .. } | Action::SampleRelease => {} // cancellation atomics were published at admission.
+            Action::Record(capture) => {
+                self.record = Some(capture);
+            }
+            Action::Fx(action) => self.fx.apply(action),
+            action => {
+                match &action {
+                    Action::Write(port, reg, value) => {
+                        if *port == 1 && *reg == 0xb6 {
+                            self.pan_register = *value;
+                        }
+                        if *port == 0 && *reg == 0x2b {
+                            self.raw_dac_enabled = value & 0x80 != 0;
+                            self.raw_dac_owner = if self.raw_dac_enabled { owner } else { None };
+                        }
+                        if *port == 0 && *reg == 0x2a && self.raw_dac_enabled {
+                            self.raw_dac_owner = owner;
+                        }
+                        if *port == 0 && *reg == 0x28 {
+                            let low = (value & 3) as usize;
+                            if low < 3 {
+                                let channel = low + if value & 4 != 0 { 3 } else { 0 };
+                                self.fm_owners[channel] =
+                                    if value & 0xf0 != 0 { owner } else { None };
+                            }
+                        }
+                    }
+                    Action::PsgWrite(value) => {
+                        if value & 0x80 != 0 {
+                            self.psg_latch = (value >> 4) & 7;
+                        }
+                        if self.psg_latch & 1 != 0 {
+                            self.psg_owners[(self.psg_latch >> 1) as usize] =
+                                if value & 15 != 15 { owner } else { None };
+                        }
+                    }
+                    Action::PsgReset => {
+                        self.psg_owners = [None; 4];
+                        self.psg_latch = 0;
+                    }
+                    Action::Reset => {
+                        self.clear_media(shared);
+                        self.pan_register = 0;
+                        self.fm_owners = [None; 6];
+                        self.psg_owners = [None; 4];
+                        self.psg_latch = 0;
+                    }
+                    _ => {}
+                }
+                self.core.apply(action);
+            }
+        }
+    }
+    fn advance_dac(&mut self, shared: &Shared) {
+        if let Some(voice) = &mut self.dac {
+            loop {
+                let next = voice.start
+                    + (voice.index as f64 * shared.rate as f64 / voice.bank.rate).ceil() as u64;
+                if next > self.frame {
+                    break;
+                }
+                if voice.index == voice.size {
+                    self.core.apply(Action::Write(0, 0x2a, 128));
+                    self.core.apply(Action::Write(0, 0x2b, 0));
+                    self.dac = None;
+                    self.raw_dac_owner = None;
+                    self.raw_dac_enabled = false;
+                    break;
+                }
+                self.core.apply(Action::Write(
+                    0,
+                    0x2a,
+                    voice.bank.bytes()[voice.offset + voice.index],
+                ));
+                voice.index += 1;
+            }
+        }
+        for slot in &mut self.streams {
+            if let Some(stream) = slot {
+                let data = stream.bank.bytes();
+                while stream.index < data.len() {
+                    let offset = stream.index;
+                    let samples = u32::from_le_bytes([
+                        data[offset],
+                        data[offset + 1],
+                        data[offset + 2],
+                        data[offset + 3],
+                    ]);
+                    let frame = stream.start
+                        + (samples as f64 * shared.rate as f64 / 44100.0).round() as u64;
+                    if frame > self.frame {
+                        break;
+                    }
+                    self.core.apply(Action::Write(0, 0x2a, data[offset + 4]));
+                    stream.index += 5;
+                }
+                if stream.index == data.len() {
+                    *slot = None;
+                    shared.dac_streams.fetch_sub(1, Ordering::AcqRel);
+                }
             }
         }
     }
@@ -364,13 +1138,38 @@ impl Renderer {
             if event.frame != 0 && event.frame < self.frame {
                 shared.late.fetch_add(1, Ordering::Relaxed);
             }
-            if self.idle && !matches!(event.action, Action::Mix(_) | Action::Reset) {
+            if self.idle
+                && !matches!(
+                    *event.action.borrow(),
+                    Action::Mix(_) | Action::Reset | Action::Record(_) | Action::Fx(_)
+                )
+            {
                 self.idle = false;
                 self.resume_remaining = (shared.rate / 200).max(1);
             }
-            self.core.apply(event.action);
+            if shared.valid_event(&event) {
+                self.apply(event, shared);
+            } else {
+                shared.retire_action(event.action.into_inner());
+            }
         }
-        let mut pcm = self.core.sample();
+        self.advance_dac(shared);
+        let mut pcm = self.core.sample_bus();
+        for slot in &mut self.voices {
+            if let Some(voice) = slot {
+                if !voice.sample(&mut pcm) {
+                    let voice = slot.take().unwrap();
+                    shared
+                        .retired
+                        .push(voice.reservation)
+                        .unwrap_or_else(|_| unreachable!("Bounded reservation retirement"));
+                }
+            }
+        }
+        self.fx.process(&mut pcm);
+        let master = unsafe { native_genesis_master(self.core.0) };
+        pcm[0] *= master;
+        pcm[1] *= master;
         if self.fade_remaining > 0 {
             let gain = self.fade_remaining as f32 / self.fade_frames as f32;
             pcm[0] *= gain;
@@ -380,6 +1179,10 @@ impl Renderer {
                 unsafe {
                     native_genesis_stop_voices(self.core.0);
                 }
+                self.clear_media(shared);
+                self.fx.stop();
+                self.fm_owners = [None; 6];
+                self.psg_owners = [None; 4];
                 self.idle = true;
                 shared.stopped_epoch.store(self.epoch, Ordering::Release);
             }
@@ -391,6 +1194,26 @@ impl Renderer {
             pcm[0] *= gain;
             pcm[1] *= gain;
             self.resume_remaining -= 1;
+        }
+        // Match the device conversion limit; capture the delivered signal.
+        pcm[0] = if pcm[0].is_finite() {
+            pcm[0].clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
+        pcm[1] = if pcm[1].is_finite() {
+            pcm[1].clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
+        if let Some(capture) = &self.record {
+            if !capture.sample(self.frame, pcm) {
+                let capture = self.record.take().unwrap();
+                shared
+                    .recorded
+                    .push(capture)
+                    .unwrap_or_else(|_| unreachable!("Only one capture may be active"));
+            }
         }
         self.frame += 1;
         pcm
@@ -632,11 +1455,133 @@ pub async fn native_genesis_shutdown(
         .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+pub fn native_genesis_media_load(
+    window: tauri::WebviewWindow,
+    state: tauri::State<NativeGenesis>,
+    session: u64,
+    kind: media::Kind,
+    name: String,
+    sample_rate: f64,
+    channels: Vec<Vec<f32>>,
+) -> Result<Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| {
+        shared.load_media(kind, name, sample_rate, channels)
+    })
+}
+#[tauri::command]
+pub fn native_genesis_media_remove(
+    window: tauri::WebviewWindow,
+    state: tauri::State<NativeGenesis>,
+    session: u64,
+    kind: media::Kind,
+    name: String,
+) -> Result<Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.remove_media(kind, &name))
+}
+#[tauri::command]
+pub fn native_genesis_record_start(
+    window: tauri::WebviewWindow,
+    state: tauri::State<NativeGenesis>,
+    session: u64,
+    seconds: f64,
+) -> Result<Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.record_start(seconds))
+}
+#[tauri::command]
+pub async fn native_genesis_record_stop(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+) -> Result<recording::Recorded, String> {
+    crate::allowed(&window)?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || state.with_session(session, Shared::record_stop))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+pub fn native_genesis_performance(
+    window: tauri::WebviewWindow,
+    state: tauri::State<NativeGenesis>,
+    session: u64,
+    op: String,
+    performance: u64,
+    owner: Option<u32>,
+) -> Result<Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| {
+        shared.performance(&op, performance, owner)
+    })
+}
+
+#[tauri::command]
+pub fn native_genesis_fx(
+    window: tauri::WebviewWindow,
+    state: tauri::State<NativeGenesis>,
+    session: u64,
+    message: FxMessage,
+    frame: Option<u64>,
+    performance: Option<u64>,
+    owner: Option<u32>,
+) -> Result<Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| {
+        let mut sequence = shared
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let frame = frame.unwrap_or(0);
+        if frame > MAX_SAFE_INTEGER {
+            return Err("Invalid native FX frame".into());
+        }
+        let tag = Command {
+            frame,
+            performance,
+            owner,
+            action: CommandAction::Reset,
+        }
+        .owner(shared)?;
+        if shared.pending.load(Ordering::Acquire) >= CAPACITY {
+            return Err("Native command queue is full".into());
+        }
+        let mut fx = shared
+            .fx
+            .lock()
+            .map_err(|_| "Native FX state is unavailable")?;
+        fx.collect();
+        if let Some(action) = fx.command(message, shared.rate)? {
+            shared.pending.fetch_add(1, Ordering::AcqRel);
+            let event = Event {
+                frame,
+                sequence: *sequence,
+                epoch: shared.epoch.load(Ordering::Acquire),
+                owner: tag,
+                action: RefCell::new(Action::Fx(action)),
+            };
+            *sequence += 1;
+            shared
+                .queue
+                .push(event)
+                .unwrap_or_else(|_| unreachable!("Reserved native FX event capacity"));
+        }
+        Ok(shared.status())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     fn command(frame: u64, action: CommandAction) -> Command {
-        Command { frame, action }
+        Command {
+            frame,
+            action,
+            performance: None,
+            owner: None,
+        }
     }
     fn render(renderer: &mut Renderer, shared: &Shared, count: usize) -> Vec<[f32; 2]> {
         renderer.prepare(shared);
@@ -873,7 +1818,10 @@ mod tests {
                 value: 0x80,
             },
         );
-        assert!(dac.validate().unwrap_err().contains("DAC"));
+        assert!(matches!(
+            dac.validate().unwrap(),
+            Action::Write(0, 0x2b, 0x80)
+        ));
     }
     #[test]
     fn replacement_session_rejects_old_commands_and_delayed_pagehide_shutdown() {
@@ -1018,5 +1966,732 @@ mod tests {
         rack.shutdown_session(started.session)
             .expect("Close the native stream");
         assert!(rack.running.lock().unwrap().is_none());
+    }
+    fn media_load(
+        shared: &Shared,
+        kind: media::Kind,
+        name: &str,
+        rate: f64,
+        channels: Vec<Vec<f32>>,
+    ) {
+        shared
+            .load_media(kind, name.into(), rate, channels)
+            .unwrap();
+    }
+    fn pcm_options() -> media::Options {
+        serde_json::from_value(serde_json::json!({})).unwrap()
+    }
+    #[test]
+    fn media_admission_is_atomic_bounded_and_stop_retires_future_reservations() {
+        let shared = Shared::new(48000, 1);
+        let mut renderer = Renderer::new(48000).unwrap();
+        media_load(
+            &shared,
+            media::Kind::Sample,
+            "pcm",
+            44100.0,
+            vec![vec![0.25; 32]],
+        );
+        let invalid = vec![
+            command(
+                0,
+                CommandAction::SamplePlay {
+                    name: "pcm".into(),
+                    voice: 1,
+                    options: pcm_options(),
+                },
+            ),
+            command(
+                0,
+                CommandAction::DacPlay {
+                    name: "missing".into(),
+                    offset: 0,
+                    size: None,
+                    pan: "both".into(),
+                },
+            ),
+        ];
+        assert!(shared.enqueue(1, &invalid).is_err());
+        assert!(shared.media.lock().unwrap().reservations.is_empty());
+        assert_eq!(shared.pending.load(Ordering::Acquire), 0);
+        shared
+            .enqueue(
+                1,
+                &[command(
+                    10000,
+                    CommandAction::SamplePlay {
+                        name: "pcm".into(),
+                        voice: 1,
+                        options: pcm_options(),
+                    },
+                )],
+            )
+            .unwrap();
+        shared
+            .enqueue(
+                1,
+                &[command(
+                    0,
+                    CommandAction::SampleStop {
+                        voice: Some(1),
+                        name: None,
+                    },
+                )],
+            )
+            .unwrap();
+        assert!(render(&mut renderer, &shared, 128)
+            .iter()
+            .all(|v| *v == [0.0; 2]));
+        shared.enqueue(1, &[]).unwrap();
+        assert!(shared.media.lock().unwrap().reservations.is_empty());
+        assert!(shared
+            .load_media(
+                media::Kind::Dac,
+                "invalid".into(),
+                22050.0,
+                vec![vec![256.0]]
+            )
+            .is_err());
+        assert!(shared
+            .load_media(
+                media::Kind::DacStream,
+                "invalid".into(),
+                44100.0,
+                vec![vec![1.0; 4]]
+            )
+            .is_err());
+        assert!(shared
+            .load_media(
+                media::Kind::Sample,
+                "invalid".into(),
+                44100.0,
+                vec![vec![f32::NAN]]
+            )
+            .is_err());
+    }
+    #[test]
+    fn dac_stop_cancels_future_pcm_and_packed_stream_starts() {
+        let shared = Shared::new(48000, 1);
+        let mut renderer = Renderer::new(48000).unwrap();
+        media_load(
+            &shared,
+            media::Kind::Dac,
+            "dac",
+            22050.0,
+            vec![vec![200.0; 32]],
+        );
+        media_load(
+            &shared,
+            media::Kind::DacStream,
+            "packed",
+            44100.0,
+            vec![vec![0.0, 0.0, 0.0, 0.0, 200.0]],
+        );
+        shared
+            .enqueue(
+                1,
+                &[
+                    command(
+                        1000,
+                        CommandAction::DacPlay {
+                            name: "dac".into(),
+                            offset: 0,
+                            size: None,
+                            pan: "both".into(),
+                        },
+                    ),
+                    command(
+                        1000,
+                        CommandAction::DacStreamPlay {
+                            name: "packed".into(),
+                        },
+                    ),
+                ],
+            )
+            .unwrap();
+        shared
+            .enqueue(1, &[command(0, CommandAction::DacStop)])
+            .unwrap();
+        assert!(render(&mut renderer, &shared, 2000)
+            .iter()
+            .all(|v| *v == [0.0; 2]));
+        assert_eq!(shared.pending.load(Ordering::Acquire), 0);
+        assert_eq!(shared.dac_streams.load(Ordering::Acquire), 0);
+    }
+    #[test]
+    fn performance_cancellation_preserves_interactive_replacements_and_cancels_future_notes() {
+        let shared = Shared::new(48000, 1);
+        let mut renderer = Renderer::new(48000).unwrap();
+        shared.performance("start", 17, None).unwrap();
+        let tagged = |frame, action| Command {
+            frame,
+            action,
+            performance: Some(17),
+            owner: Some(1),
+        };
+        let mut events = tone(0);
+        for event in &mut events {
+            event.performance = Some(17);
+            event.owner = Some(1);
+        }
+        events.push(tagged(5000, CommandAction::PsgWrite { value: 0x90 }));
+        shared.enqueue(1, &events).unwrap();
+        render(&mut renderer, &shared, 512);
+        // A manual replacement of the same PSG channel owns the current voice.
+        shared
+            .enqueue(1, &[command(0, CommandAction::PsgWrite { value: 0x92 })])
+            .unwrap();
+        render(&mut renderer, &shared, 128);
+        shared.performance("cancel-owner", 17, Some(1)).unwrap();
+        assert!(shared
+            .enqueue(1, &[tagged(0, CommandAction::PsgWrite { value: 0x90 })])
+            .is_err());
+        let remaining = render(&mut renderer, &shared, 6000);
+        assert!(remaining.iter().any(|v| v[0] != 0.0));
+        assert_eq!(shared.pending.load(Ordering::Acquire), 0);
+        assert_eq!(renderer.psg_owners[0], None);
+        shared.performance("start", 18, None).unwrap();
+        let mut owned = tone(0);
+        for event in &mut owned {
+            event.performance = Some(18);
+            event.owner = Some(2);
+        }
+        shared.enqueue(1, &owned).unwrap();
+        render(&mut renderer, &shared, 128);
+        shared.performance("cancel-owner", 18, Some(2)).unwrap();
+        assert!(render(&mut renderer, &shared, 128)
+            .iter()
+            .all(|v| *v == [0.0; 2]));
+    }
+    #[test]
+    fn owned_sample_stop_and_owner_cancellation_preserve_manual_pcm() {
+        let shared = Shared::new(48000, 1);
+        let mut renderer = Renderer::new(48000).unwrap();
+        media_load(
+            &shared,
+            media::Kind::Sample,
+            "pcm",
+            48000.0,
+            vec![vec![0.2; 64]],
+        );
+        shared.performance("start", 9, None).unwrap();
+        let options: media::Options =
+            serde_json::from_value(serde_json::json!({"loop":true,"pan":-1})).unwrap();
+        let worker = |frame, action| Command {
+            frame,
+            action,
+            performance: Some(9),
+            owner: Some(1),
+        };
+        shared
+            .enqueue(
+                1,
+                &[
+                    command(
+                        0,
+                        CommandAction::SamplePlay {
+                            name: "pcm".into(),
+                            voice: 1,
+                            options,
+                        },
+                    ),
+                    worker(
+                        0,
+                        CommandAction::SamplePlay {
+                            name: "pcm".into(),
+                            voice: 2,
+                            options,
+                        },
+                    ),
+                    worker(
+                        10000,
+                        CommandAction::SamplePlay {
+                            name: "pcm".into(),
+                            voice: 3,
+                            options,
+                        },
+                    ),
+                ],
+            )
+            .unwrap();
+        assert!(render(&mut renderer, &shared, 512).last().unwrap()[0] > 0.39);
+        shared
+            .enqueue(
+                1,
+                &[worker(
+                    0,
+                    CommandAction::SampleStop {
+                        voice: None,
+                        name: Some("pcm".into()),
+                    },
+                )],
+            )
+            .unwrap();
+        let output = render(&mut renderer, &shared, 512);
+        assert!(output
+            .iter()
+            .all(|v| (v[0] - 0.2).abs() < 1e-7 && v[1].abs() < 1e-7));
+        shared.enqueue(1, &[]).unwrap();
+        assert_eq!(shared.media.lock().unwrap().reservations.len(), 1);
+        shared.performance("cancel-owner", 9, Some(1)).unwrap();
+        assert!(render(&mut renderer, &shared, 10000)
+            .iter()
+            .all(|v| (v[0] - 0.2).abs() < 1e-7));
+        assert_eq!(renderer.voices.iter().flatten().count(), 1);
+    }
+    #[test]
+    fn fm_owner_cancellation_preserves_new_manual_keyon_and_drops_future_keyon() {
+        let shared = Shared::new(48000, 1);
+        let mut renderer = Renderer::new(48000).unwrap();
+        fm_patch(&mut renderer.core);
+        shared.performance("start", 1, None).unwrap();
+        let worker = |frame, value| Command {
+            frame,
+            action: CommandAction::Write {
+                port: 0,
+                register: 0x28,
+                value,
+            },
+            performance: Some(1),
+            owner: Some(1),
+        };
+        shared
+            .enqueue(1, &[worker(0, 0xf0), worker(5000, 0xf0)])
+            .unwrap();
+        render(&mut renderer, &shared, 512);
+        shared
+            .enqueue(
+                1,
+                &[command(
+                    0,
+                    CommandAction::Write {
+                        port: 0,
+                        register: 0x28,
+                        value: 0xf0,
+                    },
+                )],
+            )
+            .unwrap();
+        render(&mut renderer, &shared, 128);
+        shared.performance("cancel-owner", 1, Some(1)).unwrap();
+        let output = render(&mut renderer, &shared, 6000);
+        assert!(output[1000..].iter().any(|v| v[0].abs() > 0.01));
+        assert_eq!(renderer.fm_owners[0], None);
+        assert_eq!(shared.pending.load(Ordering::Acquire), 0);
+        shared.performance("start", 2, None).unwrap();
+        shared
+            .enqueue(
+                1,
+                &[Command {
+                    frame: 0,
+                    action: CommandAction::Write {
+                        port: 0,
+                        register: 0x28,
+                        value: 0xf0,
+                    },
+                    performance: Some(2),
+                    owner: Some(1),
+                }],
+            )
+            .unwrap();
+        render(&mut renderer, &shared, 128);
+        shared.performance("stop", 2, None).unwrap();
+        render(&mut renderer, &shared, 128);
+        assert_eq!(renderer.fm_owners[0], None);
+        assert!((0..4096)
+            .map(|_| renderer.sample(&shared))
+            .last()
+            .unwrap()
+            .iter()
+            .all(|v| v.abs() < 0.0001));
+    }
+    #[test]
+    fn psg_only_reset_keeps_fm_and_generic_pcm_and_sample_master_is_shared() {
+        let shared = Shared::new(48000, 1);
+        let mut renderer = Renderer::new(48000).unwrap();
+        fm_patch(&mut renderer.core);
+        let mut commands = tone(0);
+        commands.push(command(
+            0,
+            CommandAction::Write {
+                port: 0,
+                register: 0x28,
+                value: 0xf0,
+            },
+        ));
+        shared.enqueue(1, &commands).unwrap();
+        render(&mut renderer, &shared, 512);
+        shared
+            .enqueue(1, &[command(0, CommandAction::PsgReset)])
+            .unwrap();
+        let output = render(&mut renderer, &shared, 512);
+        assert!(output.iter().any(|v| v[0].abs() > 0.01));
+        assert_eq!(renderer.psg_owners, [None; 4]);
+        let other = Shared::new(48000, 2);
+        let mut sample = Renderer::new(48000).unwrap();
+        media_load(
+            &other,
+            media::Kind::Sample,
+            "pcm",
+            48000.0,
+            vec![vec![0.4; 64]],
+        );
+        let options: media::Options =
+            serde_json::from_value(serde_json::json!({"loop":true,"pan":-1})).unwrap();
+        other
+            .enqueue(
+                2,
+                &[
+                    command(
+                        0,
+                        CommandAction::Mix {
+                            fm_left: 1.0,
+                            fm_right: 1.0,
+                            psg_left: 1.0,
+                            psg_right: 1.0,
+                            master: 0.5,
+                        },
+                    ),
+                    command(
+                        0,
+                        CommandAction::SamplePlay {
+                            name: "pcm".into(),
+                            voice: 1,
+                            options,
+                        },
+                    ),
+                ],
+            )
+            .unwrap();
+        let output = render(&mut sample, &other, 1024);
+        assert!((output.last().unwrap()[0] - 0.2).abs() < 1e-7);
+    }
+    #[test]
+    fn removed_banks_survive_accepted_playback_then_reclaim_on_control() {
+        let shared = Shared::new(48000, 1);
+        let mut renderer = Renderer::new(48000).unwrap();
+        media_load(
+            &shared,
+            media::Kind::Sample,
+            "pcm",
+            48000.0,
+            vec![vec![0.25; 1024]],
+        );
+        let bank = shared
+            .media
+            .lock()
+            .unwrap()
+            .get(media::Kind::Sample, "pcm")
+            .unwrap();
+        let weak = Arc::downgrade(&bank);
+        drop(bank);
+        shared
+            .enqueue(
+                1,
+                &[command(
+                    0,
+                    CommandAction::SamplePlay {
+                        name: "pcm".into(),
+                        voice: 1,
+                        options: pcm_options(),
+                    },
+                )],
+            )
+            .unwrap();
+        shared.remove_media(media::Kind::Sample, "pcm").unwrap();
+        assert!(weak.upgrade().is_some());
+        let pcm = render(&mut renderer, &shared, 2048);
+        assert!(pcm.iter().any(|v| v[0].abs() > 0.01));
+        assert!(
+            weak.upgrade().is_some(),
+            "callback retains a control-side lifetime guard"
+        );
+        shared.enqueue(1, &[]).unwrap();
+        assert!(
+            weak.upgrade().is_none(),
+            "only control reclaims completed bank data"
+        );
+    }
+    #[test]
+    fn future_media_stop_waits_for_its_audio_frame_and_cancels_prior_future_starts() {
+        let shared = Shared::new(48000, 1);
+        let mut renderer = Renderer::new(48000).unwrap();
+        media_load(
+            &shared,
+            media::Kind::Sample,
+            "pcm",
+            48000.0,
+            vec![vec![0.2; 64]],
+        );
+        let options: media::Options =
+            serde_json::from_value(serde_json::json!({"loop":true,"pan":-1,"fadeOut":0.003}))
+                .unwrap();
+        shared
+            .enqueue(
+                1,
+                &[
+                    command(
+                        0,
+                        CommandAction::SamplePlay {
+                            name: "pcm".into(),
+                            voice: 1,
+                            options,
+                        },
+                    ),
+                    command(
+                        26000,
+                        CommandAction::SamplePlay {
+                            name: "pcm".into(),
+                            voice: 2,
+                            options,
+                        },
+                    ),
+                    command(
+                        24000,
+                        CommandAction::SampleStop {
+                            voice: None,
+                            name: None,
+                        },
+                    ),
+                ],
+            )
+            .unwrap();
+        let pcm = render(&mut renderer, &shared, 28000);
+        assert!(pcm[512..24000].iter().all(|v| (v[0] - 0.2).abs() < 1e-7));
+        assert!(pcm[24001][0] < pcm[24000][0]);
+        assert!(pcm[24144..].iter().all(|v| *v == [0.0; 2]));
+        shared.enqueue(1, &[]).unwrap();
+        assert!(shared.media.lock().unwrap().reservations.is_empty());
+        assert!(shared.media.lock().unwrap().stops.is_empty());
+        let dac = Shared::new(48000, 2);
+        let mut player = Renderer::new(48000).unwrap();
+        media_load(
+            &dac,
+            media::Kind::Dac,
+            "dac",
+            22050.0,
+            vec![vec![200.0; 100000]],
+        );
+        dac.enqueue(
+            2,
+            &[
+                command(
+                    0,
+                    CommandAction::DacPlay {
+                        name: "dac".into(),
+                        offset: 0,
+                        size: None,
+                        pan: "left".into(),
+                    },
+                ),
+                command(
+                    26000,
+                    CommandAction::DacPlay {
+                        name: "dac".into(),
+                        offset: 0,
+                        size: None,
+                        pan: "left".into(),
+                    },
+                ),
+                command(24000, CommandAction::DacStop),
+            ],
+        )
+        .unwrap();
+        let pcm = render(&mut player, &dac, 28000);
+        assert!(pcm[512..24000].iter().any(|v| v[0].abs() > 0.01));
+        assert!(pcm[24002..].iter().all(|v| *v == [0.0; 2]));
+        assert_eq!(dac.pending.load(Ordering::Acquire), 0);
+    }
+    #[test]
+    fn stale_performance_cleanup_cannot_cancel_replacement_performance() {
+        let shared = Shared::new(48000, 1);
+        let mut renderer = Renderer::new(48000).unwrap();
+        shared.performance("start", 1, None).unwrap();
+        shared.performance("stop", 1, None).unwrap();
+        shared.performance("start", 2, None).unwrap();
+        shared.performance("stop", 1, None).unwrap();
+        shared.performance("cancel-owner", 1, Some(1)).unwrap();
+        assert!(shared.valid_owner(Some(Owner {
+            performance: 2,
+            owner: 1
+        })));
+        let mut commands = tone(0);
+        for command in &mut commands {
+            command.performance = Some(2);
+            command.owner = Some(1);
+        }
+        shared.enqueue(1, &commands).unwrap();
+        assert!(render(&mut renderer, &shared, 512)
+            .iter()
+            .any(|v| v[0].abs() > 0.01));
+    }
+    #[test]
+    fn global_stop_resets_fx_control_model_and_keeps_recording_available() {
+        let shared = Arc::new(Shared::new(48000, 1));
+        let message = |value| serde_json::from_value::<FxMessage>(value).unwrap();
+        let unit = serde_json::json!({"type":"gain","slot":0,"values":{"gain":0.5}});
+        let graph=shared.fx.lock().unwrap().command(message(serde_json::json!({"op":"chain","children":[{"type":"gain","slot":0}],"units":[unit.clone()],"beatSeconds":0.5})),48000).unwrap().unwrap();
+        shared.enqueue_special(Action::Fx(graph)).unwrap();
+        shared.enqueue(1, &tone(0)).unwrap();
+        shared.record_start(0.03).unwrap();
+        let callback = shared.clone();
+        let stopped = Arc::new(AtomicBool::new(false));
+        let exit = stopped.clone();
+        let thread = std::thread::spawn(move || {
+            let mut renderer = Renderer::new(48000).unwrap();
+            while !exit.load(Ordering::Acquire) {
+                renderer.prepare(&callback);
+                for _ in 0..128 {
+                    renderer.sample(&callback);
+                }
+                callback.frame.store(renderer.frame, Ordering::Release);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        });
+        let stop = shared.stop();
+        let record = shared.record_stop();
+        let parameter=shared.fx.lock().unwrap().command(message(serde_json::json!({"op":"parameter","unit":unit,"key":"gain","value":0.9,"seconds":0,"beatSeconds":0.5})),48000);
+        stopped.store(true, Ordering::Release);
+        thread.join().unwrap();
+        assert!(stop.is_ok());
+        assert!(record.is_ok());
+        assert!(parameter.unwrap_err().contains("disposed"));
+        assert!(shared.recording.lock().unwrap().is_none());
+    }
+    #[test]
+    fn bounded_recording_captures_final_signal_and_returns_after_ownership_barrier() {
+        let shared = Shared::new(48000, 1);
+        let mut renderer = Renderer::new(48000).unwrap();
+        shared.enqueue(1, &tone(0)).unwrap();
+        shared.record_start(0.01).unwrap();
+        assert!(shared.record_start(0.01).is_err());
+        let pcm = render(&mut renderer, &shared, 1024);
+        let result = shared.record_stop().unwrap();
+        assert_eq!(result.frames, 480);
+        assert!(result.complete);
+        assert_eq!(result.first_frame, 0);
+        assert_eq!(
+            result.channels[0],
+            pcm[..480].iter().map(|v| v[0]).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            result.channels[1],
+            pcm[..480].iter().map(|v| v[1]).collect::<Vec<_>>()
+        );
+        assert!(shared.record_stop().is_err());
+        shared.record_start(0.01).unwrap();
+        render(&mut renderer, &shared, 128);
+        shared
+            .recording
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .stop
+            .store(true, Ordering::Release);
+        render(&mut renderer, &shared, 128);
+        assert_eq!(shared.record_stop().unwrap().frames, 128);
+        assert!(shared.record_start(31.0).is_err());
+    }
+    #[test]
+    fn native_media_pcm_fixture() {
+        let mut fixtures = Vec::new();
+        for rate in [44100, 48000, 96000] {
+            for scenario in ["dac", "packed", "sample"] {
+                let shared = Shared::new(rate, 1);
+                let mut renderer = Renderer::new(rate).unwrap();
+                renderer.idle = false;
+                let mut events = Vec::new();
+                if scenario == "dac" {
+                    let bytes: Vec<f32> = (0..257)
+                        .map(|i| (128.0 + 110.0 * (i as f64 * 0.19).sin()).round() as f32)
+                        .collect();
+                    media_load(&shared, media::Kind::Dac, "dac", 22050.0, vec![bytes]);
+                    events.push(command(
+                        137,
+                        CommandAction::DacPlay {
+                            name: "dac".into(),
+                            offset: 13,
+                            size: Some(211),
+                            pan: "left".into(),
+                        },
+                    ));
+                } else if scenario == "packed" {
+                    let mut packed = Vec::new();
+                    for i in 0..257u32 {
+                        packed.extend((i * 2).to_le_bytes().map(|v| v as f32));
+                        packed.push((128.0 + 100.0 * (i as f64 * 0.2).sin()).round() as f32);
+                    }
+                    media_load(
+                        &shared,
+                        media::Kind::DacStream,
+                        "packed",
+                        44100.0,
+                        vec![packed],
+                    );
+                    events.push(command(
+                        137,
+                        CommandAction::Write {
+                            port: 1,
+                            register: 0xb6,
+                            value: 0x40,
+                        },
+                    ));
+                    events.push(command(
+                        137,
+                        CommandAction::Write {
+                            port: 0,
+                            register: 0x2b,
+                            value: 0x80,
+                        },
+                    ));
+                    events.push(command(
+                        137,
+                        CommandAction::DacStreamPlay {
+                            name: "packed".into(),
+                        },
+                    ));
+                    events.push(command(
+                        3000,
+                        CommandAction::Write {
+                            port: 0,
+                            register: 0x2b,
+                            value: 0,
+                        },
+                    ));
+                } else {
+                    let left: Vec<f32> = (0..1024)
+                        .map(|i| (i as f64 * 0.12).sin() as f32 * 0.2)
+                        .collect();
+                    let right: Vec<f32> = (0..1024)
+                        .map(|i| (i as f64 * 0.17).cos() as f32 * 0.15)
+                        .collect();
+                    media_load(
+                        &shared,
+                        media::Kind::Sample,
+                        "pcm",
+                        44100.0,
+                        vec![left, right],
+                    );
+                    let options:media::Options=serde_json::from_value(serde_json::json!({"playbackRate":-0.75,"gain":0.7,"pan":-0.35,"offset":0.001,"duration":0.035,"loop":true,"loopStart":0.002,"loopEnd":0.018,"fadeIn":0.002,"fadeOut":0.003})).unwrap();
+                    events.push(command(
+                        137,
+                        CommandAction::SamplePlay {
+                            name: "pcm".into(),
+                            voice: 1,
+                            options,
+                        },
+                    ));
+                }
+                shared.enqueue(1, &events).unwrap();
+                let pcm = render(&mut renderer, &shared, 8192);
+                assert!(pcm.iter().flatten().all(|v| v.is_finite()));
+                assert!(pcm.iter().any(|v| v[0].abs() + v[1].abs() > 0.01));
+                fixtures.push(serde_json::json!({"sampleRate":rate,"scenario":scenario,"pcm":pcm}));
+            }
+        }
+        if let Ok(path) = std::env::var("TETORICA_NATIVE_MEDIA_FIXTURE") {
+            std::fs::write(path, serde_json::to_vec(&fixtures).unwrap()).unwrap();
+        }
     }
 }

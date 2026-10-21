@@ -6,6 +6,7 @@ mod git_http;
 mod git_tokens;
 mod mcp;
 mod native_genesis;
+mod native_genesis_fx;
 
 use tauri::{menu::Menu, Manager, WebviewWindow};
 
@@ -94,6 +95,12 @@ fn main() {
             native_genesis::native_genesis_commands,
             native_genesis::native_genesis_stop,
             native_genesis::native_genesis_shutdown,
+            native_genesis::native_genesis_media_load,
+            native_genesis::native_genesis_media_remove,
+            native_genesis::native_genesis_record_start,
+            native_genesis::native_genesis_record_stop,
+            native_genesis::native_genesis_performance,
+            native_genesis::native_genesis_fx,
             git_http::git_https_begin,
             git_http::git_https_request,
             git_http::git_https_end,

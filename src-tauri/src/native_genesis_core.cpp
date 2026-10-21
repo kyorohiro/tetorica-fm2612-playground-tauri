@@ -36,6 +36,7 @@ struct NativeGenesis {
     std::array<std::array<bool, 256>, 2> written{};
     std::array<uint8_t, 2> frequency_latch{};
     std::array<uint16_t, 3> periods{};
+    std::array<uint8_t, 4> attenuation{{15,15,15,15}};
     uint8_t psg_latch = 0, noise = 0, stereo = 0xff;
 
     explicit NativeGenesis(uint32_t rate) : output_rate(rate) {
@@ -60,6 +61,7 @@ struct NativeGenesis {
         written = {};
         frequency_latch = {};
         periods = {};
+        attenuation.fill(15);
         psg_latch = noise = 0;
         stereo = 0xff;
     }
@@ -86,12 +88,20 @@ struct NativeGenesis {
     void psg_write(uint8_t value) {
         if (value & 0x80) psg_latch = value & 0x70;
         const uint8_t channel = psg_latch >> 5;
+        if (psg_latch & 0x10) attenuation[channel] = value & 15;
         if (!(psg_latch & 0x10)) {
             if (channel == 3) noise = value & 7;
             else if (value & 0x80) periods[channel] = (periods[channel] & 0x3f0) | (value & 15);
             else periods[channel] = (periods[channel] & 15) | ((value & 63) << 4);
         }
         segapsg_write(psg, value);
+    }
+    void psg_mute(uint8_t channel) {
+        const uint8_t saved = psg_latch;
+        psg_write(0x9f | (channel << 5));
+        const uint8_t original_channel = saved >> 5;
+        const uint8_t value = (saved & 0x10) ? attenuation[original_channel] : original_channel == 3 ? noise : periods[original_channel] & 15;
+        psg_write(0x80 | saved | value);
     }
     void stop() {
         // Stop removes voices and phase history but preserves the authored raw
@@ -106,7 +116,7 @@ struct NativeGenesis {
             for (uint32_t reg = 0; reg < 256; ++reg) {
                 if (!valid[port][reg] || (reg >= 0xa0 && reg <= 0xaf)) continue;
                 if (port == 0 && (reg == 0x28 || reg == 0x2a)) continue;
-                const uint8_t value = (port == 0 && reg == 0x27) ? saved[port][reg] & 0xc0 : saved[port][reg];
+                const uint8_t value = (port == 0 && reg == 0x27) ? saved[port][reg] & 0xc0 : (port == 0 && reg == 0x2b) ? saved[port][reg] & 0x7f : saved[port][reg];
                 write(port, static_cast<uint8_t>(reg), value);
             }
             for (uint8_t base : {0xa0, 0xa8}) for (uint8_t channel = 0; channel < 3; ++channel) {
@@ -153,8 +163,8 @@ struct NativeGenesis {
             psg_left = pl / count;
             psg_right = pr / count;
         }
-        output[0] = std::max(-1.0f, std::min(1.0f, fm_left * .9f + psg_left * .35f * current[2])) * current[4];
-        output[1] = std::max(-1.0f, std::min(1.0f, fm_right * .9f + psg_right * .35f * current[3])) * current[4];
+        output[0] = std::max(-1.0f, std::min(1.0f, fm_left * .9f + psg_left * .35f * current[2]));
+        output[1] = std::max(-1.0f, std::min(1.0f, fm_right * .9f + psg_right * .35f * current[3]));
     }
 };
 }
@@ -171,6 +181,13 @@ void native_genesis_write(void *ptr, uint8_t port, uint8_t reg, uint8_t value) {
     core->write(port, reg, value);
 }
 void native_genesis_psg_write(void *ptr, uint8_t value) { static_cast<NativeGenesis *>(ptr)->psg_write(value); }
+void native_genesis_psg_reset(void *ptr) {
+    auto *core=static_cast<NativeGenesis *>(ptr);
+    segapsg_reset(core->psg);
+    core->periods = {}; core->attenuation.fill(15);
+    core->psg_latch = core->noise = 0; core->stereo = 0xff;
+}
+void native_genesis_psg_mute(void *ptr, uint8_t channel) { if (channel < 4) static_cast<NativeGenesis *>(ptr)->psg_mute(channel); }
 void native_genesis_psg_stereo(void *ptr, uint8_t value) {
     auto *core = static_cast<NativeGenesis *>(ptr);
     core->stereo = value;
@@ -181,5 +198,6 @@ void native_genesis_mix(void *ptr, const float *gains) {
     std::copy(gains, gains + 5, core->target.begin());
     core->ramp = std::max(1u, core->output_rate / 200); // 5 ms parameter ramp.
 }
+float native_genesis_master(void *ptr) { return static_cast<NativeGenesis *>(ptr)->current[4]; }
 void native_genesis_sample(void *ptr, float *output) { static_cast<NativeGenesis *>(ptr)->sample(output); }
 }
