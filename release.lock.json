@@ -1,5 +1,5 @@
 {
-  "archive": "hello_ymfm_wasm_native-genesis-02_itch_playground.zip",
+  "archive": "hello_ymfm_wasm_native-genesis-sample-decode_itch_playground.zip",
   "files": {
     "LICENSE": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c",
     "THIRD_PARTY_LICENSES.txt": "175af411003e7150ed5ef1574631c11ad288155fcaaa7ba123300bf353c24805",
@@ -174,6 +174,7 @@
     "index.html": "30ba04692178e2832e208793bff5f9aa8e07bcb0d7097a97033914471bcc7a57",
     "js/adpcm_b_sample.js": "6cd2346c09713427384f14c152c03b2334928f10e618184a521790a7e9815f93",
     "js/audio-diagnostic-worklet.js": "55214aaa2bd7b3f971a8c25b6a44561df822f73c498c8209f9bd8e227d2abfc9",
+    "js/audio_decode.js": "0f972b3983adb38f09e218cf4f1b1dc2fc5e840f0e3cf754c4bd2cd40083e9f4",
     "js/ay8910.js": "10771d89c43daf51be047d54d223ac315728f869b99dc0a56fac43f4e4247f94",
     "js/ay8910audioengine.js": "1d3991d2946a640dcf1516776fda3d5544eea2d641dcd3904837f58015556b72",
     "js/ay8910synth.js": "cd361b16e2dcbae405c80216be07fe2dea934a309ec94b30da349f2c209ad470",
@@ -228,8 +229,8 @@
     "js/native_fx_graph.js": "fc9345f3a1c499b6fb5d2a893ed2c31c92394397e1a0ccaa343fc7b722e64ccf",
     "js/native_fx_rack.js": "92e57a539409d7139e4820d275fedff5e9862765f34a5cb3b3c07c67608429a5",
     "js/native_genesis_fx.js": "e9fea9be80eced3344748de2e2b16c546094495baa6653c8a649417f96e815be",
-    "js/native_genesis_media.js": "527218442863b218e1666aa0258e49a7b1c39d4eb570c20338257e42e87611bf",
-    "js/native_genesis_synth.js": "ad13a18623f943927a3686f6193db1616d1726be51ebb20f6e6760da08f3bc1b",
+    "js/native_genesis_media.js": "9c00df76ba6b423228e6a9d9565c9bcd61acddd148a06ce80c2c80c3de3bc88b",
+    "js/native_genesis_synth.js": "d937d4f4e4e0f47f82a86793f7e9857d98ac9888549ea206534acacc2275ca55",
     "js/native_genesis_worker.js": "f9f513afe31ef3240e57c021e741774ce10274f09ab624553b9f6a336d450234",
     "js/native_noise.js": "b16053c19473b900c6e35ced597599481f7cba0a5b09c602d06f59754c3e0d19",
     "js/native_runtime_synth.js": "90a15515bb0fb7c73f476a13e9ac371cf972272875393ac6b84b1edc6d76314b",
@@ -361,7 +362,7 @@
     "js/spc_trace.js": "4390ebb4386a259db96753221e883b5f40dcefeb3dbe093e7e47717fae628876",
     "js/ssgsynth.js": "c396b56e2d8033af183c6bdec9254ff40185e390d84e343188cf395856893e9f",
     "js/stereo-width-worklet.js": "36b8f452b84faef614677c97bdfca7fb34e2cb42fa4b5ec56e7cdfb68495fa50",
-    "js/tetorica_audio_runtime.js": "be3f631a759941204928cb8be37cf0b5bb8731b4d9dc34bcfd891bd4596976ea",
+    "js/tetorica_audio_runtime.js": "f39aa533b45aa8a6cf6f3d6fd76e128039c2f35af50f0f63cfb784e4a29e39da",
     "js/tetorica_synth.js": "f521fef01df696088555994ebe1422044c6b5807462a892ec4d5391ac3d2990d",
     "js/tetorica_virtual_files/GIT_LICENSES.txt": "1eaf635e98c5d8149cfae1089503c7fa67ced1e23830e67164f2f3c4765b1c3e",
     "js/tetorica_virtual_files/agent_commands.d.ts": "c033ec3e9f82f06b245c2486c2620b915e03040ad5fe829468316bb47bfbd64e",
@@ -451,7 +452,7 @@
     "llms.txt": "c220e9cd8de8d1cf724996cadc5f3333b374021bb131f42e15d2e7ebe1a4fdba",
     "playground.js": "41a7f4f0b1394600ce86d429b9ff0fb283b78ed040e353fb9cf9514e4f3311ff",
     "playground_audio_diagnostics.js": "badc3a6c274850bdba21918ea4b68ff6123fca49209a6066e21be434d9b25967",
-    "playground_audio_engine.js": "30bc2e2a1c900788c9add315e0a99d674dd3891c525648bd267d2b73104c26e9",
+    "playground_audio_engine.js": "9f2a50a3712ebadfe77e8f8a25d5c4b58872ba1ce93ef57e67cbef22808cbb1a",
     "playground_audio_input.js": "3aea20a15d7c0c642f1df38be9724bef9cd77620187d991754af144aab632548",
     "playground_audio_monitor.js": "919fcc989423e0ed17ce8a89c6428f469a7b79a0997b725dad71f0ecccdf3a60",
     "playground_autosave.js": "46bbdd5614e1597ee9906db35edd53f407fd18a373b0484b3a92176a5c084abd",
@@ -786,6 +787,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "58cb2096631756e9b33dd713e251d7bb5cd7e2cf2e4469ef2c83255a1d844802"
   },
-  "sha256": "3e1eab7ca56d3ff12dd5fde0edd4277af87ff9a1bfdfab75363d6f49382b74f6",
-  "version": "sha256-3e1eab7ca56d"
+  "sha256": "3bcff79713be5cf5e28d516b6fd18e6e6d29613e80da46a54f470ca57f8e92f8",
+  "version": "sha256-3bcff79713be"
 }
