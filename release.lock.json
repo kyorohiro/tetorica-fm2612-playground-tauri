@@ -1,5 +1,5 @@
 {
-  "archive": "hello_ymfm_wasm_dev_pwm_cpp_20261022_itch_playground.zip",
+  "archive": "hello_ymfm_wasm_dev_itch_playground_v0.85.1.zip",
   "files": {
     "LICENSE": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c",
     "THIRD_PARTY_LICENSES.txt": "4d1381be35de6e3c508f110f0051d2f0a39f77ae2a6e632c87fb154c6addacff",
@@ -828,6 +828,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "58cb2096631756e9b33dd713e251d7bb5cd7e2cf2e4469ef2c83255a1d844802"
   },
-  "sha256": "18a7367abf62e51c7f130d65d4ccf3282d688b71fefbcbe9dd448f68ee1100c8",
-  "version": "sha256-18a7367abf62"
+  "sha256": "6c9543418c3052a4f5ed8c1b5ef04c14b02981cfc850cc607ad15da9f514b2e8",
+  "version": "sha256-6c9543418c30"
 }
