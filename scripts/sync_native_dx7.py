@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 
 ROOT = 'w/tetorica-msfa-dx7-wasm/'
@@ -10,6 +11,9 @@ FILES = ['vendor/msfa/' + name for name in '''aligned_buf.h controllers.h dx7not
 
 def native_bytes(name, data):
     text = data.decode()
+    if name.endswith(('/dx7note.cc', '/env.cc')):
+        # Keep MSFA's value-return helpers; libstdc++ can also expose std::min/max.
+        text = re.sub(r'(?<![\w:])(min|max)\(', r'::\1(', text)
     if name.endswith('/synth.h'):
         # Native MSVC uses C++17, where the upstream #warning is an error.
         # Supply an actual fence on platforms without the upstream barrier.

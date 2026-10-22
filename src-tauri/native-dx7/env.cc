@@ -47,7 +47,7 @@ int32_t Env::getsample() {
   if (!live_level_) return legacy;
   if (reference_.ix >= 4 && reference <= kSilenceFloor) return kSilenceFloor;
   const int32_t shifted = reference + (outlevel_ - reference_outlevel_) * 65536;
-  return max(kSilenceFloor, shifted);
+  return ::max(kSilenceFloor, shifted);
 }
 
 int32_t Env::sample(State &state, int outlevel) {
@@ -140,7 +140,7 @@ void Env::advance(State &state, int newix, int outlevel) {
     // rate
     int qrate = (rates_[state.ix] * 41) >> 6;
     qrate += rate_scaling_;
-    qrate = min(qrate, 63);
+    qrate = ::min(qrate, 63);
     state.inc = (4 + (qrate & 3)) << (2 + LG_N + (qrate >> 2));
   }
 }

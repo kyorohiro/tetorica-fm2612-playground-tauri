@@ -150,6 +150,8 @@ fn main() {
     // output callback. The host creates a JSRuntime only on first register.
     cc::Build::new()
         .std("c11")
+        // Match QuickJS-NG's MSVC build: C11 alone does not enable <stdatomic.h>.
+        .flag_if_supported("/experimental:c11atomics")
         .opt_level(2)
         .define("QUICKJS_NG_BUILD", None)
         .include("native-livefx/quickjs-ng")

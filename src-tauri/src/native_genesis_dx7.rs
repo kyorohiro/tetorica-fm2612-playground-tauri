@@ -662,7 +662,7 @@ pub fn init_voice() -> [u8; BYTES] {
 mod snapshot_tests {
     use super::*;
     #[test]
-    fn applied_snapshot_waits_for_a_concurrent_bank_publish() {
+    fn applied_snapshot_retries_while_bank_publication_is_in_progress() {
         let shared = Arc::new(Shared::default());
         let command = Message {
             id: Some(1),
@@ -679,9 +679,6 @@ mod snapshot_tests {
             writer_shared.revision.fetch_add(1, Ordering::AcqRel);
             started_tx.send(()).unwrap();
             read_rx.recv().unwrap();
-            // Deliberately much longer than 64 spin-loop iterations. This is
-            // test synchronization only; the real callback never sleeps.
-            std::thread::sleep(std::time::Duration::from_millis(5));
             writer_shared.voices[0][135].store(7, Ordering::Relaxed);
             writer_shared.notes[0][0].store(61, Ordering::Relaxed);
             writer_shared.notes[0][1].store(100, Ordering::Relaxed);
@@ -689,8 +686,30 @@ mod snapshot_tests {
             writer_shared.revision.fetch_add(1, Ordering::Release);
         });
         started_rx.recv().unwrap();
+        // Keep publication open deterministically: a bounded read must report
+        // retry instead of returning an uncommitted or partially written bank.
+        assert_eq!(
+            shared.status(123).err().as_deref(),
+            Some("Native DX7 state changed while reading; retry")
+        );
         read_tx.send(()).unwrap();
-        let state = shared.status(123).unwrap();
+        // status() has a bounded 50 ms read window. CI may deschedule the
+        // writer beyond that window, so honor its retry contract instead of
+        // assuming one call must succeed. Only a complete snapshot is accepted.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let state = loop {
+            match shared.status(123) {
+                Ok(state) => break state,
+                Err(error) => {
+                    assert_eq!(error, "Native DX7 state changed while reading; retry");
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "concurrent DX7 bank publication did not finish: {error}"
+                    );
+                    std::thread::yield_now();
+                }
+            }
+        };
         writer.join().unwrap();
         assert_eq!(state.voices[0][135], 7);
         assert_eq!(state.active_notes.len(), 1);

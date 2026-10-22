@@ -74,14 +74,14 @@ const uint8_t velocity_data[64] = {
 
 // See "velocity" section of notes. Returns velocity delta in microsteps.
 int ScaleVelocity(int velocity, int sensitivity) {
-  int clamped_vel = max(0, min(127, velocity));
+  int clamped_vel = ::max(0, ::min(127, velocity));
   int vel_value = velocity_data[clamped_vel >> 1] - 239;
   int scaled_vel = ((sensitivity * vel_value + 7) >> 3) << 4;
   return scaled_vel;
 }
 
 int ScaleRate(int midinote, int sensitivity) {
-  int x = min(31, max(0, midinote / 3 - 7));
+  int x = ::min(31, ::max(0, midinote / 3 - 7));
   int qratedelta = (sensitivity * x) >> 3;
 #ifdef SUPER_PRECISE
   int rem = x & 7;
@@ -107,7 +107,7 @@ int ScaleCurve(int group, int depth, int curve) {
   } else {
     // exponential
     int n_scale_data = sizeof(exp_scale_data);
-    int raw_exp = exp_scale_data[min(group, n_scale_data - 1)];
+    int raw_exp = exp_scale_data[::min(group, n_scale_data - 1)];
     scale = (raw_exp * depth * 329) >> 15;
   }
   if (curve < 2) {
@@ -152,13 +152,13 @@ void Dx7Note::init(const char patch[156], int midinote, int velocity) {
     level_scaling_[op] = level_scaling;
     velocity_scaling_[op] = ScaleVelocity(velocity, patch[off + 15]);
     outlevel += level_scaling;
-    outlevel = min(127, outlevel);
+    outlevel = ::min(127, outlevel);
 #ifdef VERBOSE
     cout << op << ": " << level_scaling << " " << outlevel << endl;
 #endif
     outlevel = outlevel << 5;
     outlevel += velocity_scaling_[op];
-    outlevel = max(0, outlevel);
+    outlevel = ::max(0, outlevel);
     int rate_scaling = ScaleRate(midinote, patch[off + 13]);
     env_[op].init(rates, levels, outlevel, rate_scaling);
 
@@ -190,8 +190,8 @@ void Dx7Note::edit(const char patch[156], const bool output_changed[6],
     const int off = op * 21;
     if (output_changed[op]) {
       int outlevel = Env::scaleoutlevel(patch[off + 16]);
-      outlevel = min(127, outlevel + level_scaling_[op]);
-      outlevel = max(0, outlevel * 32 + velocity_scaling_[op]);
+      outlevel = ::min(127, outlevel + level_scaling_[op]);
+      outlevel = ::max(0, outlevel * 32 + velocity_scaling_[op]);
       env_[op].setoutlevel(outlevel);
     }
     if (frequency_changed[op]) {
