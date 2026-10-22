@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-#include <time.h>
+#include <chrono>
+#include <thread>
 #include <string.h>
 
 #include "synth.h"
@@ -53,10 +54,8 @@ void RingBuffer::Write(const uint8_t *bytes, int size) {
     int wr_ix = wr_ix_;
     unsigned int space_available = (rd_ix - wr_ix - 1) & (kBufSize - 1);
     if (space_available == 0) {
-      struct timespec sleepTime;
-      sleepTime.tv_sec = 0;
-      sleepTime.tv_nsec = 1000000;
-      nanosleep(&sleepTime, NULL);
+      // Native host: retain the 1 ms producer wait on Windows and POSIX.
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     } else {
       unsigned int wr_size = min(remaining, space_available);
       unsigned int fragment_size = min(wr_size, kBufSize - wr_ix);

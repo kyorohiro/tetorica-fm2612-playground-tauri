@@ -5,6 +5,8 @@
 #include <new>
 
 namespace {
+// The shared C DSP uses unqualified isfinite; <cmath> guarantees std::isfinite.
+using std::isfinite;
 struct Noise {
     float input[2]{};
     uint32_t sample_rate;

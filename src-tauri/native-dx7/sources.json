@@ -96,7 +96,7 @@
     },
     "vendor/msfa/ringbuffer.cc": {
       "source": "4337739745ed3696ba4d599bd185cedea9ebe7a64a3dc8c8e79b0f6e19fe4fe6",
-      "native": "4337739745ed3696ba4d599bd185cedea9ebe7a64a3dc8c8e79b0f6e19fe4fe6"
+      "native": "bf95cb2f7fc05d3db6f7ef26cd1c02e963f07969451b2f0cd56aff43c74ea91f"
     },
     "vendor/msfa/ringbuffer.h": {
       "source": "7a3505e990d8e27d4c4ab697d5bef51a18b2aa0c6e88866c33e100616adaac3d",

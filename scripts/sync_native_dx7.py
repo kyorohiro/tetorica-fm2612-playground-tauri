@@ -25,6 +25,16 @@ def native_bytes(name, data):
         if text.count(old) != 1:
             raise ValueError('MSFA memory barrier fallback changed; review the Native patch')
         text = text.replace(old, new)
+    if name.endswith('/ringbuffer.cc'):
+        old = '''      struct timespec sleepTime;
+      sleepTime.tv_sec = 0;
+      sleepTime.tv_nsec = 1000000;
+      nanosleep(&sleepTime, NULL);'''
+        if text.count('#include <time.h>') != 1 or text.count(old) != 1:
+            raise ValueError('MSFA ring buffer wait changed; review the Native patch')
+        text = text.replace('#include <time.h>', '#include <chrono>\n#include <thread>')
+        text = text.replace(old, '''      // Native host: retain the 1 ms producer wait on Windows and POSIX.
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));''')
     if name.endswith('/synth_unit.h'):
         text = text.replace('  void AllNotesOff();', '''  void AllNotesOff();
   // Native host: no callback allocation; return the fixed preallocated slot.
