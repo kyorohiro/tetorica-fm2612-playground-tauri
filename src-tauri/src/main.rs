@@ -101,6 +101,7 @@ fn main() {
             native_genesis::native_genesis_snes_status,
             native_genesis::native_genesis_huc6280_status,
             native_genesis::native_genesis_ym2608_status,
+            native_genesis::native_genesis_ym2610b_status,
             native_genesis::native_genesis_pwm_status,
 
             native_genesis::native_genesis_commands,

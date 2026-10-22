@@ -62,8 +62,8 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 **Native (experimental)** を明示的に選べます。切替時は演奏を停止し、
 編集中のプロジェクトを引き継いでページを開き直します。選択だけではデバイスを開かず、
 RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
-Native選択中のModeには、対応するGenesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engine／PC-98（YM2608）を表示します。他modeへ移るときは先にWeb Audioへ戻してください。
-Genesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engine／PC-98（YM2608）以外ではNativeを選べません。Web Audioでは全Modeを選べます。
+Native選択中のModeには、対応するGenesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engine／PC-98（YM2608）／Neo Geo／Neo Geo（YM2610B）を表示します。他modeへ移るときは先にWeb Audioへ戻してください。
+これらのmodeでNativeを選べます。Web Audioでは全Modeを選べます。
 
 NativeはGenesis modeのYM2612＋Sega PSG、Main／Worker実行、音色・レジスター操作、Keyboard、
 DAC・サンプル・noise、組込みFX・JavaScriptの`liveFx`、Audioモニターと最終出力の録音に対応します。
@@ -95,6 +95,13 @@ PC98サンプラー、共通FX／liveFx／monitor／録音へ接続します。
 Stopは発音と予約を止め、音色・clock・8 KiBリズムROM／2 MiB ADPCM-B RAMを保持します。
 適用済みの状態取得は非同期です。追加音源やtimeline専用再生APIはWeb Audioを使ってください。
 原典・ハッシュは`src-tauri/native-ym2608/`に保存し、ymfmは`native-genesis`と共有します。
+
+Neo GeoではYM2610（FM 4CH）、Neo Geo（YM2610B）では6CH版をNativeで生成します。
+両方ともSSG・ADPCM-A 6声・ADPCM-Bに対応し、A/Bそれぞれに16 MiBの独立したROM領域を持ちます。
+`fm`／`ssg`／`adpcmA`／`adpcmB`、Main／Worker、Keyboard／Operators、既存Neo Geoサンプラーを使えます。
+`await useSoundChip('ym2610')`は選択中の音源を借り、6CH版では`useSoundChip('ym2610b')`も同じ音源を返します。
+標準clockは8 MHzで変更可能です。Stopは音色・clock・ROM・サンプル範囲を保持します。
+共通ミキサー・FX／liveFx・monitor・録音へ接続し、原典・ハッシュは`src-tauri/native-ym2610b/`に保存しています。
 
 DX7 modeではMSFAのC++音源を直接使い、16音ポリフォニーで生成します。
 `dx7`／`useSoundChip('dx7')`、音色・SysEx、オペレーター・feedback編集、Keyboard／Operatorsに対応します。

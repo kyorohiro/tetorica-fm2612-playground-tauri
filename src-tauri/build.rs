@@ -18,6 +18,19 @@ fn main() {
     println!("cargo:rerun-if-changed=native-ym2608");
     println!("cargo:rerun-if-changed=src/native_genesis_ym2608.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_ym2608.h");
+    println!("cargo:rerun-if-changed=native-ym2610b");
+    println!("cargo:rerun-if-changed=src/native_genesis_ym2610b.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_ym2610b.h");
+    // Both OPN wrappers must precede the one shared ymfm archive on GNU ld.
+    cc::Build::new()
+        .cpp(true)
+        .flag_if_supported("/EHsc")
+        .std("c++14")
+        .opt_level(2)
+        .include("native-genesis")
+        .file("src/native_genesis_ym2610b.cpp")
+        .warnings(false)
+        .compile("tetorica_native_ym2610b");
     // GNU ld scans archives in order; the PC-98 wrapper references the shared
     // ymfm provider below, which must be linked after this wrapper.
     cc::Build::new()

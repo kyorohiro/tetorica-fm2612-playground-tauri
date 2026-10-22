@@ -39,6 +39,8 @@ mod nes;
 mod snes;
 #[path = "native_genesis_ym2608.rs"]
 mod ym2608;
+#[path = "native_genesis_ym2610b.rs"]
+mod ym2610b;
 
 #[cfg(test)]
 #[path = "native_genesis_nes_tests.rs"]
@@ -162,6 +164,7 @@ enum Action {
     Snes(Arc<snes::Prepared>),
     Huc6280(Arc<huc6280::Prepared>),
     Ym2608(Arc<ym2608::Prepared>),
+    Ym2610b(Arc<ym2610b::Prepared>),
     Pwm(Arc<pwm::Prepared>),
 
     RfWrite(u8, u8, bool),
@@ -259,6 +262,9 @@ enum CommandAction {
     },
     Ym2608 {
         message: ym2608::Message,
+    },
+    Ym2610b {
+        message: ym2610b::Message,
     },
     Pwm {
         message: pwm::Message,
@@ -361,6 +367,7 @@ impl Command {
             CommandAction::Snes { ref message } => Action::Snes(message.prepare()?),
             CommandAction::Huc6280 { ref message } => Action::Huc6280(message.prepare()?),
             CommandAction::Ym2608 { ref message } => Action::Ym2608(message.prepare()?),
+            CommandAction::Ym2610b { ref message } => Action::Ym2610b(message.prepare()?),
             CommandAction::Pwm { ref message } => Action::Pwm(message.prepare()?),
 
             CommandAction::Rf5c164Write {
@@ -557,6 +564,7 @@ struct Shared {
     snes: Option<snes::Shared>,
     huc6280: Option<huc6280::Shared>,
     ym2608: Option<ym2608::Shared>,
+    ym2610b: Option<ym2610b::Shared>,
     pwm: Option<pwm::Shared>,
 
     rf5c164: rf5c164::Shared,
@@ -625,6 +633,8 @@ impl Shared {
             snes: (console == Some("snes")).then(snes::Shared::default),
             huc6280: (console == Some("huc6280")).then(huc6280::Shared::default),
             ym2608: (console == Some("ym2608")).then(ym2608::Shared::default),
+            ym2610b: matches!(console, Some("ym2610" | "ym2610b"))
+                .then(|| ym2610b::Shared::new(console == Some("ym2610b"))),
             pwm: (console == Some("32x")).then(pwm::Shared::default),
 
             rf5c164: rf5c164::Shared::default(),
@@ -740,6 +750,20 @@ impl Shared {
         if ym2608_upload_bytes > ym2608::MAX_BATCH_UPLOAD_BYTES {
             return Err("Native YM2608 upload batch exceeds 2 MiB RAM plus 8 KiB ROM".into());
         }
+        let ym2610b_upload_bytes: usize = commands
+            .iter()
+            .filter_map(|command| {
+                if let CommandAction::Ym2610b { message } = &command.action {
+                    if let ym2610b::Method::Memory { data, .. } = &message.method {
+                        return Some(data.len());
+                    }
+                }
+                None
+            })
+            .sum();
+        if ym2610b_upload_bytes > ym2610b::MAX_BATCH_UPLOAD_BYTES {
+            return Err("Native YM2610B upload batch exceeds two 16 MiB ROM banks".into());
+        }
         // Resolve every bank, tag and range before admission or state mutation.
         let mut voices = HashSet::new();
         let mut streams = 0;
@@ -784,6 +808,9 @@ impl Shared {
                 if matches!(&action, Action::Ym2608(_)) && self.ym2608.is_none() {
                     return Err("Native YM2608 requires PC98 mode".into());
                 }
+                if matches!(&action, Action::Ym2610b(_)) && self.ym2610b.is_none() {
+                    return Err("Native YM2610B requires Neo Geo mode".into());
+                }
 
                 if matches!(&action, Action::Pwm(_)) && self.pwm.is_none() {
                     return Err("Native PWM requires 32X mode".into());
@@ -793,7 +820,8 @@ impl Shared {
                     || self.gameboy.is_some()
                     || self.snes.is_some()
                     || self.huc6280.is_some()
-                    || self.ym2608.is_some())
+                    || self.ym2608.is_some()
+                    || self.ym2610b.is_some())
                     && matches!(
                         &action,
                         Action::Write(..)
@@ -924,6 +952,22 @@ impl Shared {
                 .iter()
                 .filter_map(|(action, _)| {
                     if let Action::Ym2608(command) = action {
+                        Some(command.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Err(error) = chip.retain(&prepared) {
+                self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
+                return Err(error);
+            }
+        }
+        if let Some(chip) = &self.ym2610b {
+            let prepared: Vec<_> = actions
+                .iter()
+                .filter_map(|(action, _)| {
+                    if let Action::Ym2610b(command) = action {
                         Some(command.clone())
                     } else {
                         None
@@ -1137,6 +1181,7 @@ impl Shared {
                     | Action::Snes(_)
                     | Action::Huc6280(_)
                     | Action::Ym2608(_)
+                    | Action::Ym2610b(_)
                     | Action::Pwm(_)
             ) || event.sequence >= self.nes_cancel_before.load(Ordering::Acquire)
                 && event.owner.is_none_or(|owner| {
@@ -1177,6 +1222,11 @@ impl Shared {
             }
             Action::Ym2608(command) => {
                 if let Some(chip) = &self.ym2608 {
+                    chip.retire(command);
+                }
+            }
+            Action::Ym2610b(command) => {
+                if let Some(chip) = &self.ym2610b {
                     chip.retire(command);
                 }
             }
@@ -1282,6 +1332,8 @@ impl Shared {
                 "gameboy"
             } else if self.snes.is_some() {
                 "snes"
+            } else if let Some(chip) = &self.ym2610b {
+                chip.mode()
             } else if self.ym2608.is_some() {
                 "pc98"
             } else if self.huc6280.is_some() {
@@ -1301,14 +1353,21 @@ impl Shared {
             snes_clock: self.snes.as_ref().map(snes::Shared::clock),
             huc6280_clock: self.huc6280.as_ref().map(huc6280::Shared::clock),
             ym2608_clock: self.ym2608.as_ref().map(ym2608::Shared::clock),
+            ym2610b_clock: self.ym2610b.as_ref().map(ym2610b::Shared::clock),
             pwm_clock: self.pwm.as_ref().map(pwm::Shared::clock),
             sample_rate: self.rate,
             frame: self.frame.load(Ordering::Acquire),
             ym_clock: self
-                .ym2608
+                .ym2610b
                 .as_ref()
-                .map_or(7_670_454, ym2608::Shared::clock),
-            psg_clock: if self.ym2608.is_some() { 0 } else { 3_579_545 },
+                .map(ym2610b::Shared::clock)
+                .or_else(|| self.ym2608.as_ref().map(ym2608::Shared::clock))
+                .unwrap_or(7_670_454),
+            psg_clock: if self.ym2608.is_some() || self.ym2610b.is_some() {
+                0
+            } else {
+                3_579_545
+            },
             running: !self.failed.load(Ordering::Acquire),
             queued: self.pending.load(Ordering::Acquire),
             late_commands: self.late.load(Ordering::Relaxed),
@@ -1377,6 +1436,7 @@ struct Renderer {
     snes: Option<snes::Renderer>,
     huc6280: Option<huc6280::Renderer>,
     ym2608: Option<ym2608::Renderer>,
+    ym2610b: Option<ym2610b::Renderer>,
     pwm: Option<pwm::Renderer>,
 
     dx7_master: f32,
@@ -1463,6 +1523,11 @@ impl Renderer {
             },
             ym2608: if console == Some("ym2608") {
                 Some(ym2608::Renderer::new(rate)?)
+            } else {
+                None
+            },
+            ym2610b: if matches!(console, Some("ym2610" | "ym2610b")) {
+                Some(ym2610b::Renderer::new(rate, console == Some("ym2610b"))?)
             } else {
                 None
             },
@@ -1578,6 +1643,9 @@ impl Renderer {
             if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
                 chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
+            if let (Some(chip), Some(state)) = (&mut self.ym2610b, &shared.ym2610b) {
+                chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
+            }
             if let (Some(chip), Some(state)) = (&mut self.pwm, &shared.pwm) {
                 chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
@@ -1641,6 +1709,9 @@ impl Renderer {
             chip.publish(state);
         }
         if let (Some(chip), Some(state)) = (&self.ym2608, &shared.ym2608) {
+            chip.publish(state);
+        }
+        if let (Some(chip), Some(state)) = (&self.ym2610b, &shared.ym2610b) {
             chip.publish(state);
         }
         if let (Some(chip), Some(state)) = (&self.pwm, &shared.pwm) {
@@ -1719,6 +1790,15 @@ impl Renderer {
                     chip.apply(&command, owner, state);
                 }
                 shared.retire_action(Action::Ym2608(command));
+            }
+            Action::Ym2610b(command) => {
+                if command.stops() {
+                    shared.cancel_nes_before(owner, sequence.saturating_add(1));
+                }
+                if let (Some(chip), Some(state)) = (&mut self.ym2610b, &shared.ym2610b) {
+                    chip.apply(&command, owner, state);
+                }
+                shared.retire_action(Action::Ym2610b(command));
             }
             Action::Pwm(command) => {
                 if command.stops() {
@@ -1910,7 +1990,8 @@ impl Renderer {
                             || self.gameboy.is_some()
                             || self.snes.is_some()
                             || self.huc6280.is_some()
-                            || self.ym2608.is_some() =>
+                            || self.ym2608.is_some()
+                            || self.ym2610b.is_some() =>
                     {
                         self.dx7_master_target = gains[4];
                         self.dx7_master_ramp = (shared.rate / 200).max(1);
@@ -1933,6 +2014,9 @@ impl Renderer {
                             chip.stop(state);
                         }
                         if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
+                            chip.stop(state);
+                        }
+                        if let (Some(chip), Some(state)) = (&mut self.ym2610b, &shared.ym2610b) {
                             chip.stop(state);
                         }
                         if let Some(rf) = &mut self.rf5c164 {
@@ -2028,6 +2112,7 @@ impl Renderer {
                     Action::Snes(command) => command.starts(),
                     Action::Huc6280(command) => command.starts(),
                     Action::Ym2608(command) => command.starts(),
+                    Action::Ym2610b(command) => command.starts(),
                     Action::Pwm(command) => command.starts(),
                     Action::Mix(_)
                     | Action::RfMix(_)
@@ -2073,6 +2158,9 @@ impl Renderer {
         if let Some(chip) = &mut self.ym2608 {
             chip.mix(&mut pcm);
         }
+        if let Some(chip) = &mut self.ym2610b {
+            chip.mix(&mut pcm);
+        }
         if let Some(rf) = &mut self.rf5c164 {
             rf.mix(&mut pcm);
         }
@@ -2101,6 +2189,7 @@ impl Renderer {
             || self.snes.is_some()
             || self.huc6280.is_some()
             || self.ym2608.is_some()
+            || self.ym2610b.is_some()
         {
             if self.dx7_master_ramp > 0 {
                 self.dx7_master +=
@@ -2141,6 +2230,9 @@ impl Renderer {
                     chip.stop(state);
                 }
                 if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
+                    chip.stop(state);
+                }
+                if let (Some(chip), Some(state)) = (&mut self.ym2610b, &shared.ym2610b) {
                     chip.stop(state);
                 }
                 if let (Some(chip), Some(state)) = (&mut self.pwm, &shared.pwm) {
@@ -2211,6 +2303,7 @@ pub struct Status {
     huc6280_clock: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ym2608_clock: Option<u32>,
+    ym2610b_clock: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pwm_clock: Option<u32>,
     sample_rate: u32,
@@ -2258,7 +2351,9 @@ impl NativeGenesis {
             "snes" => (false,false,false,Some("snes")),
             "pc-engine" | "huc6280" => (false,false,false,Some("huc6280")),
             "pc98" | "ym2608" => (false,false,false,Some("ym2608")),
-            _ => return Err("Native output supports Genesis, Mega CD, 32X, DX7, NES, Game Boy, SNES, PC Engine and PC98 modes".into()),
+            "neogeo" | "ym2610" => (false,false,false,Some("ym2610")),
+            "neogeo-b" | "ym2610b" => (false,false,false,Some("ym2610b")),
+            _ => return Err("Native output supports Genesis, Mega CD, 32X, DX7, NES, Game Boy, SNES, PC Engine, PC98 and Neo Geo modes".into()),
         };
         self.replace_running(|session| Self::launch_config(session, mega_cd, dx7, nes, console))
     }
@@ -2426,6 +2521,8 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
             Some("gameboy")
         } else if shared.snes.is_some() {
             Some("snes")
+        } else if let Some(chip) = &shared.ym2610b {
+            Some(chip.variant())
         } else if shared.ym2608.is_some() {
             Some("ym2608")
         } else if shared.huc6280.is_some() {
@@ -2595,6 +2692,30 @@ pub async fn native_genesis_ym2608_status(
                 .ym2608
                 .as_ref()
                 .ok_or("Native ym2608 requires ym2608 mode")?;
+            if let Some(id) = after {
+                chip.wait_applied(id)?;
+            }
+            chip.status(shared.frame.load(Ordering::Acquire))
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+#[tauri::command]
+pub async fn native_genesis_ym2610b_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    after: Option<u64>,
+) -> Result<ym2610b::Status, String> {
+    crate::allowed(&window)?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.with_session(session, |shared| {
+            let chip = shared
+                .ym2610b
+                .as_ref()
+                .ok_or("Native ym2610b requires ym2610b mode")?;
             if let Some(id) = after {
                 chip.wait_applied(id)?;
             }
