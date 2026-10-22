@@ -144,7 +144,7 @@ bool initialize(Host *host, std::string &error) {
     // No quickjs-libc, module loader, filesystem, network, timers or host eval API.
     const std::string source = std::string(native_livefx_source) + "\nnew LiveFX(" + std::to_string(host->rate) + ");";
     host->begin();
-    host->rack = JS_Eval(host->context, source.data(), source.size(), "custom_fx.js", JS_EVAL_TYPE_GLOBAL);
+    host->rack = JS_Eval(host->context, source.c_str(), source.size(), "custom_fx.js", JS_EVAL_TYPE_GLOBAL);
     const bool rack_expired = host->exceeded();
     host->end();
     if (JS_IsException(host->rack)) { error = exception(host); host->rack = JS_UNDEFINED; host->clear(false); return false; }
@@ -154,7 +154,7 @@ bool initialize(Host *host, std::string &error) {
     host->reporter = JS_NewCFunction(host->context, report, "report", 1);
     const std::string decoder = std::string(native_livefx_context_source) + "\ndecodeNativeLiveFxContext;";
     host->begin();
-    host->decode_context = JS_Eval(host->context, decoder.data(), decoder.size(), "native_livefx_context.js", JS_EVAL_TYPE_GLOBAL);
+    host->decode_context = JS_Eval(host->context, decoder.c_str(), decoder.size(), "native_livefx_context.js", JS_EVAL_TYPE_GLOBAL);
     const bool decoder_expired = host->exceeded();
     host->end();
     if (JS_IsException(host->decode_context)) { error = exception(host); host->decode_context = JS_UNDEFINED; host->clear(false); return false; }
@@ -244,7 +244,10 @@ int32_t native_genesis_livefx_command(void *opaque, int32_t action, const char *
         // Property lookups and conversions may reach prototypes altered by a
         // previous effect. Keep the complete JS-facing control path guarded.
         Budget budget(host);
-        JSValue value = JS_ParseJSON(host->context, command, length, "liveFx command");
+        // QuickJS requires a NUL at buf[buf_len], even for this length-based API.
+        // Rust callers supply a byte slice, so own and terminate exactly its bytes.
+        const std::string json(command, length);
+        JSValue value = JS_ParseJSON(host->context, json.c_str(), json.size(), "liveFx command");
         if (JS_IsException(value)) { copy_message(error, capacity, exception(host)); return 0; }
         JSValue operation = JS_GetPropertyStr(host->context, value, "action");
         if (JS_IsException(operation)) {

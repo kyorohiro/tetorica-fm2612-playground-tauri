@@ -154,6 +154,8 @@ fn main() {
         .flag_if_supported("/experimental:c11atomics")
         .opt_level(2)
         .define("QUICKJS_NG_BUILD", None)
+        // Match QuickJS-NG's build and expose clock_gettime/tm_gmtoff on glibc.
+        .define("_GNU_SOURCE", None)
         .include("native-livefx/quickjs-ng")
         .file("native-livefx/quickjs-ng/quickjs-amalgam.c")
         .warnings(false)

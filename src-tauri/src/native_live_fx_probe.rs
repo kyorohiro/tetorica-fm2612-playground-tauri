@@ -253,6 +253,36 @@ mod tests {
     }
 
     #[test]
+    fn command_uses_only_the_requested_bytes_without_a_c_string_terminator() {
+        let mut probe = probe();
+        let mut source = serde_json::to_vec(&json!({
+            "action":"register", "name":"test", "source":GAIN, "context":{"gain":0.5}
+        }))
+        .unwrap();
+        let length = source.len();
+        // A Rust byte slice need not be NUL terminated. Keep an invalid JSON
+        // sentinel immediately beyond its logical end, as MSVC's debug heap did.
+        source.extend_from_slice(&[0xcc, 0]);
+        let mut error = [0u8; super::ERROR_CAPACITY];
+        let status = unsafe {
+            super::native_genesis_livefx_command(
+                probe.host.as_ptr(),
+                0,
+                source.as_ptr().cast(),
+                length,
+                error.as_mut_ptr().cast(),
+                error.len(),
+            )
+        };
+        Probe::result(status, &error).unwrap();
+        assert_eq!(probe.active(), 1);
+        let mut pcm = [0.8, -0.6];
+        probe.process(&mut pcm).unwrap();
+        assert_eq!(pcm, [0.4, -0.3]);
+        assert_eq!(&source[length..], &[0xcc, 0]);
+    }
+
+    #[test]
     fn last_removal_releases_vm_and_hot_readdition_retains_fade() {
         let mut probe = probe();
         register(&mut probe, GAIN, json!({"gain":0.5}));
