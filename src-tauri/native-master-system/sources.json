@@ -1,0 +1,66 @@
+{
+  "source": "hello_ymfm Browser Sega PSG and YM2413",
+  "license": "BSD-3-Clause (ymfm Aaron Giles; project Sega PSG)",
+  "adaptation": "Synthesis sources unchanged. Native wrapper retains the fixed PSG base-clock core and mirrors ChipClockResampler double phase/average/hold on clock edits. OPLL mirrors Worklet source-rate average/hold, authored volume masking, physical drum sharing and deferred manual retrigger. OPLL reset restores a power-on snapshot allocated at construction, matching Browser core recreation without callback allocation/free. Both outputs are mono before individual chip mixing. Common ymfm and Sega PSG sources are compiled once in native-genesis.",
+  "files": {
+    "src/ymfm_opl.cpp": {
+      "snapshot": "snapshot/src/ymfm_opl.cpp",
+      "sha256": "6f0c68b4d7126f63231b889e12489732088d129c99aa4aa61a1d2d085bc1f501"
+    },
+    "src/ymfm_opl.h": {
+      "snapshot": "snapshot/src/ymfm_opl.h",
+      "sha256": "6760e0fd1678439d4eda8bb98e1a8af30b17ba6a00b9f6e7a6c150689e9c42ce"
+    },
+    "src/ymfm_pcm.cpp": {
+      "snapshot": "snapshot/src/ymfm_pcm.cpp",
+      "sha256": "3099d770b876dcdcb8a4c15df48fcc3475f22eca5a144b66581bfa7ebbf499ab"
+    },
+    "src/ymfm_pcm.h": {
+      "snapshot": "snapshot/src/ymfm_pcm.h",
+      "sha256": "d738b45f9406da413d29334ec062f217c42811af68ffa599ae4a2dc839cc2200"
+    },
+    "wasm/ym2413_wasm.cpp": {
+      "snapshot": "snapshot/wasm/ym2413_wasm.cpp",
+      "sha256": "e76d64214d86d7f57fded2e513f3fcfc807717ed0b9a7bd7591a4ef82b0af79e"
+    },
+    "wasm/segapsg_wasm.cpp": {
+      "snapshot": "snapshot/wasm/segapsg_wasm.cpp",
+      "sha256": "4ce18ea3f2167d6c0b81abc809948bd21f7a540fbe6aa50ef6f5db1961c97e8e"
+    },
+    "web/ym2413.js": {
+      "snapshot": "snapshot/web/ym2413.js",
+      "sha256": "7515e2659b95e202041185661a6e1d103434c28d4b146166db7e99aaf562b20e"
+    },
+    "web/ym2413audioengine.js": {
+      "snapshot": "snapshot/web/ym2413audioengine.js",
+      "sha256": "d09d64d4fbb5a40319732867dcebbfd10b09f99bac942825b2ea162e8e7f2ef4"
+    },
+    "web/playground_ym2413_worklet.js": {
+      "snapshot": "snapshot/web/playground_ym2413_worklet.js",
+      "sha256": "b57d4c8ceeed3ec5066dc7d1485cb11e0dc46add7fa97e40e47af4a360be3e49"
+    },
+    "web/playground_segapsg_worklet.js": {
+      "snapshot": "snapshot/web/playground_segapsg_worklet.js",
+      "sha256": "50b5156c38f9499034686562576121d3b68070df63baf052b77481aebbea0a2a"
+    },
+    "web/playground_chip_clock.js": {
+      "snapshot": "snapshot/web/playground_chip_clock.js",
+      "sha256": "a26dfc6fa3bf97d35cd1255691fa11227744e2a59fe91261735e885561eff1b4"
+    },
+    "LICENSE": {
+      "snapshot": "snapshot/LICENSE",
+      "sha256": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c"
+    }
+  },
+  "sharedProvider": {
+    "src/ymfm.h": "f5ab6fed63c8669abab8403e0e93132e1dad0ae4d8e4954e7836ab9e5b228405",
+    "src/ymfm_fm.h": "1b27bfb7fa4963d7c54cb06fd9bf659450362d8ed496c6af7d487b068cac45c9",
+    "src/ymfm_fm.ipp": "aaf9e663d706aa4d5df828bb97b71a7ba75aea77ae9636cd07edb3754aa2eae6",
+    "src/ymfm_adpcm.h": "5933691971493b853a9be443f6e6fd74f63869aa21225f66dd89fc20de20914d",
+    "src/ymfm_adpcm.cpp": "74e5ded129ea7e532112e5b637d0a7bd4e127fd83331f1fac32011723051d4e0",
+    "src/chip_state.h": "ecf7cd301fc1c790af663cedfbbccd3f7403392b459baaf82e2581ee652816b1",
+    "src/segapsg.h": "f91b444add9dc9a2769d440dd95bd76056a53ebb0b69f1a09ab16944b806dbf7",
+    "src/segapsg.cpp": "0b88b85801461c18a744cacb1349624886b42383d90c957ae30849dcb1d42612",
+    "wasm/ymfm_wasm_interface.h": "533cb78ac8b79d48768abc5703ed03c814da22fa81358b2b65af1bbd2fe3735f"
+  }
+}

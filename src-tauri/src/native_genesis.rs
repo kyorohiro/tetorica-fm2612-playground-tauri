@@ -29,6 +29,8 @@ mod gameboy;
 mod huc6280;
 #[path = "native_genesis_livefx.rs"]
 mod livefx;
+#[path = "native_genesis_master_system.rs"]
+mod master_system;
 #[path = "native_genesis_media.rs"]
 mod media;
 #[path = "native_genesis_monitor.rs"]
@@ -168,6 +170,7 @@ enum Action {
     Ym2608(Arc<ym2608::Prepared>),
     Ym2610b(Arc<ym2610b::Prepared>),
     X68000(Arc<x68000::Prepared>),
+    MasterSystem(Arc<master_system::Prepared>),
     Pwm(Arc<pwm::Prepared>),
 
     RfWrite(u8, u8, bool),
@@ -272,6 +275,9 @@ enum CommandAction {
     X68000 {
         message: x68000::Message,
     },
+    MasterSystem {
+        message: master_system::Message,
+    },
     Pwm {
         message: pwm::Message,
     },
@@ -375,6 +381,7 @@ impl Command {
             CommandAction::Ym2608 { ref message } => Action::Ym2608(message.prepare()?),
             CommandAction::Ym2610b { ref message } => Action::Ym2610b(message.prepare()?),
             CommandAction::X68000 { ref message } => Action::X68000(message.prepare()?),
+            CommandAction::MasterSystem { ref message } => Action::MasterSystem(message.prepare()?),
             CommandAction::Pwm { ref message } => Action::Pwm(message.prepare()?),
 
             CommandAction::Rf5c164Write {
@@ -573,6 +580,7 @@ struct Shared {
     ym2608: Option<ym2608::Shared>,
     ym2610b: Option<ym2610b::Shared>,
     x68000: Option<x68000::Shared>,
+    master_system: Option<master_system::Shared>,
     pwm: Option<pwm::Shared>,
 
     rf5c164: rf5c164::Shared,
@@ -644,6 +652,7 @@ impl Shared {
             ym2610b: matches!(console, Some("ym2610" | "ym2610b"))
                 .then(|| ym2610b::Shared::new(console == Some("ym2610b"))),
             x68000: (console == Some("x68000")).then(x68000::Shared::default),
+            master_system: (console == Some("master-system")).then(master_system::Shared::default),
             pwm: (console == Some("32x")).then(pwm::Shared::default),
 
             rf5c164: rf5c164::Shared::default(),
@@ -835,6 +844,9 @@ impl Shared {
                     return Err("Native YM2610B requires Neo Geo mode".into());
                 }
 
+                if matches!(&action, Action::MasterSystem(_)) && self.master_system.is_none() {
+                    return Err("Native Master System commands require Master System mode".into());
+                }
                 if matches!(&action, Action::X68000(_)) && self.x68000.is_none() {
                     return Err("Native X68000 commands require X68000 mode".into());
                 }
@@ -863,7 +875,8 @@ impl Shared {
                     || self.huc6280.is_some()
                     || self.ym2608.is_some()
                     || self.ym2610b.is_some()
-                    || self.x68000.is_some())
+                    || self.x68000.is_some()
+                    || self.master_system.is_some())
                     && matches!(
                         &action,
                         Action::Write(..)
@@ -1026,6 +1039,22 @@ impl Shared {
                 .iter()
                 .filter_map(|(action, owner)| {
                     if let Action::X68000(command) = action {
+                        Some((command.clone(), *owner))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Err(error) = chip.retain(&prepared) {
+                self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
+                return Err(error);
+            }
+        }
+        if let Some(chip) = &self.master_system {
+            let prepared: Vec<_> = actions
+                .iter()
+                .filter_map(|(action, owner)| {
+                    if let Action::MasterSystem(command) = action {
                         Some((command.clone(), *owner))
                     } else {
                         None
@@ -1254,6 +1283,13 @@ impl Shared {
             } else {
                 true
             })
+            && (if let Action::MasterSystem(command) = &*action {
+                self.master_system
+                    .as_ref()
+                    .is_some_and(|chip| chip.valid_event(command, event.sequence, event.owner))
+            } else {
+                true
+            })
             && (!matches!(*action, Action::DacPlay { .. } | Action::DacStream(_))
                 || event.sequence >= self.dac_cancel_before.load(Ordering::Acquire)
                     && event.owner.is_none_or(|owner| {
@@ -1297,6 +1333,11 @@ impl Shared {
             }
             Action::X68000(command) => {
                 if let Some(chip) = &self.x68000 {
+                    chip.retire(command);
+                }
+            }
+            Action::MasterSystem(command) => {
+                if let Some(chip) = &self.master_system {
                     chip.retire(command);
                 }
             }
@@ -1404,6 +1445,8 @@ impl Shared {
                 "snes"
             } else if let Some(chip) = &self.ym2610b {
                 chip.mode()
+            } else if self.master_system.is_some() {
+                "master-system"
             } else if self.x68000.is_some() {
                 "x68000"
             } else if self.ym2608.is_some() {
@@ -1428,6 +1471,10 @@ impl Shared {
             ym2610b_clock: self.ym2610b.as_ref().map(ym2610b::Shared::clock),
             ym2151_clock: self.x68000.as_ref().map(x68000::Shared::clock),
             okim6258_clock: self.x68000.as_ref().map(x68000::Shared::oki_clock),
+            ym2413_clock: self
+                .master_system
+                .as_ref()
+                .map(master_system::Shared::opll_clock),
             pwm_clock: self.pwm.as_ref().map(pwm::Shared::clock),
             sample_rate: self.rate,
             frame: self.frame.load(Ordering::Acquire),
@@ -1437,8 +1484,15 @@ impl Shared {
                 .map(ym2610b::Shared::clock)
                 .or_else(|| self.ym2608.as_ref().map(ym2608::Shared::clock))
                 .or_else(|| self.x68000.as_ref().map(x68000::Shared::clock))
+                .or_else(|| {
+                    self.master_system
+                        .as_ref()
+                        .map(master_system::Shared::opll_clock)
+                })
                 .unwrap_or(7_670_454),
-            psg_clock: if self.ym2608.is_some() || self.ym2610b.is_some() || self.x68000.is_some() {
+            psg_clock: if let Some(chip) = &self.master_system {
+                chip.clock()
+            } else if self.ym2608.is_some() || self.ym2610b.is_some() || self.x68000.is_some() {
                 0
             } else {
                 3_579_545
@@ -1516,6 +1570,7 @@ struct Renderer {
     ym2608: Option<ym2608::Renderer>,
     ym2610b: Option<ym2610b::Renderer>,
     x68000: Option<x68000::Renderer>,
+    master_system: Option<master_system::Renderer>,
     pwm: Option<pwm::Renderer>,
 
     dx7_master: f32,
@@ -1612,6 +1667,11 @@ impl Renderer {
             },
             x68000: if console == Some("x68000") {
                 Some(x68000::Renderer::new(rate)?)
+            } else {
+                None
+            },
+            master_system: if console == Some("master-system") {
+                Some(master_system::Renderer::new(rate)?)
             } else {
                 None
             },
@@ -1733,6 +1793,9 @@ impl Renderer {
             if let (Some(chip), Some(state)) = (&mut self.x68000, &shared.x68000) {
                 chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
+            if let (Some(chip), Some(state)) = (&mut self.master_system, &shared.master_system) {
+                chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
+            }
             if let (Some(chip), Some(state)) = (&mut self.pwm, &shared.pwm) {
                 chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
@@ -1802,6 +1865,9 @@ impl Renderer {
             chip.publish(state);
         }
         if let (Some(chip), Some(state)) = (&self.x68000, &shared.x68000) {
+            chip.publish(state);
+        }
+        if let (Some(chip), Some(state)) = (&self.master_system, &shared.master_system) {
             chip.publish(state);
         }
         if let (Some(chip), Some(state)) = (&self.pwm, &shared.pwm) {
@@ -1899,6 +1965,17 @@ impl Renderer {
                     chip.apply(&command, owner, state);
                 }
                 shared.retire_action(Action::X68000(command));
+            }
+            Action::MasterSystem(command) => {
+                if let (Some(chip), Some(state)) = (&mut self.master_system, &shared.master_system)
+                {
+                    if command.stops() {
+                        state.cancel_before(&command, sequence.saturating_add(1), owner);
+                        shared.invalidation.fetch_add(1, Ordering::Release);
+                    }
+                    chip.apply(&command, owner, state);
+                }
+                shared.retire_action(Action::MasterSystem(command));
             }
             Action::Pwm(command) => {
                 if command.stops() {
@@ -2092,7 +2169,8 @@ impl Renderer {
                             || self.huc6280.is_some()
                             || self.ym2608.is_some()
                             || self.ym2610b.is_some()
-                            || self.x68000.is_some() =>
+                            || self.x68000.is_some()
+                            || self.master_system.is_some() =>
                     {
                         self.dx7_master_target = gains[4];
                         self.dx7_master_ramp = (shared.rate / 200).max(1);
@@ -2121,6 +2199,11 @@ impl Renderer {
                             chip.stop(state);
                         }
                         if let (Some(chip), Some(state)) = (&mut self.x68000, &shared.x68000) {
+                            chip.stop(state);
+                        }
+                        if let (Some(chip), Some(state)) =
+                            (&mut self.master_system, &shared.master_system)
+                        {
                             chip.stop(state);
                         }
                         if let Some(rf) = &mut self.rf5c164 {
@@ -2218,6 +2301,7 @@ impl Renderer {
                     Action::Ym2608(command) => command.starts(),
                     Action::Ym2610b(command) => command.starts(),
                     Action::X68000(command) => command.starts(),
+                    Action::MasterSystem(command) => command.starts(),
                     Action::Pwm(command) => command.starts(),
                     Action::Mix(_)
                     | Action::RfMix(_)
@@ -2269,6 +2353,9 @@ impl Renderer {
         if let Some(chip) = &mut self.x68000 {
             chip.mix(&mut pcm);
         }
+        if let Some(chip) = &mut self.master_system {
+            chip.mix(&mut pcm);
+        }
         if let Some(rf) = &mut self.rf5c164 {
             rf.mix(&mut pcm);
         }
@@ -2299,6 +2386,7 @@ impl Renderer {
             || self.ym2608.is_some()
             || self.ym2610b.is_some()
             || self.x68000.is_some()
+            || self.master_system.is_some()
         {
             if self.dx7_master_ramp > 0 {
                 self.dx7_master +=
@@ -2345,6 +2433,10 @@ impl Renderer {
                     chip.stop(state);
                 }
                 if let (Some(chip), Some(state)) = (&mut self.x68000, &shared.x68000) {
+                    chip.stop(state);
+                }
+                if let (Some(chip), Some(state)) = (&mut self.master_system, &shared.master_system)
+                {
                     chip.stop(state);
                 }
                 if let (Some(chip), Some(state)) = (&mut self.pwm, &shared.pwm) {
@@ -2421,6 +2513,8 @@ pub struct Status {
     #[serde(skip_serializing_if = "Option::is_none")]
     okim6258_clock: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    ym2413_clock: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pwm_clock: Option<u32>,
     sample_rate: u32,
     frame: u64,
@@ -2470,7 +2564,8 @@ impl NativeGenesis {
             "neogeo" | "ym2610" => (false,false,false,Some("ym2610")),
             "neogeo-b" | "ym2610b" => (false,false,false,Some("ym2610b")),
             "x68000" => (false,false,false,Some("x68000")),
-            _ => return Err("Native output supports Genesis, Mega CD, 32X, DX7, NES, Game Boy, SNES, PC Engine, PC98, Neo Geo and X68000 modes".into()),
+            "master-system" => (false,false,false,Some("master-system")),
+            _ => return Err("Native output supports Genesis, Mega CD, 32X, DX7, NES, Game Boy, SNES, PC Engine, PC98, Neo Geo, X68000 and Master System modes".into()),
         };
         self.replace_running(|session| Self::launch_config(session, mega_cd, dx7, nes, console))
     }
@@ -2640,6 +2735,8 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
             Some("snes")
         } else if let Some(chip) = &shared.ym2610b {
             Some(chip.variant())
+        } else if shared.master_system.is_some() {
+            Some("master-system")
         } else if shared.x68000.is_some() {
             Some("x68000")
         } else if shared.ym2608.is_some() {
@@ -2859,6 +2956,30 @@ pub async fn native_genesis_x68000_status(
                 .x68000
                 .as_ref()
                 .ok_or("Native X68000 status requires X68000 mode")?;
+            if let Some(id) = after {
+                chip.wait_applied(id)?;
+            }
+            chip.status(shared.frame.load(Ordering::Acquire))
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+#[tauri::command]
+pub async fn native_genesis_master_system_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    after: Option<u64>,
+) -> Result<master_system::Status, String> {
+    crate::allowed(&window)?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.with_session(session, |shared| {
+            let chip = shared
+                .master_system
+                .as_ref()
+                .ok_or("Native Master System status requires Master System mode")?;
             if let Some(id) = after {
                 chip.wait_applied(id)?;
             }

@@ -24,6 +24,23 @@ fn main() {
     println!("cargo:rerun-if-changed=native-x68000");
     println!("cargo:rerun-if-changed=src/native_genesis_x68000.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_x68000.h");
+    println!("cargo:rerun-if-changed=native-master-system");
+    println!("cargo:rerun-if-changed=src/native_genesis_master_system.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_master_system.h");
+    // The OPLL wrapper needs shared ymfm ADPCM and Sega PSG symbols below.
+    // Keep the dependent archive before the common provider for GNU ld.
+    cc::Build::new()
+        .cpp(true)
+        .flag_if_supported("/EHsc")
+        .std("c++14")
+        .opt_level(2)
+        .include("native-master-system/snapshot/src")
+        .include("native-genesis")
+        .file("src/native_genesis_master_system.cpp")
+        .file("native-master-system/snapshot/src/ymfm_opl.cpp")
+        .file("native-master-system/snapshot/src/ymfm_pcm.cpp")
+        .warnings(false)
+        .compile("tetorica_native_master_system");
     // OPM/OPN wrappers precede the one shared ymfm archive on GNU ld.
     cc::Build::new()
         .cpp(true)
