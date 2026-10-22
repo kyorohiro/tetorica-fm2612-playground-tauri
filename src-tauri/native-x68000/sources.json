@@ -1,0 +1,58 @@
+{
+  "source": "hello_ymfm Browser YM2151 and OKIM6258",
+  "license": "BSD-3-Clause (Aaron Giles / Barry Rodewald)",
+  "adaptation": "Pinned synthesis sources. Generated okim6258.cpp initializes its shared ADPCM difference table once using thread-safe C++ static initialization; decoder unchanged. Native wrapper mirrors Browser resampling, authored TL/Stop state and Oki6258Stream byte feeding; two sample banks reserve 16 MiB each at construction.",
+  "files": {
+    "src/ymfm_opm.cpp": {
+      "snapshot": "snapshot/src/ymfm_opm.cpp",
+      "sha256": "ecb9262d2294ca241e536cfefb1b8196a565036af0047867761778b48fb86940"
+    },
+    "src/ymfm_opm.h": {
+      "snapshot": "snapshot/src/ymfm_opm.h",
+      "sha256": "19cf16d26f39c3112e3e9a3a31583253bce39e51420888fa8318094a43ab7196"
+    },
+    "wasm/ym2151_wasm.cpp": {
+      "snapshot": "snapshot/wasm/ym2151_wasm.cpp",
+      "sha256": "545a78c39eb4de0af371f08f6bc960546f15a8d8773dfbcb57f6688d939e7fb6"
+    },
+    "wasm/okim6258_wasm.cpp": {
+      "snapshot": "snapshot/wasm/okim6258_wasm.cpp",
+      "sha256": "0110baff438a0fb270b7ef0426c658d560967968bc8fa16008f1d79807f31815"
+    },
+    "web/ym2151audioengine.js": {
+      "snapshot": "snapshot/web/ym2151audioengine.js",
+      "sha256": "5e02d00d67aec8781634fe6cd227e817a64ae24c9debc51da2e2f7b4989afb6b"
+    },
+    "web/okim6258synth.js": {
+      "snapshot": "snapshot/web/okim6258synth.js",
+      "sha256": "1f788ddec663ad5a8be72823f6d50a69e8e024146f14990dcc01ba7fdcdf8bda"
+    },
+    "third_party/mame-okim6258/okim6258.cpp": {
+      "snapshot": "snapshot/third_party/mame-okim6258/okim6258.cpp",
+      "sha256": "6ae2d4ff48e7d8a985436ba48e53cd92aa9b3edb8f1003a97bf16616506020a0"
+    },
+    "third_party/mame-okim6258/okim6258.h": {
+      "snapshot": "snapshot/third_party/mame-okim6258/okim6258.h",
+      "sha256": "99cb4110730a953a932c26c3e1a56019132eade49bfab8bfade9f4fbd242a172"
+    },
+    "third_party/mame-okim6258/LICENSE": {
+      "snapshot": "snapshot/third_party/mame-okim6258/LICENSE",
+      "sha256": "ee01db1519dfa17005dd1ef3a1baf7ff77395a08a7299406be4bbfdba1103973"
+    },
+    "third_party/mame-okim6258/README.md": {
+      "snapshot": "snapshot/third_party/mame-okim6258/README.md",
+      "sha256": "290ac7774e297daacc17c25c0f15b70eea7b9b8db594468023410e7795f73df0"
+    },
+    "LICENSE": {
+      "snapshot": "snapshot/LICENSE",
+      "sha256": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c"
+    }
+  },
+  "sharedYmfm": {
+    "src/ymfm.h": "f5ab6fed63c8669abab8403e0e93132e1dad0ae4d8e4954e7836ab9e5b228405",
+    "src/ymfm_fm.h": "1b27bfb7fa4963d7c54cb06fd9bf659450362d8ed496c6af7d487b068cac45c9",
+    "src/ymfm_fm.ipp": "aaf9e663d706aa4d5df828bb97b71a7ba75aea77ae9636cd07edb3754aa2eae6",
+    "src/chip_state.h": "ecf7cd301fc1c790af663cedfbbccd3f7403392b459baaf82e2581ee652816b1",
+    "wasm/ymfm_wasm_interface.h": "533cb78ac8b79d48768abc5703ed03c814da22fa81358b2b65af1bbd2fe3735f"
+  }
+}

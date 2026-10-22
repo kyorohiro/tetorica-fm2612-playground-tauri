@@ -62,7 +62,7 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 **Native (experimental)** を明示的に選べます。切替時は演奏を停止し、
 編集中のプロジェクトを引き継いでページを開き直します。選択だけではデバイスを開かず、
 RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
-Native選択中のModeには、対応するGenesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engine／PC-98（YM2608）／Neo Geo／Neo Geo（YM2610B）を表示します。他modeへ移るときは先にWeb Audioへ戻してください。
+Native選択中のModeには、対応するGenesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engine／PC-98（YM2608）／Neo Geo／Neo Geo（YM2610B）／X68000を表示します。他modeへ移るときは先にWeb Audioへ戻してください。
 これらのmodeでNativeを選べます。Web Audioでは全Modeを選べます。
 
 NativeはGenesis modeのYM2612＋Sega PSG、Main／Worker実行、音色・レジスター操作、Keyboard、
@@ -102,6 +102,12 @@ Neo GeoではYM2610（FM 4CH）、Neo Geo（YM2610B）では6CH版をNativeで�
 `await useSoundChip('ym2610')`は選択中の音源を借り、6CH版では`useSoundChip('ym2610b')`も同じ音源を返します。
 標準clockは8 MHzで変更可能です。Stopは音色・clock・ROM・サンプル範囲を保持します。
 共通ミキサー・FX／liveFx・monitor・録音へ接続し、原典・ハッシュは`src-tauri/native-ym2610b/`に保存しています。
+
+X68000ではYM2151（4 MHz・FM 8CH）とOKIM6258（8 MHz・ADPCM 1ストリーム）をNativeで生成します。
+既存の`opm`／`adpcm`、`useSoundChip('ym2151')`／`useSoundChip('okim6258')`をMain／Workerから使えます。
+Keyboard／Operatorsで音色・LFO・noiseを編集して試奏でき、OKIではサンプルの読込み・波形確認・試奏に対応します。
+2チップを別々にミキサーへ登録し、共通FX／liveFx・monitor・録音を通ります。
+StopはFM音色・KC/KF・clockとOKIのサンプル・pan／dividerを保持します。由来・ハッシュ・ライセンスは`src-tauri/native-x68000/`に保存します。
 
 DX7 modeではMSFAのC++音源を直接使い、16音ポリフォニーで生成します。
 `dx7`／`useSoundChip('dx7')`、音色・SysEx、オペレーター・feedback編集、Keyboard／Operatorsに対応します。
