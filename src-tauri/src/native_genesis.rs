@@ -668,7 +668,11 @@ impl Shared {
             ym2610b: matches!(console, Some("ym2610" | "ym2610b"))
                 .then(|| ym2610b::Shared::new(console == Some("ym2610b"))),
             x68000: (console == Some("x68000")).then(x68000::Shared::default),
-            master_system: (console == Some("master-system")).then(master_system::Shared::default),
+            master_system: match console {
+                Some("master-system") => Some(master_system::Shared::default()),
+                Some("game-gear") => Some(master_system::Shared::game_gear()),
+                _ => None,
+            },
             msx: (console == Some("msx")).then(msx::Shared::default),
             opl: console.and_then(opl::Chip::from_mode).map(opl::Shared::new),
             pwm: (console == Some("32x")).then(pwm::Shared::default),
@@ -862,8 +866,16 @@ impl Shared {
                     return Err("Native YM2610B requires Neo Geo mode".into());
                 }
 
-                if matches!(&action, Action::MasterSystem(_)) && self.master_system.is_none() {
-                    return Err("Native Master System commands require Master System mode".into());
+                if let Action::MasterSystem(command) = &action {
+                    if !self
+                        .master_system
+                        .as_ref()
+                        .is_some_and(|chip| chip.accepts(command))
+                    {
+                        return Err(
+                            "Native PSG command is unavailable in the selected machine mode".into(),
+                        );
+                    }
                 }
                 if matches!(&action, Action::Msx(_)) && self.msx.is_none() {
                     return Err("Native MSX commands require MSX mode".into());
@@ -1533,8 +1545,8 @@ impl Shared {
                 "msx"
             } else if let Some(chip) = &self.opl {
                 chip.mode()
-            } else if self.master_system.is_some() {
-                "master-system"
+            } else if let Some(chip) = &self.master_system {
+                chip.mode()
             } else if self.x68000.is_some() {
                 "x68000"
             } else if self.ym2608.is_some() {
@@ -1562,6 +1574,7 @@ impl Shared {
             ym2413_clock: self
                 .master_system
                 .as_ref()
+                .filter(|chip| !chip.is_game_gear())
                 .map(master_system::Shared::opll_clock)
                 .or_else(|| self.msx.as_ref().map(msx::Shared::opll_clock)),
             ay8910_clock: self.msx.as_ref().map(msx::Shared::clock),
@@ -1769,10 +1782,10 @@ impl Renderer {
             } else {
                 None
             },
-            master_system: if console == Some("master-system") {
-                Some(master_system::Renderer::new(rate)?)
-            } else {
-                None
+            master_system: match console {
+                Some("master-system") => Some(master_system::Renderer::new(rate)?),
+                Some("game-gear") => Some(master_system::Renderer::new_game_gear(rate)?),
+                _ => None,
             },
             msx: if console == Some("msx") {
                 Some(msx::Renderer::new(rate)?)
@@ -2732,11 +2745,12 @@ impl NativeGenesis {
             "neogeo-b" | "ym2610b" => (false,false,false,Some("ym2610b")),
             "x68000" => (false,false,false,Some("x68000")),
             "master-system" => (false,false,false,Some("master-system")),
+            "game-gear" => (false,false,false,Some("game-gear")),
             "msx" => (false,false,false,Some("msx")),
             "ym3526" => (false,false,false,Some("ym3526")),
             "ym3812" => (false,false,false,Some("ym3812")),
             "ymf262" => (false,false,false,Some("ymf262")),
-            _ => return Err("Native output supports Genesis, Mega CD, 32X, DX7, NES, Game Boy, SNES, PC Engine, PC98, Neo Geo, X68000, Master System, MSX and DOS PC modes".into()),
+            _ => return Err("Native output supports Genesis, Mega CD, 32X, DX7, NES, Game Boy, SNES, PC Engine, PC98, Neo Geo, X68000, Master System, Game Gear, MSX and DOS PC modes".into()),
         };
         self.replace_running(|session| Self::launch_config(session, mega_cd, dx7, nes, console))
     }
@@ -2910,8 +2924,8 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
             Some("msx")
         } else if let Some(chip) = &shared.opl {
             Some(chip.mode())
-        } else if shared.master_system.is_some() {
-            Some("master-system")
+        } else if let Some(chip) = &shared.master_system {
+            Some(chip.mode())
         } else if shared.x68000.is_some() {
             Some("x68000")
         } else if shared.ym2608.is_some() {
@@ -3154,11 +3168,37 @@ pub async fn native_genesis_master_system_status(
             let chip = shared
                 .master_system
                 .as_ref()
+                .filter(|chip| !chip.is_game_gear())
                 .ok_or("Native Master System status requires Master System mode")?;
             if let Some(id) = after {
                 chip.wait_applied(id)?;
             }
             chip.status(shared.frame.load(Ordering::Acquire))
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+#[tauri::command]
+pub async fn native_genesis_game_gear_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    after: Option<u64>,
+) -> Result<master_system::GameGearStatus, String> {
+    crate::allowed(&window)?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.with_session(session, |shared| {
+            let chip = shared
+                .master_system
+                .as_ref()
+                .filter(|chip| chip.is_game_gear())
+                .ok_or("Native Game Gear status requires Game Gear mode")?;
+            if let Some(id) = after {
+                chip.wait_applied(id)?;
+            }
+            chip.game_gear_status(shared.frame.load(Ordering::Acquire))
         })
     })
     .await

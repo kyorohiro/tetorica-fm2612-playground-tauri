@@ -1,60 +1,32 @@
 // Exact Browser/WASM Sega PSG and ymfm OPLL cores; no device or JS runtime.
 #include "native_genesis_master_system.h"
-#include "segapsg.h"
+#include "native_genesis_psg.h"
 #include "native_genesis_opll.h"
 #include <array>
 #include <cmath>
 #include <cstring>
 
 namespace {
-constexpr uint32_t CLOCK = 3579545;
-struct NativeMasterSystem : NativeOpllCore {
-    SegaPSG psg;
-    uint32_t psg_clock = CLOCK, psg_mute_mask = 0;
-    double psg_remainder = 0, psg_left = 0, psg_right = 0;
-    std::array<uint16_t, 3> periods{};
-    std::array<uint8_t, 4> attenuation{{15, 15, 15, 15}}, levels{};
-    uint8_t latch = 0, noise_mode = 0;
-    explicit NativeMasterSystem(uint32_t sr) : NativeOpllCore(sr), psg(sr, CLOCK) {}
-    void psg_write(uint8_t value, bool author = true) {
-        if (value & 128) latch = (value >> 4) & 7;
-        const uint8_t channel = latch >> 1;
-        if (latch & 1) { attenuation[channel] = value & 15; if (author && (value & 15) != 15) levels[channel] = value & 15; }
-        else if (channel == 3) noise_mode = value & 7;
-        else if (value & 128) periods[channel] = (periods[channel] & 0x3f0) | (value & 15);
-        else periods[channel] = (periods[channel] & 15) | ((value & 63) << 4);
-        psg.write(value);
-    }
+struct NativeMasterSystem : NativeOpllCore, NativePsgCore {
+    explicit NativeMasterSystem(uint32_t sr) : NativeOpllCore(sr), NativePsgCore(sr) {}
     void key_off(uint8_t voice) {
-        if (voice < 4) { psg_write(0x9f | (voice << 5), false); return; }
+        if (voice < 4) { psg_key_off(voice); return; }
         NativeOpllCore::key_off(voice - 4);
     }
     void audition(uint8_t voice) {
-        if (voice < 4) { psg_write(0x90 | (voice << 5) | levels[voice], false); return; }
+        if (voice < 4) { psg_audition(voice); return; }
         NativeOpllCore::audition(voice - 4);
     }
     void stop(uint8_t chip) {
-        if (chip == 0 || chip == 2) { for (uint8_t voice = 0; voice < 4; ++voice) key_off(voice); psg_left = psg_right = 0; }
+        if (chip == 0 || chip == 2) psg_stop();
         if (chip == 1 || chip == 2) stop_opll();
     }
     void reset(uint8_t chip) {
-        if (chip == 0 || chip == 2) {
-            psg.reset(); psg.set_mute_mask(psg_mute_mask); periods.fill(0); attenuation.fill(15); levels.fill(0);
-            latch = noise_mode = 0; psg_remainder = psg_left = psg_right = 0;
-        }
+        if (chip == 0 || chip == 2) psg_reset();
         if (chip == 1 || chip == 2) reset_opll();
     }
     void sample(float *pl, float *pr, float *fl, float *fr) {
-        // Preserve the fixed base-clock core and its phase across clock edits,
-        // exactly as Browser ChipClockResampler does, including held samples.
-        psg_remainder += double(psg_clock) / CLOCK;
-        const uint32_t psg_count = uint32_t(std::floor(psg_remainder)); psg_remainder -= psg_count;
-        if (psg_count) {
-            double l = 0, r = 0; float a, b;
-            for (uint32_t i = 0; i < psg_count; ++i) { psg.generate(&a, &b, 1); l += a; r += b; }
-            psg_left = l / psg_count; psg_right = r / psg_count;
-        }
-        *pl = float(psg_left); *pr = float(psg_right);
+        sample_psg(pl, pr);
         sample_opll(fl, fr);
     }
 };
@@ -78,7 +50,7 @@ int native_master_system_set_clock(void *p, uint8_t chip, uint32_t clock) {
 }
 void native_master_system_set_mute_mask(void *p, uint8_t chip, uint32_t mask) {
     auto *h = core(p);
-    if (chip == 0) { h->psg_mute_mask = mask & 15; h->psg.set_mute_mask(h->psg_mute_mask); h->psg_left = h->psg_right = 0; }
+    if (chip == 0) h->psg_mute(mask);
     else if (chip == 1) { h->opll_mute_mask = mask & 0x1ff; h->update_mute(); h->last_opll = 0; }
 }
 uint8_t native_master_system_read(void *p, uint8_t offset) { return core(p)->opll.read(offset); }

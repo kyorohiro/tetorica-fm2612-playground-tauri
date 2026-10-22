@@ -1,5 +1,5 @@
 {
-  "archive": "hello_ymfm_wasm_native-opl_itch_playground.zip",
+  "archive": "hello_ymfm_wasm_native-game-gear_itch_playground.zip",
   "files": {
     "LICENSE": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c",
     "THIRD_PARTY_LICENSES.txt": "4d1381be35de6e3c508f110f0051d2f0a39f77ae2a6e632c87fb154c6addacff",
@@ -175,7 +175,7 @@
     "generated/ym3812_wasm.wasm": "cb7fbf2d59d02ca3bec669b9cf0db3a6d1cc33c94ade8b7a0d89bcb04b4286f3",
     "generated/ymf262_wasm.js": "f3da0aa0d81d430ad12e27743c91af7dbf7d1b2cf71a423f042ccd6d13242cf7",
     "generated/ymf262_wasm.wasm": "8038b36eb950d32a347fea0098f5857afe05875ddbcc83620c22f7653826fc1c",
-    "index.html": "7737cf2213c5247c68b92ba5d00e47f9881e7933cc1820ab285615969568d564",
+    "index.html": "6da10757377ae299edb94c221de4973145c1377a9cb6147c0626ae91e7565af8",
     "js/adpcm_b_sample.js": "6cd2346c09713427384f14c152c03b2334928f10e618184a521790a7e9815f93",
     "js/audio-diagnostic-worklet.js": "55214aaa2bd7b3f971a8c25b6a44561df822f73c498c8209f9bd8e227d2abfc9",
     "js/audio_decode.js": "0f972b3983adb38f09e218cf4f1b1dc2fc5e840f0e3cf754c4bd2cd40083e9f4",
@@ -235,8 +235,9 @@
     "js/native_genesis_console.js": "0e79e5d44deeb2384b77422822e783d6c8c9fd8cbf371865f2a473217cb4ef2d",
     "js/native_genesis_dx7.js": "52332815898acfa6aae0613e7427bb5d4de8c5dfa2acb450425ce56a25bb6556",
     "js/native_genesis_fx.js": "917dd7dd431a553e798de9f36affe772d51fac7c9aa01209caa9341577adba4f",
+    "js/native_genesis_game_gear.js": "9a604318aae7a8abff69e4bbb6f1f5e7264f9f6cba6d587a3e54e15a2feddb7d",
     "js/native_genesis_livefx.js": "bac52d6a63bcafe48086cb69959d006285e578473f6d4900adfca1b3d065716b",
-    "js/native_genesis_master_system.js": "69d2ba1def38e1c91155a4186bb1bab310ed0ab533f30568bb89415aa29d37d9",
+    "js/native_genesis_master_system.js": "8c4c0d719f302a0d86465d7631667e867e04592e29194065617bf88244c5b595",
     "js/native_genesis_media.js": "c8f6925a08e2671689c1204f780a21f0963bafaed218736f995288198e99316d",
     "js/native_genesis_monitor.js": "611f58692af8da6f71f2195acab74bba1d21c1bf37a5592004ac2fd623f9490e",
     "js/native_genesis_msx.js": "64c352851ed8cf7abd4bdc47f8359852915d62fbee6abc0f94ef459888dd30cd",
@@ -246,8 +247,9 @@
     "js/native_genesis_opll.js": "773df3fda69c20ff44b61b22f1e2fedd6e64fbb643e6368033e4dc9c021fef47",
     "js/native_genesis_pwm.js": "460774bceca5ecbdad36b7742fc7821803bb0626d7e07b62bf0061ed25da02df",
     "js/native_genesis_rf5c164.js": "a662eadd02c5e27b1b7c0c9fbaec8bf8cd81a0649d58ce4f0ca654e3e9019fd7",
+    "js/native_genesis_segapsg.js": "f9510859a4f62805efba67ce400ca9ad3baba270488a9db4b01188ba4391d340",
     "js/native_genesis_snes.js": "c13393c4bdaea35bfaaacba1d841f4ac08dd5c64802c30ca5c1f5feaa07c2c68",
-    "js/native_genesis_synth.js": "f20dd5b56c60ca48b635d3d5bf72ebbd5121eb0b322ccc9e0322674395cd4f6f",
+    "js/native_genesis_synth.js": "8a3c1abc9ff129fc1ad69406c6ebe1868933a1a94c5880c490d3c0dfc902bdee",
     "js/native_genesis_voice_endpoint.js": "5b981d7617848e6138082ca4a334d3a5b840fad6181761e7f5e2298eab6cfa43",
     "js/native_genesis_worker.js": "4f27340c0d3f3710ce1f00efe49bc0b6763447ed831472051d3c8914cadacfe9",
     "js/native_genesis_x68000.js": "61cea188f8f285d046ad60ae18dbfea057ebd760b335a41e9fd122e96d7163ad",
@@ -480,9 +482,9 @@
     "licenses/tetorica-nes/UPSTREAM-FDS.md": "012c4710304da747754bc21ab7683e41f406e83de42b03b0bc4531c0ba5e1316",
     "licenses/tetorica-nes/UPSTREAM-JSNES.md": "58808d4249949339577eff9a5312ebc357755cd328d8bfa59621d399f2bac792",
     "llms.txt": "c220e9cd8de8d1cf724996cadc5f3333b374021bb131f42e15d2e7ebe1a4fdba",
-    "playground.js": "3fbc2549aa58b580c6c44590640f2f0a2bdec487c3ccff28dd58b3615d3e9030",
+    "playground.js": "f2be933516c9349337f2b8529541918a342ffdb5fc83892d24c88ceba56bee0f",
     "playground_audio_diagnostics.js": "badc3a6c274850bdba21918ea4b68ff6123fca49209a6066e21be434d9b25967",
-    "playground_audio_engine.js": "42f52a377b895acd0e61ca586ddff55726a521eb0183e3b86e3d626a815772d9",
+    "playground_audio_engine.js": "a0681e1ae1501868cb77cafdb5eb226d0c7ea4a13a43a94e2db6db07882d8d61",
     "playground_audio_input.js": "3aea20a15d7c0c642f1df38be9724bef9cd77620187d991754af144aab632548",
     "playground_audio_monitor.js": "7a75febe0c38063a50e0217b9bd42c93cb196fbab88717af8689e192663c020d",
     "playground_autosave.js": "46bbdd5614e1597ee9906db35edd53f407fd18a373b0484b3a92176a5c084abd",
@@ -836,6 +838,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "58cb2096631756e9b33dd713e251d7bb5cd7e2cf2e4469ef2c83255a1d844802"
   },
-  "sha256": "21443ed6e93542ccb469a78aa4a24c7d540ff7a376e26bf428dd7272f9bdc397",
-  "version": "sha256-21443ed6e935"
+  "sha256": "662765f879bececf656280d094a4ae85ea425042a900feeb51a93ff0ebb91bff",
+  "version": "sha256-662765f879be"
 }

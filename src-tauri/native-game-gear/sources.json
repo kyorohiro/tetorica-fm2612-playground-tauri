@@ -1,0 +1,40 @@
+{
+  "source": "hello_ymfm Browser Game Gear Sega PSG",
+  "license": "Project Sega PSG, same existing Native Genesis provider",
+  "adaptation": "Synthesis sources unchanged and compiled exactly once by native-genesis. NativePsgCore is shared with Master System; Game Gear constructs only one standalone PSG. Stereo register low nibble routes channels to right and high nibble to left. Fixed creation clock, source phase and ChipClockResampler average/hold are preserved across clock edits. Stop retains stereo mask, clock, tone periods, noise mode and remembered attenuation without resetting LFSR. Reset restores stereo 0xff while retaining the selected clock and external source mute.",
+  "files": {
+    "wasm/segapsg_wasm.cpp": {
+      "snapshot": "snapshot/wasm/segapsg_wasm.cpp",
+      "sha256": "4ce18ea3f2167d6c0b81abc809948bd21f7a540fbe6aa50ef6f5db1961c97e8e"
+    },
+    "web/segapsg.js": {
+      "snapshot": "snapshot/web/segapsg.js",
+      "sha256": "e63e1c25a9ac80721f8cd7ea1474710af125c83d4d2e682e6c4a97f40aa50bed"
+    },
+    "web/segapsg_api.js": {
+      "snapshot": "snapshot/web/segapsg_api.js",
+      "sha256": "1a55c1d148536425eef54fe5ec4c3151b6ef5a734f9695a379b3a6344a7bd75d"
+    },
+    "web/playground_segapsg.js": {
+      "snapshot": "snapshot/web/playground_segapsg.js",
+      "sha256": "2641d1b209648593ded734a20e74fd0e86b7ed74c3fd7e7a3066bf34bd4b11b6"
+    },
+    "web/playground_segapsg_worklet.js": {
+      "snapshot": "snapshot/web/playground_segapsg_worklet.js",
+      "sha256": "50b5156c38f9499034686562576121d3b68070df63baf052b77481aebbea0a2a"
+    },
+    "web/playground_chip_inspector_state.js": {
+      "snapshot": "snapshot/web/playground_chip_inspector_state.js",
+      "sha256": "89a5f4c62defa490d5fd1603af0baeb763dcb00c319ea377714ada92cd350d9e"
+    },
+    "web/playground_chip_clock.js": {
+      "snapshot": "snapshot/web/playground_chip_clock.js",
+      "sha256": "a26dfc6fa3bf97d35cd1255691fa11227744e2a59fe91261735e885561eff1b4"
+    }
+  },
+  "sharedPsgProvider": {
+    "src/segapsg.h": "f91b444add9dc9a2769d440dd95bd76056a53ebb0b69f1a09ab16944b806dbf7",
+    "src/segapsg.cpp": "0b88b85801461c18a744cacb1349624886b42383d90c957ae30849dcb1d42612",
+    "src/chip_state.h": "ecf7cd301fc1c790af663cedfbbccd3f7403392b459baaf82e2581ee652816b1"
+  }
+}

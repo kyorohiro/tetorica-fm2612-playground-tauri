@@ -27,6 +27,10 @@ fn main() {
     println!("cargo:rerun-if-changed=native-master-system");
     println!("cargo:rerun-if-changed=src/native_genesis_master_system.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_master_system.h");
+    println!("cargo:rerun-if-changed=src/native_genesis_psg.h");
+    println!("cargo:rerun-if-changed=native-game-gear");
+    println!("cargo:rerun-if-changed=src/native_genesis_game_gear.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_game_gear.h");
     println!("cargo:rerun-if-changed=src/native_genesis_opll.h");
     println!("cargo:rerun-if-changed=native-msx");
     println!("cargo:rerun-if-changed=src/native_genesis_msx.cpp");
@@ -34,6 +38,16 @@ fn main() {
     println!("cargo:rerun-if-changed=native-opl");
     println!("cargo:rerun-if-changed=src/native_genesis_opl.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_opl.h");
+    // Standalone Game Gear consumes the once-compiled common Sega PSG below.
+    cc::Build::new()
+        .cpp(true)
+        .flag_if_supported("/EHsc")
+        .std("c++14")
+        .opt_level(2)
+        .include("native-genesis")
+        .file("src/native_genesis_game_gear.cpp")
+        .warnings(false)
+        .compile("tetorica_native_game_gear");
     // The selected DOS OPL core references the same ymfm OPL/PCM provider as
     // Master System and MSX. Compile it once and keep consumers first on GNU ld.
     cc::Build::new()
