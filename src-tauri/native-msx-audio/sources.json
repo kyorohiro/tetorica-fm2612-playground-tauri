@@ -1,0 +1,61 @@
+{
+  "source": "hello_ymfm Browser MSX Audio Y8950 plus shared MSX pair",
+  "license": "BSD-3-Clause (ymfm Aaron Giles; AY Couriersud)",
+  "adaptation": "Unmodified shared ymfm synthesizes the selected single Y8950 core (profile 3). Rust combines it with the existing independently mixed MSX YM2413/AY pair. The public OPLSynth FM/rhythm API matches the shipped Web Worklet, including source-rate average/hold, forced mute/TL restoration, delayed preview retrigger, timers, status and IRQ. No new ADPCM RAM/upload API is exposed. Empty ADPCM RAM and external I/O use zero reads/no-op writes, matching the shipped WASM sample_interface before loading memory; raw register writes and data/status reads pass through the same ymfm chip. Timer advancement remains exactly 72 master clocks per source sample.",
+  "files": {
+    "wasm/y8950_wasm.cpp": {
+      "snapshot": "snapshot/wasm/y8950_wasm.cpp",
+      "sha256": "e7b45082fc47409a77d815744e125f25a544bf86ee4a5799d4d22fc05f35cd15"
+    },
+    "web/y8950.js": {
+      "snapshot": "snapshot/web/y8950.js",
+      "sha256": "6813e093ed3ba6ba87609e00a1ac7b8ac5b6afdcdf47bbf621dab1e3d87b6e59"
+    },
+    "web/opl_synth.js": {
+      "snapshot": "snapshot/web/opl_synth.js",
+      "sha256": "18ac5165c25956409cc2acdca9bca48847b1ff597a1d16eaa381f0633b354a48"
+    },
+    "web/playground_opl.js": {
+      "snapshot": "snapshot/web/playground_opl.js",
+      "sha256": "436e9d5173d7b477ade306e12d457deb67adeae9e98bd4e905131797decf67fa"
+    },
+    "web/playground_opl_worklet.js": {
+      "snapshot": "snapshot/web/playground_opl_worklet.js",
+      "sha256": "3615ad518ab38471a17f9f84a3fb95b76a23a4da585ef0f9dbee34c9ebc94527"
+    },
+    "web/playground_opl_inspector.js": {
+      "snapshot": "snapshot/web/playground_opl_inspector.js",
+      "sha256": "260a783931acb3f678998ac30e3d2ba63759d9b5697c5240d50cef64784f742a"
+    },
+    "wasm/ymfm_wasm_interface.h": {
+      "snapshot": "snapshot/wasm/ymfm_wasm_interface.h",
+      "sha256": "533cb78ac8b79d48768abc5703ed03c814da22fa81358b2b65af1bbd2fe3735f"
+    }
+  },
+  "sharedProviders": {
+    "src/ymfm_opl.cpp": {
+      "native": "native-master-system/snapshot/src/ymfm_opl.cpp",
+      "sha256": "6f0c68b4d7126f63231b889e12489732088d129c99aa4aa61a1d2d085bc1f501"
+    },
+    "src/ymfm_opl.h": {
+      "native": "native-master-system/snapshot/src/ymfm_opl.h",
+      "sha256": "6760e0fd1678439d4eda8bb98e1a8af30b17ba6a00b9f6e7a6c150689e9c42ce"
+    },
+    "src/ymfm_pcm.cpp": {
+      "native": "native-master-system/snapshot/src/ymfm_pcm.cpp",
+      "sha256": "3099d770b876dcdcb8a4c15df48fcc3475f22eca5a144b66581bfa7ebbf499ab"
+    },
+    "src/ymfm_pcm.h": {
+      "native": "native-master-system/snapshot/src/ymfm_pcm.h",
+      "sha256": "d738b45f9406da413d29334ec062f217c42811af68ffa599ae4a2dc839cc2200"
+    },
+    "third_party/mame-ay8910/ay8910.cpp": {
+      "native": "native-msx/snapshot/third_party/mame-ay8910/ay8910.cpp",
+      "sha256": "3ea3efe1b29a554c39a2b1995e9ed3d2588c16d24b085ca1565c3a24f4414646"
+    },
+    "third_party/mame-ay8910/ay8910.h": {
+      "native": "native-msx/snapshot/third_party/mame-ay8910/ay8910.h",
+      "sha256": "e93d1904d2c232f820c23a6df59dfebf309550a6f8b0032e20c51295e7d31e7a"
+    }
+  }
+}

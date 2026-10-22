@@ -1,7 +1,7 @@
 {
   "source": "hello_ymfm Browser YM3526/YM3812/YMF262 and shared ymfm OPL/PCM",
   "license": "BSD-3-Clause (ymfm Aaron Giles)",
-  "adaptation": "Synthesis sources unchanged and compiled exactly once by native-master-system. Only the selected DOS OPL core is constructed. Native mirrors the shipped OPL Worklet source-rate average/hold resampler, all four OPL3 output buses folded A+C/B+D into stereo, authoring register shadow, forced channel mute and TL restoration, deferred manual retrigger, clock and source phase preservation, and silent Stop with retained configuration. Y8950/MSX Audio is not enabled.",
+  "adaptation": "Synthesis sources unchanged and compiled exactly once by native-master-system. Only the selected DOS OPL core is constructed. Native mirrors the shipped OPL Worklet source-rate average/hold resampler, all four OPL3 output buses folded A+C/B+D into stereo, authoring register shadow, forced channel mute and TL restoration, deferred manual retrigger, clock and source phase preservation, and silent Stop with retained configuration. MSX Audio selects Y8950 separately through the same renderer; DOS profiles remain unchanged.",
   "files": {
     "wasm/ym3526_wasm.cpp": {
       "snapshot": "snapshot/wasm/ym3526_wasm.cpp",

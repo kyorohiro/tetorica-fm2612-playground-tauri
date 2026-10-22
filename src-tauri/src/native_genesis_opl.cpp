@@ -1,4 +1,4 @@
-// Native DOS PC OPL renderer. Uses the exact shared Browser ymfm provider.
+// Native OPL renderer for DOS PC / MSX Audio. Exact shared Browser ymfm provider.
 #include "native_genesis_opl.h"
 #include "ymfm_opl.h"
 #include "ymfm_wasm_interface.h"
@@ -153,6 +153,9 @@ void *native_opl_create(uint32_t rate, uint8_t kind) {
         if (kind == 0) return new NativeOpl<ymfm::ym3526>(rate, kind);
         if (kind == 1) return new NativeOpl<ymfm::ym3812>(rate, kind);
         if (kind == 2) return new NativeOpl<ymfm::ymf262>(rate, kind);
+        // Empty ADPCM RAM and I/O use the interface's zero read / no-op write
+        // defaults, exactly like the shipped Y8950 WASM before loading memory.
+        if (kind == 3) return new NativeOpl<ymfm::y8950>(rate, kind);
     } catch (...) {}
     return nullptr;
 }

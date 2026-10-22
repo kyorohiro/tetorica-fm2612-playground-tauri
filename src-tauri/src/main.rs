@@ -106,6 +106,7 @@ fn main() {
             native_genesis::native_genesis_master_system_status,
             native_genesis::native_genesis_game_gear_status,
             native_genesis::native_genesis_msx_status,
+            native_genesis::native_genesis_msx_audio_status,
             native_genesis::native_genesis_opl_status,
             native_genesis::native_genesis_pwm_status,
 

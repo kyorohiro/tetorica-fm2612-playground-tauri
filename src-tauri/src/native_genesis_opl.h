@@ -7,7 +7,7 @@ struct NativeOplState {
     uint8_t kind, channels, status, irq;
 };
 extern "C" {
-// kind: 0 YM3526, 1 YM3812, 2 YMF262. Exactly one selected core is constructed.
+// kind: 0 YM3526, 1 YM3812, 2 YMF262, 3 Y8950. One selected core is constructed.
 void *native_opl_create(uint32_t output_rate, uint8_t kind);
 void native_opl_destroy(void *);
 void native_opl_reset(void *);

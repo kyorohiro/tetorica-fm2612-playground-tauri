@@ -443,6 +443,13 @@ impl Shared {
             .retain(|cmd| !retired.contains(&(Arc::as_ptr(cmd) as usize)));
     }
     pub fn retain(&self, commands: &[(Arc<Prepared>, Option<Owner>)]) -> Result<(), String> {
+        self.retain_then(commands, || Ok(()))
+    }
+    pub fn retain_then(
+        &self,
+        commands: &[(Arc<Prepared>, Option<Owner>)],
+        next: impl FnOnce() -> Result<(), String>,
+    ) -> Result<(), String> {
         let mut c = self
             .control
             .lock()
@@ -466,6 +473,9 @@ impl Shared {
                 return Err("Duplicate pending Native MSX command ID".into());
             }
         }
+        // With MSX Audio, OPL admission can still fail (for example a held
+        // clock change). Commit neither module until both validations pass.
+        next()?;
         for (cmd, _) in commands {
             if let Some(id) = cmd.id {
                 self.highest_id.fetch_max(id, Ordering::AcqRel);
@@ -1509,5 +1519,478 @@ mod pipeline_tests {
         let out = render(&s, &mut r, 1024);
         assert!(out[512..].iter().all(|v| v[0] == 0.));
         assert!(out[512..].iter().any(|v| v[1].abs() > 0.0001));
+    }
+}
+
+#[cfg(test)]
+mod msx_audio_pipeline_tests {
+    use super::super::*;
+    use serde_json::{json, Value};
+    fn command(frame: u64, message: Value) -> Command {
+        let kind = if ["y8950", "ym3526", "ym3812", "ymf262"]
+            .iter()
+            .any(|chip| message["chip"] == *chip)
+        {
+            "opl"
+        } else {
+            "msx"
+        };
+        serde_json::from_value(json!({"frame":frame,"type":kind,"message":message})).unwrap()
+    }
+    fn setup() -> (Shared, Renderer) {
+        let s = Shared::new_modes(48000, 1, false, false, false, Some("msx-audio"));
+        let r = Renderer::new_modes(48000, false, false, false, Some("msx-audio")).unwrap();
+        r.publish_primary(&s);
+        (s, r)
+    }
+    fn render(s: &Shared, r: &mut Renderer, frames: usize) -> Vec<[f32; 2]> {
+        r.prepare(s);
+        let out = (0..frames).map(|_| r.sample(s)).collect();
+        s.frame.store(r.frame, Ordering::Release);
+        r.publish_primary(s);
+        out
+    }
+    fn snapshot(s: &Shared) -> MsxAudioStatus {
+        s.msx_audio_status().unwrap()
+    }
+    fn write(chip: &str, register: u16, value: u8) -> Value {
+        json!({"chip":chip,"method":"write","register":register,"value":value})
+    }
+    fn ay_note() -> Value {
+        json!({"chip":"ay8910","method":"batch","channel":0,"action":"on","voice":1,"commands":[{"method":"write","register":0,"value":127},{"method":"write","register":1,"value":1},{"method":"write","register":7,"value":62},{"method":"write","register":8,"value":9}]})
+    }
+    fn opll_note(ch: u8) -> Value {
+        json!({"chip":"ym2413","method":"batch","channel":ch,"action":"on","voice":ch+1,"commands":[{"method":"write","register":0x30+ch,"value":0x15},{"method":"write","register":0x10+ch,"value":0x90},{"method":"write","register":0x20+ch,"value":0x17}]})
+    }
+    fn y_note(ch: u8) -> Value {
+        let slot = [0u16, 1, 2, 8, 9, 10, 16, 17, 18][ch as usize];
+        let mut ops = Vec::new();
+        for (op, tl) in [(slot, 63), (slot + 3, 0)] {
+            for (register, value) in [
+                (0x20 + op, 0x21),
+                (0x40 + op, tl),
+                (0x60 + op, 0xf0),
+                (0x80 + op, 0x0f),
+            ] {
+                ops.push(json!({"method":"write","register":register,"value":value}))
+            }
+        }
+        for (register, value) in [
+            (0xa0 + ch as u16, 0x98),
+            (0xc0 + ch as u16, 1),
+            (0xb0 + ch as u16, 0x31),
+        ] {
+            ops.push(json!({"method":"write","register":register,"value":value}))
+        }
+        json!({"chip":"y8950","method":"batch","channel":ch,"voice":ch+1,"action":"on","commands":ops})
+    }
+    fn notes(frame: u64) -> Vec<Command> {
+        vec![
+            command(frame, ay_note()),
+            command(frame, opll_note(0)),
+            command(frame, y_note(0)),
+        ]
+    }
+    fn tagged(mut command: Command, owner: u32) -> Command {
+        command.performance = Some(1);
+        command.owner = Some(owner);
+        command
+    }
+    #[test]
+    fn msx_audio_native_selected_three_chips_status_clocks_and_profile_guards() {
+        let (s, r) = setup();
+        assert!(r.core.0.is_null());
+        assert!(r.master_system.is_none() && r.ym2608.is_none() && r.ym2610b.is_none());
+        assert!(r.msx.is_some() && r.opl.is_some());
+        let status = s.status();
+        assert_eq!(status.mode, "msx-audio");
+        assert_eq!(status.psg_clock, 0);
+        assert_eq!(status.y8950_clock, Some(3_579_545));
+        assert_eq!(status.ym2413_clock, Some(3_579_545));
+        assert_eq!(status.ay8910_clock, Some(1_789_773));
+        let state = snapshot(&s);
+        assert_eq!(state.y8950.chip, "y8950");
+        assert_eq!(state.y8950.channels, 9);
+        assert_eq!(state.y8950.registers.len(), 256);
+        assert_eq!(state.ym2413.registers.len(), 64);
+        assert_eq!(state.ay8910.registers.len(), 16);
+        for mode in [
+            "msx",
+            "ym3526",
+            "ym3812",
+            "ymf262",
+            "master-system",
+            "game-gear",
+        ] {
+            let other = Shared::new_modes(48000, 1, false, false, false, Some(mode));
+            assert!(other.enqueue(1, &[command(0, y_note(0))]).is_err());
+            assert!(other.msx_audio_status().is_err())
+        }
+        let foreign =
+            serde_json::from_value(json!({"type":"psg-write","frame":0,"value":0x90})).unwrap();
+        assert!(s.enqueue(1, &[foreign]).is_err());
+        assert!(s
+            .enqueue(1, &[command(0, write("ym3812", 0x20, 1))])
+            .is_err());
+        assert_eq!(s.pending.load(Ordering::Acquire), 0);
+        assert!(opl::Chip::from_mode("y8950").is_none());
+    }
+    #[test]
+    fn msx_audio_native_real_mixed_pcm_equals_sum_of_three_independent_same_cores() {
+        let (all, mut ar) = setup();
+        let mut singles = Vec::new();
+        for source in 0..3 {
+            let (s, mut r) = setup();
+            let selected = notes(0).remove(source);
+            let chip = ["ay8910", "ym2413", "y8950"][source];
+            s.enqueue(
+                1,
+                &[
+                    command(0, json!({"chip":chip,"method":"mix","volume":0.25,"pan":0})),
+                    selected,
+                ],
+            )
+            .unwrap();
+            singles.push(render(&s, &mut r, 4096))
+        }
+        let mut commands = notes(0);
+        for chip in ["ay8910", "ym2413", "y8950"] {
+            commands.push(command(
+                0,
+                json!({"chip":chip,"method":"mix","volume":0.25,"pan":0}),
+            ))
+        }
+        all.enqueue(1, &commands).unwrap();
+        let mixed = render(&all, &mut ar, 4096);
+        for source in &singles {
+            assert!(source[512..].iter().any(|p| p[0].abs() > 0.0001))
+        }
+        for i in 512..4096 {
+            for ch in 0..2 {
+                let expected = (singles[0][i][ch] + singles[1][i][ch]) + singles[2][i][ch];
+                assert!((mixed[i][ch] - expected).abs() < 1e-7)
+            }
+        }
+    }
+    #[test]
+    fn msx_audio_native_timestamp_order_and_callback_segmentation_are_exact() {
+        let (s, mut r) = setup();
+        let (t, mut q) = setup();
+        let mut commands = notes(100);
+        commands.push(command(1000, write("y8950", 0xb0, 0x11)));
+        commands.push(command(1500, write("ym2413", 0x20, 7)));
+        commands.push(command(2000, write("ay8910", 8, 0)));
+        s.enqueue(1, &commands).unwrap();
+        t.enqueue(1, &commands).unwrap();
+        let full = render(&s, &mut r, 4096);
+        let mut pieces = Vec::new();
+        for n in [33, 467, 1, 999, 2596] {
+            pieces.extend(render(&t, &mut q, n))
+        }
+        assert_eq!(full, pieces);
+        assert!(full[..100].iter().all(|p| *p == [0.; 2]));
+        let a = snapshot(&s);
+        assert_eq!(a.y8950.registers[0xb0] & 32, 0);
+        assert_eq!(a.ym2413.registers[0x20] & 16, 0);
+        assert_eq!(a.ay8910.registers[8], 0);
+        assert!(
+            a.y8950.pending_commands.is_empty()
+                && a.ym2413.pending_commands.is_empty()
+                && a.ay8910.pending_commands.is_empty()
+        );
+    }
+    #[test]
+    fn msx_audio_native_independent_mixers_clock_sources_and_master_fx_recording() {
+        let (dry, mut dr) = setup();
+        let (wet, mut wr) = setup();
+        let mut source_commands = notes(0);
+        for chip in ["ay8910", "ym2413", "y8950"] {
+            source_commands.push(command(
+                0,
+                json!({"chip":chip,"method":"mix","volume":0.25,"pan":0}),
+            ));
+        }
+        dry.enqueue(1, &source_commands).unwrap();
+        wet.enqueue(1, &source_commands).unwrap();
+        let fx:FxMessage=serde_json::from_value(json!({"op":"chain","children":[{"type":"gain","slot":0}],"units":[{"type":"gain","slot":0,"values":{"gain":0.5}}],"beatSeconds":0.5})).unwrap();
+        let graph = wet.fx.lock().unwrap().command(fx, 48000).unwrap().unwrap();
+        wet.enqueue_special(Action::Fx(graph)).unwrap();
+        wet.enqueue(
+            1,
+            &[serde_json::from_value(
+                json!({"type":"mix","frame":0,"fmLeft":1,"fmRight":1,"psgLeft":1,"psgRight":1,"master":0.5}),
+            )
+            .unwrap()],
+        )
+        .unwrap();
+        wet.record_start(0.02).unwrap();
+        let reference = render(&dry, &mut dr, 2048);
+        let pcm = render(&wet, &mut wr, 2048);
+        assert!(reference[512..].iter().any(|p| p[0].abs() > 0.001));
+        for i in 512..2048 {
+            for ch in 0..2 {
+                assert!((pcm[i][ch] - reference[i][ch] * 0.25).abs() < 1e-7)
+            }
+        }
+        let captured = wet.record_stop().unwrap();
+        for ch in 0..2 {
+            assert_eq!(
+                captured.channels[ch],
+                pcm[..960].iter().map(|p| p[ch]).collect::<Vec<_>>()
+            )
+        }
+        wet.enqueue(
+            1,
+            &[
+                command(0, json!({"chip":"ay8910","method":"clock","hz":2_000_000})),
+                command(0, json!({"chip":"ym2413","method":"clock","hz":4_000_000})),
+                command(0, json!({"chip":"y8950","method":"clock","hz":5_000_000})),
+                command(
+                    0,
+                    json!({"chip":"ay8910","method":"mix","volume":0,"pan":0}),
+                ),
+                command(
+                    0,
+                    json!({"chip":"ym2413","method":"mix","volume":1,"pan":-1}),
+                ),
+                command(0, json!({"chip":"y8950","method":"mix","volume":1,"pan":1})),
+            ],
+        )
+        .unwrap();
+        let pcm = render(&wet, &mut wr, 1024);
+        assert!(pcm[512..]
+            .iter()
+            .any(|p| p[0] != 0. && p[1] != 0. && p[0] != p[1]));
+        let a = snapshot(&wet);
+        assert_eq!(
+            (a.ay8910.clock, a.ym2413.clock, a.y8950.clock),
+            (2_000_000, 4_000_000, 5_000_000)
+        );
+        wet.enqueue(
+            1,
+            &[command(
+                0,
+                json!({"chip":"y8950","method":"mix","volume":0,"pan":0}),
+            )],
+        )
+        .unwrap();
+        let pcm = render(&wet, &mut wr, 1024);
+        assert!(pcm[512..].iter().all(|p| p[1] == 0.));
+        assert!(pcm[512..].iter().any(|p| p[0] != 0.));
+    }
+    #[test]
+    fn msx_audio_native_cross_module_admission_failure_does_not_retain_or_publish_any_prefix() {
+        let (s, mut r) = setup();
+        let mut manual = y_note(0);
+        manual["audition"] = json!(true);
+        s.enqueue(1, &[command(0, manual)]).unwrap();
+        render(&s, &mut r, 128);
+        let before = snapshot(&s);
+        let failed = vec![
+            command(
+                0,
+                json!({"chip":"ay8910","id":123,"method":"write","register":0,"value":1}),
+            ),
+            command(
+                0,
+                json!({"chip":"y8950","id":123,"method":"clock","hz":4_000_000}),
+            ),
+        ];
+        assert!(s.enqueue(1, &failed).unwrap_err().contains("held"));
+        assert_eq!(s.pending.load(Ordering::Acquire), 0);
+        assert!(s.queue.is_empty());
+        let after = snapshot(&s);
+        assert_eq!(after.ay8910.registers, before.ay8910.registers);
+        assert!(after.ay8910.pending_commands.is_empty());
+        assert!(s
+            .msx
+            .as_ref()
+            .unwrap()
+            .wait_applied(123)
+            .unwrap_err()
+            .contains("Unknown"));
+        let failed = vec![
+            command(
+                0,
+                json!({"chip":"ay8910","id":5,"method":"write","register":0,"value":1}),
+            ),
+            command(
+                0,
+                json!({"chip":"ym2413","id":5,"method":"write","register":0,"value":1}),
+            ),
+            command(
+                0,
+                json!({"chip":"y8950","id":8,"method":"write","register":0x20,"value":3}),
+            ),
+        ];
+        assert!(s.enqueue(1, &failed).is_err());
+        assert!(s
+            .opl
+            .as_ref()
+            .unwrap()
+            .status(0)
+            .unwrap()
+            .y8950
+            .unwrap()
+            .pending_commands
+            .is_empty());
+        assert!(s
+            .opl
+            .as_ref()
+            .unwrap()
+            .wait_applied(8)
+            .unwrap_err()
+            .contains("Unknown"));
+    }
+    #[test]
+    fn msx_audio_native_owner_cancellation_and_chip_stop_do_not_suppress_other_sources() {
+        let (s, mut r) = setup();
+        s.active_performance.store(1, Ordering::Release);
+        let original = vec![
+            tagged(command(0, y_note(0)), 1),
+            tagged(command(0, opll_note(0)), 2),
+            tagged(command(0, ay_note()), 3),
+        ];
+        s.enqueue(1, &original).unwrap();
+        render(&s, &mut r, 512);
+        s.cancelled_owners[0].store(true, Ordering::Release);
+        s.invalidation.fetch_add(1, Ordering::Release);
+        render(&s, &mut r, 512);
+        let a = snapshot(&s);
+        assert_eq!(a.y8950.registers[0xb0] & 32, 0);
+        assert_ne!(a.ym2413.registers[0x20] & 16, 0);
+        assert_eq!(a.ay8910.registers[8], 9);
+        s.enqueue(
+            1,
+            &[
+                tagged(command(5000, y_note(1)), 2),
+                tagged(command(5000, opll_note(1)), 2),
+                tagged(command(5000, ay_note()), 3),
+            ],
+        )
+        .unwrap();
+        s.enqueue(
+            1,
+            &[tagged(
+                command(0, json!({"chip":"y8950","method":"stop-voices"})),
+                2,
+            )],
+        )
+        .unwrap();
+        render(&s, &mut r, 5000);
+        let a = snapshot(&s);
+        assert_eq!(a.y8950.registers[0xb1] & 32, 0);
+        assert_ne!(a.ym2413.registers[0x21] & 16, 0);
+        assert_eq!(a.ay8910.registers[8], 9);
+        assert!(a.y8950.pending_commands.is_empty());
+    }
+    #[test]
+    fn msx_audio_native_epoch_stop_retains_all_three_authored_sources_and_clocks() {
+        let (s, mut r) = setup();
+        let mut commands = notes(0);
+        commands.extend(notes(5000));
+        for (chip, hz) in [
+            ("ay8910", 2_000_000),
+            ("ym2413", 4_000_000),
+            ("y8950", 5_000_000),
+        ] {
+            commands.push(command(0, json!({"chip":chip,"method":"clock","hz":hz})))
+        }
+        s.enqueue(1, &commands).unwrap();
+        render(&s, &mut r, 512);
+        let before = snapshot(&s);
+        s.epoch.fetch_add(1, Ordering::Release);
+        let pcm = render(&s, &mut r, 6000);
+        assert!(pcm[1000..].iter().all(|p| *p == [0.; 2]));
+        let a = snapshot(&s);
+        assert_eq!(
+            (a.ay8910.clock, a.ym2413.clock, a.y8950.clock),
+            (2_000_000, 4_000_000, 5_000_000)
+        );
+        assert_eq!(a.y8950.registers[0x43], before.y8950.registers[0x43]);
+        assert_eq!(a.ym2413.registers[0x30], before.ym2413.registers[0x30]);
+        assert_eq!(a.ay8910.levels, before.ay8910.levels);
+        assert_eq!(a.y8950.registers[0xb0] & 32, 0);
+        assert_eq!(a.ym2413.registers[0x20] & 16, 0);
+        assert_eq!(a.ay8910.registers[8], 0);
+        assert_eq!(s.pending.load(Ordering::Acquire), 0);
+        s.enqueue(1, &notes(0)).unwrap();
+        assert!(render(&s, &mut r, 1024).iter().any(|p| p[0] != 0.));
+    }
+    #[test]
+    fn msx_audio_native_y8950_raw_delta_t_register_and_port_state_match_existing_empty_memory_scope(
+    ) {
+        let (s, mut r) = setup();
+        let registers = [
+            (0x07, 0x80),
+            (0x08, 0xc0),
+            (0x09, 0x40),
+            (0x0a, 0),
+            (0x0b, 0),
+            (0x0c, 0xff),
+            (0x0d, 0x10),
+            (0x0e, 0),
+            (0x0f, 0xff),
+            (0x10, 0x20),
+            (0x19, 0x55),
+            (0x1a, 0xaa),
+        ];
+        let commands: Vec<_> = registers
+            .into_iter()
+            .map(|(reg, value)| command(0, write("y8950", reg, value)))
+            .collect();
+        s.enqueue(1, &commands).unwrap();
+        render(&s, &mut r, 1024);
+        let a = snapshot(&s);
+        for (reg, value) in registers {
+            assert_eq!(a.y8950.registers[reg as usize], value)
+        }
+        assert_eq!(a.y8950.ports[0], a.y8950.status);
+        assert_eq!(a.y8950.ports[1], 0);
+        let before = a.y8950.registers;
+        for _ in 0..20 {
+            assert_eq!(snapshot(&s).y8950.registers, before)
+        }
+        assert_eq!(snapshot(&s).ay8910.registers, [0; 16]);
+    }
+    #[test]
+    fn msx_audio_native_y8950_manual_fm_protects_global_delta_t_controls_without_blocking_pair() {
+        let (s, mut r) = setup();
+        let mut manual = y_note(0);
+        manual["audition"] = json!(true);
+        s.enqueue(1, &[command(0, manual)]).unwrap();
+        render(&s, &mut r, 256);
+        s.enqueue(
+            1,
+            &[
+                command(0, write("y8950", 0x43, 63)),
+                command(0, write("y8950", 7, 0x80)),
+                command(0, opll_note(1)),
+                command(0, ay_note()),
+            ],
+        )
+        .unwrap();
+        render(&s, &mut r, 256);
+        let state = snapshot(&s);
+        assert_eq!(state.y8950.held, [0]);
+        assert_eq!(state.y8950.registers[0x43], 0);
+        assert_eq!(state.y8950.registers[7], 0);
+        assert_ne!(state.ym2413.registers[0x21] & 16, 0);
+        assert_eq!(state.ay8910.registers[8], 9);
+        assert_eq!(
+            s.enqueue(
+                1,
+                &[command(
+                    0,
+                    json!({"chip":"y8950","method":"clock","hz":4_000_000})
+                )]
+            )
+            .unwrap_err(),
+            "Release the manually held OPL voices before changing the clock"
+        );
+        s.enqueue(1, &[command(0, write("ay8910", 0, 0x40))])
+            .unwrap();
+        render(&s, &mut r, 256);
+        assert_eq!(snapshot(&s).ay8910.registers[0], 0x40);
     }
 }

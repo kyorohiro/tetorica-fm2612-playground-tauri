@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <new>
 #include <sstream>
@@ -34,10 +35,48 @@ static void voice(void *chip, uint8_t ch) {
     native_opl_write(chip, bank + 0xa0 + ch % 9, 0x81);
     native_opl_write(chip, bank + 0xb0 + ch % 9, 0x31);
 }
+static void y8950_observational_reads() {
+    void *polled = native_opl_create(48000, 3), *plain = native_opl_create(48000, 3);
+    assert(polled && plain); audit = true;
+    // Current pinned y8950::read_data maps 0x09 to ADPCM read(2) and 0x1a
+    // to read(19). The ADPCM bus-read side effect applies only to read(8),
+    // so these data ports return zero without consuming sample memory.
+    const uint8_t readable[] = {5, 9, 0x19, 0x1a, 0x0f};
+    for (void *h : {polled, plain}) {
+        voice(h, 0);
+        native_opl_write(h, 8, 0x80); native_opl_write(h, 9, 0); native_opl_write(h, 10, 0);
+        native_opl_write(h, 11, 1); native_opl_write(h, 12, 0);
+        native_opl_write(h, 16, 255); native_opl_write(h, 17, 255); native_opl_write(h, 18, 255);
+        native_opl_write(h, 2, 251); native_opl_write(h, 3, 249); native_opl_write(h, 4, 3);
+    }
+    for (uint8_t control : {0xa0, 0xb0, 0x80, 0x60}) {
+        for (void *h : {polled, plain}) native_opl_write(h, 7, control);
+        for (uint32_t frame = 0; frame < 2048; ++frame) {
+            const uint8_t reg = readable[(frame / 67) % 5];
+            for (void *h : {polled, plain}) {
+                if (frame % 53 == 0) native_opl_write(h, 15, uint8_t(frame * 37));
+                // Address the same last register as a real raw-register writer.
+                if (frame % 67 == 0) native_opl_write(h, reg, reg == 0x0f ? 0x55 : 0);
+            }
+            for (int repeat = 0; repeat < 7; ++repeat) {
+                native_opl_read(polled, 0); native_opl_read(polled, 1);
+                native_opl_read(polled, 2); native_opl_read(polled, 3);
+            }
+            float l, r, a, b; native_opl_sample(polled, &l, &r); native_opl_sample(plain, &a, &b);
+            assert(l == a && r == b);
+            if (frame % 127 == 0) {
+                NativeOplState x{}, y{}; native_opl_get_state(polled, &x); native_opl_get_state(plain, &y);
+                assert(std::memcmp(&x, &y, sizeof x) == 0);
+            }
+        }
+    }
+    audit = false; assert(allocations == 0 && frees == 0);
+    native_opl_destroy(polled); native_opl_destroy(plain);
+}
 static int self_test() {
     static_assert(sizeof(NativeOplState) == 524, "Rust FFI layout");
-    assert(!native_opl_create(0, 0) && !native_opl_create(384001, 0) && !native_opl_create(48000, 3));
-    for (uint8_t kind = 0; kind < 3; ++kind) {
+    assert(!native_opl_create(0, 0) && !native_opl_create(384001, 0) && !native_opl_create(48000, 4));
+    for (uint8_t kind = 0; kind < 4; ++kind) {
         void *chip = native_opl_create(48000, kind); assert(chip); NativeOplState s{};
         audit = true; native_opl_get_state(chip, &s);
         assert(s.kind == kind && s.channels == (kind == 2 ? 18 : 9) && s.clock == (kind == 2 ? 14318180u : 3579545u));
@@ -75,14 +114,16 @@ static int self_test() {
         assert(s.clock == (kind == 2 ? 14318180u : 3579545u) && s.registers[0xc0] == 0 && !s.irq && render(chip, 500) == 0);
         audit = false; assert(allocations == 0 && frees == 0); native_opl_destroy(chip);
     }
-    std::puts("Selected OPL/OPL2/OPL3 only; mono/stereo planes, retained clocks/TL/pairs/rhythm/routing, deferred retrigger and cancellation, timers/status/IRQ passed; callback allocations 0, frees 0"); return 0;
+    y8950_observational_reads();
+    std::puts("Selected OPL/OPL2/OPL3/Y8950 only; mono/stereo planes, retained clocks/TL/pairs/rhythm/routing, deferred retrigger/cancellation, timers/status/IRQ and Y8950 frequent-read versus unpolled PCM/state equality passed; callback allocations 0, frees 0"); return 0;
 }
 struct Event { uint32_t frame = 0, a = 0, b = 0; std::string op; };
 int main(int argc, char **argv) {
     try {
         if (argc == 2 && std::string(argv[1]) == "--self-test") return self_test();
-        if (argc != 4) return 2;
-        const uint32_t kind = std::stoul(argv[1]), rate = std::stoul(argv[2]), frames = std::stoul(argv[3]); if (frames > 10000000 || kind > 2) return 2;
+        if (argc != 4 && !(argc == 5 && std::string(argv[4]) == "--state-trace")) return 2;
+        const uint32_t planes = argc == 5 ? 8 : 2;
+        const uint32_t kind = std::stoul(argv[1]), rate = std::stoul(argv[2]), frames = std::stoul(argv[3]); if (frames > 10000000 || kind > 3) return 2;
         std::vector<Event> events; std::string line;
         while (std::getline(std::cin, line)) {
             std::istringstream in(line); Event e; if (!(in >> e.frame >> e.op)) continue;
@@ -93,7 +134,7 @@ int main(int argc, char **argv) {
         }
         std::stable_sort(events.begin(), events.end(), [](const Event &a, const Event &b) { return a.frame < b.frame; });
         void *chip = native_opl_create(rate, kind); if (!chip) return 3;
-        std::vector<float> pcm(frames * 2); size_t next = 0; audit = true;
+        std::vector<float> pcm(frames * planes); size_t next = 0; audit = true;
         for (uint32_t frame = 0; frame < frames; ++frame) {
             while (next < events.size() && events[next].frame == frame) {
                 const auto &e = events[next++];
@@ -105,7 +146,12 @@ int main(int argc, char **argv) {
                 else if (e.op == "reset") native_opl_reset(chip);
                 else if (e.op == "stop") native_opl_stop(chip);
             }
-            native_opl_sample(chip, &pcm[frame * 2], &pcm[frame * 2 + 1]);
+            native_opl_sample(chip, &pcm[frame * planes], &pcm[frame * planes + 1]);
+            if (planes == 8) {
+                NativeOplState state{}; native_opl_get_state(chip, &state);
+                pcm[frame * planes + 2] = state.status; pcm[frame * planes + 3] = state.irq;
+                for (uint8_t port = 0; port < 4; ++port) pcm[frame * planes + 4 + port] = native_opl_read(chip, port);
+            }
         }
         audit = false; assert(allocations == 0 && frees == 0); native_opl_destroy(chip);
         return std::fwrite(pcm.data(), sizeof(float), pcm.size(), stdout) == pcm.size() ? 0 : 4;

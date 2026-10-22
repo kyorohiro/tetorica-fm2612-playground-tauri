@@ -2,7 +2,8 @@
 
 YM3526, YM3812 and YMF262 use the same unmodified ymfm OPL/PCM provider already
 compiled for Master System and MSX. Each renderer constructs exactly one selected
-OPL core; no Genesis, PSG, AY or OPLL instance is created. Y8950 is not enabled.
+OPL core; no Genesis, PSG, AY or OPLL instance is created. MSX Audio selects Y8950
+separately through the same renderer; these DOS profiles remain unchanged.
 
 `scripts/sync_native_opl.py --source PATH --check` verifies the pinned Browser
 wrappers, authoring API, Worklet, inspector and the once-compiled synthesis

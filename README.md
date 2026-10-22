@@ -62,7 +62,7 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 **Native (experimental)** を明示的に選べます。切替時は演奏を停止し、
 編集中のプロジェクトを引き継いでページを開き直します。選択だけではデバイスを開かず、
 RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
-Native選択中のModeには、対応するGenesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engine／PC-98（YM2608）／Neo Geo／Neo Geo（YM2610B）／X68000／Game Gear／Master System／MSX／DOS PC（OPL／OPL2／OPL3）を表示します。他modeへ移るときは先にWeb Audioへ戻してください。
+Native選択中のModeには、対応するGenesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engine／PC-98（YM2608）／Neo Geo／Neo Geo（YM2610B）／X68000／Game Gear／Master System／MSX／MSX Audio／DOS PC（OPL／OPL2／OPL3）を表示します。他modeへ移るときは先にWeb Audioへ戻してください。
 これらのmodeでNativeを選べます。Web Audioでは全Modeを選べます。
 
 NativeはGenesis modeのYM2612＋Sega PSG、Main／Worker実行、音色・レジスター操作、Keyboard、
@@ -120,6 +120,12 @@ MSXではYM2413（3,579,545 Hz）とAY-3-8910（1,789,773 Hz）をNative生成�
 AYのtone／noiseの混合、共有ノイズ・エンベロープ、明示的なエンベロープ再発音に対応します。
 Stopは音色・clock・共有設定と発音復元用の音量を保持します。設定音量0もそのまま保持します。
 YM2413はMaster Systemと共通の実装を使い、由来・ハッシュ・AYのBSDライセンスは`src-tauri/native-msx/`に保存しています。
+
+MSX Audioでは既存MSX構成にY8950（3,579,545 Hz）のFM 9CH／リズムを加えます。
+`opl`＝Y8950、`opll`＝YM2413、`ay`＝AY-3-8910として、Main／Worker、Keyboard／音源タブを使います。
+3音源の音量とclockは独立し、Stopは全体を止めて音色・clock・AYの音量／envelope設定を保持します。
+Y8950は現行Playgroundと同じFM／リズムを対象とし、ADPCMメモリーAPIは追加していません。
+原典・ハッシュは`src-tauri/native-msx-audio/`に保存しています。
 
 Game GearではSega PSGだけをNative生成し、3 tone＋noiseの4チャンネルと左右独立のステレオマスクを使います。
 `psg.setStereo()`、Main／Worker、Keyboard／音源タブに対応します。

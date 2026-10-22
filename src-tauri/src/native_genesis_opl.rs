@@ -1,4 +1,4 @@
-//! Callback-owned DOS PC OPL core. Commands allocate and retire on the control
+//! Callback-owned OPL core for DOS PC or Y8950 in MSX Audio. Commands retire on the control
 //! thread; atomic snapshots only observe state already applied to the renderer.
 use super::{Owner, CAPACITY, MAX_SAFE_INTEGER, OWNERS};
 use crossbeam_queue::ArrayQueue;
@@ -48,6 +48,7 @@ pub enum Chip {
     Ym3526,
     Ym3812,
     Ymf262,
+    Y8950,
 }
 impl Chip {
     pub fn from_mode(mode: &str) -> Option<Self> {
@@ -55,6 +56,7 @@ impl Chip {
             "ym3526" => Some(Self::Ym3526),
             "ym3812" => Some(Self::Ym3812),
             "ymf262" => Some(Self::Ymf262),
+            "msx-audio" => Some(Self::Y8950),
             _ => None,
         }
     }
@@ -63,6 +65,7 @@ impl Chip {
             Self::Ym3526 => "ym3526",
             Self::Ym3812 => "ym3812",
             Self::Ymf262 => "ymf262",
+            Self::Y8950 => "y8950",
         }
     }
     fn code(self) -> u8 {
@@ -70,6 +73,7 @@ impl Chip {
             Self::Ym3526 => 0,
             Self::Ym3812 => 1,
             Self::Ymf262 => 2,
+            Self::Y8950 => 3,
         }
     }
     fn channels(self) -> u8 {
@@ -364,6 +368,8 @@ pub struct Status {
     pub ym3812: Option<ChipStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ymf262: Option<ChipStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub y8950: Option<ChipStatus>,
     pub frame: u64,
     pub sample_rate: u32,
     pub revision: u64,
@@ -603,16 +609,18 @@ impl Shared {
                     .collect(),
                 sample_rate: rate,
             };
-            let (mut a, mut b, mut c) = (None, None, None);
+            let (mut a, mut b, mut c, mut d) = (None, None, None, None);
             match self.chip {
                 Chip::Ym3526 => a = Some(chip),
                 Chip::Ym3812 => b = Some(chip),
                 Chip::Ymf262 => c = Some(chip),
+                Chip::Y8950 => d = Some(chip),
             }
             let out = Status {
                 ym3526: a,
                 ym3812: b,
                 ymf262: c,
+                y8950: d,
                 frame,
                 sample_rate: rate,
                 revision: before / 2,
@@ -1023,7 +1031,7 @@ mod tests {
     }
     fn snapshot(s: &Shared) -> ChipStatus {
         let a = s.status(0).unwrap();
-        a.ym3526.or(a.ym3812).or(a.ymf262).unwrap()
+        a.ym3526.or(a.ym3812).or(a.ymf262).or(a.y8950).unwrap()
     }
     fn owner(n: u32) -> Option<Owner> {
         Some(Owner {
@@ -1073,7 +1081,7 @@ mod tests {
     }
     #[test]
     fn opl_native_validates_profiles_registers_voices_clocks_and_atomic_batch() {
-        for chip in [Chip::Ym3526, Chip::Ym3812, Chip::Ymf262] {
+        for chip in [Chip::Ym3526, Chip::Ym3812, Chip::Ymf262, Chip::Y8950] {
             for v in [
                 write(chip, chip.registers() as u16, 1),
                 json!({"chip":chip.name(),"method":"key-off","channel":23}),
@@ -1103,7 +1111,7 @@ mod tests {
     }
     #[test]
     fn opl_native_selected_profiles_clock_snapshot_and_pcm_are_observational() {
-        for chip in [Chip::Ym3526, Chip::Ym3812, Chip::Ymf262] {
+        for chip in [Chip::Ym3526, Chip::Ym3812, Chip::Ymf262, Chip::Y8950] {
             let (s, mut r) = setup(chip);
             let s2 = Shared::new(chip);
             let mut reference = Renderer::new(48000, chip).unwrap();

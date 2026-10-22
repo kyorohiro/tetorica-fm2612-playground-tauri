@@ -673,7 +673,7 @@ impl Shared {
                 Some("game-gear") => Some(master_system::Shared::game_gear()),
                 _ => None,
             },
-            msx: (console == Some("msx")).then(msx::Shared::default),
+            msx: matches!(console, Some("msx" | "msx-audio")).then(msx::Shared::default),
             opl: console.and_then(opl::Chip::from_mode).map(opl::Shared::new),
             pwm: (console == Some("32x")).then(pwm::Shared::default),
 
@@ -1117,12 +1117,26 @@ impl Shared {
                     }
                 })
                 .collect();
-            if let Err(error) = chip.retain(&prepared) {
+            let result = if let Some(opl) = &self.opl {
+                let opl_prepared: Vec<_> = actions
+                    .iter()
+                    .filter_map(|(action, owner)| {
+                        if let Action::Opl(command) = action {
+                            Some((command.clone(), *owner))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                chip.retain_then(&prepared, || opl.retain(&opl_prepared))
+            } else {
+                chip.retain(&prepared)
+            };
+            if let Err(error) = result {
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
-        }
-        if let Some(chip) = &self.opl {
+        } else if let Some(chip) = &self.opl {
             let prepared: Vec<_> = actions
                 .iter()
                 .filter_map(|(action, owner)| {
@@ -1542,7 +1556,11 @@ impl Shared {
             } else if let Some(chip) = &self.ym2610b {
                 chip.mode()
             } else if self.msx.is_some() {
-                "msx"
+                if self.opl.as_ref().is_some_and(|chip| chip.mode() == "y8950") {
+                    "msx-audio"
+                } else {
+                    "msx"
+                }
             } else if let Some(chip) = &self.opl {
                 chip.mode()
             } else if let Some(chip) = &self.master_system {
@@ -1578,6 +1596,11 @@ impl Shared {
                 .map(master_system::Shared::opll_clock)
                 .or_else(|| self.msx.as_ref().map(msx::Shared::opll_clock)),
             ay8910_clock: self.msx.as_ref().map(msx::Shared::clock),
+            y8950_clock: self
+                .opl
+                .as_ref()
+                .filter(|chip| chip.mode() == "y8950")
+                .map(opl::Shared::clock),
             pwm_clock: self.pwm.as_ref().map(pwm::Shared::clock),
             sample_rate: self.rate,
             frame: self.frame.load(Ordering::Acquire),
@@ -1592,8 +1615,8 @@ impl Shared {
                         .as_ref()
                         .map(master_system::Shared::opll_clock)
                 })
-                .or_else(|| self.msx.as_ref().map(msx::Shared::opll_clock))
                 .or_else(|| self.opl.as_ref().map(opl::Shared::clock))
+                .or_else(|| self.msx.as_ref().map(msx::Shared::opll_clock))
                 .unwrap_or(7_670_454),
             psg_clock: if let Some(chip) = &self.master_system {
                 chip.clock()
@@ -1616,6 +1639,37 @@ impl Shared {
                 .failed
                 .load(Ordering::Acquire)
                 .then(|| "Native audio device stream failed".into()),
+        }
+    }
+    fn msx_audio_status(&self) -> Result<MsxAudioStatus, String> {
+        let pair = self
+            .msx
+            .as_ref()
+            .ok_or("Native MSX Audio status requires MSX Audio mode")?;
+        let opl = self
+            .opl
+            .as_ref()
+            .filter(|chip| chip.mode() == "y8950")
+            .ok_or("Native MSX Audio status requires MSX Audio mode")?;
+        let start = Instant::now();
+        loop {
+            let frame = self.frame.load(Ordering::Acquire);
+            let m = pair.status(frame)?;
+            let o = opl.status(frame)?;
+            if self.frame.load(Ordering::Acquire) == frame {
+                return Ok(MsxAudioStatus {
+                    y8950: o.y8950.ok_or("Missing Native Y8950 state")?,
+                    ym2413: m.ym2413,
+                    ay8910: m.ay8910,
+                    frame,
+                    sample_rate: self.rate,
+                    revision: m.revision.saturating_add(o.revision),
+                });
+            }
+            if start.elapsed() > Duration::from_millis(50) {
+                return Err("Native MSX Audio state changed while reading; retry".into());
+            }
+            std::thread::yield_now();
         }
     }
     fn stop(&self) -> Result<Status, String> {
@@ -1787,7 +1841,7 @@ impl Renderer {
                 Some("game-gear") => Some(master_system::Renderer::new_game_gear(rate)?),
                 _ => None,
             },
-            msx: if console == Some("msx") {
+            msx: if matches!(console, Some("msx" | "msx-audio")) {
                 Some(msx::Renderer::new(rate)?)
             } else {
                 None
@@ -2694,6 +2748,7 @@ pub struct Status {
     ym2413_clock: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ay8910_clock: Option<u32>,
+    y8950_clock: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pwm_clock: Option<u32>,
     sample_rate: u32,
@@ -2747,10 +2802,11 @@ impl NativeGenesis {
             "master-system" => (false,false,false,Some("master-system")),
             "game-gear" => (false,false,false,Some("game-gear")),
             "msx" => (false,false,false,Some("msx")),
+            "msx-audio" => (false,false,false,Some("msx-audio")),
             "ym3526" => (false,false,false,Some("ym3526")),
             "ym3812" => (false,false,false,Some("ym3812")),
             "ymf262" => (false,false,false,Some("ymf262")),
-            _ => return Err("Native output supports Genesis, Mega CD, 32X, DX7, NES, Game Boy, SNES, PC Engine, PC98, Neo Geo, X68000, Master System, Game Gear, MSX and DOS PC modes".into()),
+            _ => return Err("Native output supports Genesis, Mega CD, 32X, DX7, NES, Game Boy, SNES, PC Engine, PC98, Neo Geo, X68000, Master System, Game Gear, MSX, MSX Audio and DOS PC modes".into()),
         };
         self.replace_running(|session| Self::launch_config(session, mega_cd, dx7, nes, console))
     }
@@ -2921,7 +2977,17 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
         } else if let Some(chip) = &shared.ym2610b {
             Some(chip.variant())
         } else if shared.msx.is_some() {
-            Some("msx")
+            Some(
+                if shared
+                    .opl
+                    .as_ref()
+                    .is_some_and(|chip| chip.mode() == "y8950")
+                {
+                    "msx-audio"
+                } else {
+                    "msx"
+                },
+            )
         } else if let Some(chip) = &shared.opl {
             Some(chip.mode())
         } else if let Some(chip) = &shared.master_system {
@@ -3224,6 +3290,30 @@ pub async fn native_genesis_msx_status(
             }
             chip.status(shared.frame.load(Ordering::Acquire))
         })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MsxAudioStatus {
+    pub y8950: opl::ChipStatus,
+    pub ym2413: msx::OpllStatus,
+    pub ay8910: msx::AyStatus,
+    pub frame: u64,
+    pub sample_rate: u32,
+    pub revision: u64,
+}
+#[tauri::command]
+pub async fn native_genesis_msx_audio_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+) -> Result<MsxAudioStatus, String> {
+    crate::allowed(&window)?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.with_session(session, |shared| shared.msx_audio_status())
     })
     .await
     .map_err(|error| error.to_string())?
