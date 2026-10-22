@@ -148,6 +148,16 @@ fn main() {
         .compile("tetorica_native_pwm");
     // LiveFX executes only on its generation/probe owner thread, never the
     // output callback. The host creates a JSRuntime only on first register.
+    // GNU ld scans static archives in order: the wrapper must precede QuickJS.
+    cc::Build::new()
+        .cpp(true)
+        .flag_if_supported("/EHsc")
+        .std("c++14")
+        .opt_level(2)
+        .include("native-livefx/quickjs-ng")
+        .file("src/native_genesis_livefx.cpp")
+        .warnings(false)
+        .compile("tetorica_native_livefx_probe");
     cc::Build::new()
         .std("c11")
         // Match QuickJS-NG's MSVC build: C11 alone does not enable <stdatomic.h>.
@@ -160,14 +170,5 @@ fn main() {
         .file("native-livefx/quickjs-ng/quickjs-amalgam.c")
         .warnings(false)
         .compile("tetorica_quickjs_ng");
-    cc::Build::new()
-        .cpp(true)
-        .flag_if_supported("/EHsc")
-        .std("c++14")
-        .opt_level(2)
-        .include("native-livefx/quickjs-ng")
-        .file("src/native_genesis_livefx.cpp")
-        .warnings(false)
-        .compile("tetorica_native_livefx_probe");
     tauri_build::build()
 }
