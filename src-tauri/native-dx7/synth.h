@@ -37,8 +37,9 @@
 // #undef SynthMemoryBarrier()
 
 #ifndef SynthMemoryBarrier
-#warning Memory barrier is not enabled
-#define SynthMemoryBarrier()
+// Native host: portable C++ fence, including MSVC in C++17 mode.
+#include <atomic>
+#define SynthMemoryBarrier() std::atomic_thread_fence(std::memory_order_seq_cst)
 #endif
 
 template<typename T>

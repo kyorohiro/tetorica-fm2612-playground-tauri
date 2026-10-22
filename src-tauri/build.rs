@@ -1,4 +1,6 @@
 fn main() {
+    // Native C++ wrappers catch allocation failures before returning across Rust FFI.
+    // Enable standard exception unwinding for all MSVC C++ translation units.
     println!("cargo:rerun-if-changed=native-genesis");
     println!("cargo:rerun-if-changed=native-fx");
     println!("cargo:rerun-if-changed=native-noise");
@@ -15,6 +17,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_livefx.h");
     cc::Build::new()
         .cpp(true)
+        .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
         .include("native-genesis")
@@ -31,6 +34,7 @@ fn main() {
         .compile("tetorica_native_genesis");
     cc::Build::new()
         .cpp(true)
+        .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
         .include("native-megacd")
@@ -44,6 +48,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_dx7.h");
     let mut dx7 = cc::Build::new();
     dx7.cpp(true)
+        .flag_if_supported("/EHsc")
         .std("c++17")
         .opt_level(2)
         .define("MSFA_FORCE_SCALAR", None)
@@ -77,6 +82,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_nes.h");
     cc::Build::new()
         .cpp(true)
+        .flag_if_supported("/EHsc")
         .std("c++17")
         .opt_level(2)
         .flag_if_supported("-fwrapv")
@@ -92,6 +98,7 @@ fn main() {
     }
     cc::Build::new()
         .cpp(true)
+        .flag_if_supported("/EHsc")
         .std("c++17")
         .opt_level(2)
         .flag_if_supported("-fwrapv")
@@ -104,6 +111,7 @@ fn main() {
         .compile("tetorica_native_gameboy");
     cc::Build::new()
         .cpp(true)
+        .flag_if_supported("/EHsc")
         .std("c++17")
         .opt_level(2)
         .flag_if_supported("-fwrapv")
@@ -114,6 +122,7 @@ fn main() {
         .compile("tetorica_native_huc6280");
     cc::Build::new()
         .cpp(true)
+        .flag_if_supported("/EHsc")
         .std("c++17")
         .opt_level(2)
         .flag_if_supported("-fwrapv")
@@ -129,6 +138,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_pwm.h");
     cc::Build::new()
         .cpp(true)
+        .flag_if_supported("/EHsc")
         .std("c++17")
         .opt_level(2)
         .flag_if_supported("-ffp-contract=off")
@@ -148,6 +158,7 @@ fn main() {
         .compile("tetorica_quickjs_ng");
     cc::Build::new()
         .cpp(true)
+        .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
         .include("native-livefx/quickjs-ng")

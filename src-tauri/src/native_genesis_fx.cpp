@@ -6,6 +6,8 @@
 #include <new>
 
 namespace {
+// The shared C DSP uses unqualified isfinite; <cmath> only guarantees std::isfinite.
+using std::isfinite;
 // Every DSP function and state member below comes from the shared C source.
 // Includes are transformed only to turn file storage into instance storage.
 struct DSP {

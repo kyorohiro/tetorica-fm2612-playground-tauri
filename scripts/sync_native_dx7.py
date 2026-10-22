@@ -10,6 +10,21 @@ FILES = ['vendor/msfa/' + name for name in '''aligned_buf.h controllers.h dx7not
 
 def native_bytes(name, data):
     text = data.decode()
+    if name.endswith('/synth.h'):
+        # Native MSVC uses C++17, where the upstream #warning is an error.
+        # Supply an actual fence on platforms without the upstream barrier.
+        old = '''#ifndef SynthMemoryBarrier
+#warning Memory barrier is not enabled
+#define SynthMemoryBarrier()
+#endif'''
+        new = '''#ifndef SynthMemoryBarrier
+// Native host: portable C++ fence, including MSVC in C++17 mode.
+#include <atomic>
+#define SynthMemoryBarrier() std::atomic_thread_fence(std::memory_order_seq_cst)
+#endif'''
+        if text.count(old) != 1:
+            raise ValueError('MSFA memory barrier fallback changed; review the Native patch')
+        text = text.replace(old, new)
     if name.endswith('/synth_unit.h'):
         text = text.replace('  void AllNotesOff();', '''  void AllNotesOff();
   // Native host: no callback allocation; return the fixed preallocated slot.
