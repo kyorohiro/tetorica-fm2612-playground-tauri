@@ -104,6 +104,7 @@ fn main() {
             native_genesis::native_genesis_ym2610b_status,
             native_genesis::native_genesis_x68000_status,
             native_genesis::native_genesis_master_system_status,
+            native_genesis::native_genesis_msx_status,
             native_genesis::native_genesis_pwm_status,
 
             native_genesis::native_genesis_commands,

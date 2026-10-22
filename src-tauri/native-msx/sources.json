@@ -1,0 +1,54 @@
+{
+  "source": "hello_ymfm Browser AY-3-8910 and shared YM2413",
+  "license": "BSD-3-Clause (AY Couriersud; ymfm Aaron Giles)",
+  "adaptation": "AY synthesis sources unchanged. Native keeps its original base-clock core and mirrors ChipClockResampler double phase/average/hold across clock edits; register volume-zero gates suppress the same normalized DAC baseline as the Worklet. Stop retains separate authored levels and all pitch/mixer/noise/envelope/I/O settings while clearing active volume registers. YM2413 uses the same shared NativeOpllCore as Master System; one common provider is compiled once. Both chips produce separate mono output planes.",
+  "files": {
+    "third_party/mame-ay8910/ay8910.cpp": {
+      "snapshot": "snapshot/third_party/mame-ay8910/ay8910.cpp",
+      "sha256": "3ea3efe1b29a554c39a2b1995e9ed3d2588c16d24b085ca1565c3a24f4414646"
+    },
+    "third_party/mame-ay8910/ay8910.h": {
+      "snapshot": "snapshot/third_party/mame-ay8910/ay8910.h",
+      "sha256": "e93d1904d2c232f820c23a6df59dfebf309550a6f8b0032e20c51295e7d31e7a"
+    },
+    "third_party/mame-ay8910/LICENSE": {
+      "snapshot": "snapshot/third_party/mame-ay8910/LICENSE",
+      "sha256": "9ce97eec16b71e54663cfff119162feb89ae254464bf2bad3c8b8d73870e9a0e"
+    },
+    "third_party/mame-ay8910/README.md": {
+      "snapshot": "snapshot/third_party/mame-ay8910/README.md",
+      "sha256": "d41552a7edc4156988dfee0395d501431507f5c8429217786d6a4be5078ae99f"
+    },
+    "wasm/ay8910_wasm.cpp": {
+      "snapshot": "snapshot/wasm/ay8910_wasm.cpp",
+      "sha256": "15107f52744c9e67db2daf0bfa052ebb04a63dc92779576e46c4c10b64009ebb"
+    },
+    "web/ay8910.js": {
+      "snapshot": "snapshot/web/ay8910.js",
+      "sha256": "9682007689d87b7cdf27b138f269e8c5c4fb478df909cac95a4dc80ce88267e6"
+    },
+    "web/ay8910synth.js": {
+      "snapshot": "snapshot/web/ay8910synth.js",
+      "sha256": "30fd1bdd4406162e6539136597237db3f79a4093a56e4b86b94ac9c05e13a031"
+    },
+    "web/playground_ay8910_worklet.js": {
+      "snapshot": "snapshot/web/playground_ay8910_worklet.js",
+      "sha256": "7856d93094565c892d53c0a0c844838739e668de76791e78535a62ae335bee72"
+    },
+    "web/playground_ay8910_inspector.js": {
+      "snapshot": "snapshot/web/playground_ay8910_inspector.js",
+      "sha256": "417e1f52c5405458ad5b67febdd3624142c55976cf58e5e74236525624d30297"
+    },
+    "web/playground_chip_clock.js": {
+      "snapshot": "snapshot/web/playground_chip_clock.js",
+      "sha256": "a26dfc6fa3bf97d35cd1255691fa11227744e2a59fe91261735e885561eff1b4"
+    }
+  },
+  "sharedOpllProvider": {
+    "src/ymfm_opl.cpp": "6f0c68b4d7126f63231b889e12489732088d129c99aa4aa61a1d2d085bc1f501",
+    "src/ymfm_opl.h": "6760e0fd1678439d4eda8bb98e1a8af30b17ba6a00b9f6e7a6c150689e9c42ce",
+    "src/ymfm_pcm.cpp": "3099d770b876dcdcb8a4c15df48fcc3475f22eca5a144b66581bfa7ebbf499ab",
+    "src/ymfm_pcm.h": "d738b45f9406da413d29334ec062f217c42811af68ffa599ae4a2dc839cc2200",
+    "web/playground_ym2413_worklet.js": "b57d4c8ceeed3ec5066dc7d1485cb11e0dc46add7fa97e40e47af4a360be3e49"
+  }
+}

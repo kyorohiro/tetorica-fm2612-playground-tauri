@@ -62,7 +62,8 @@
       "native-snes/": "native-snes/",
       "native-pwm/LICENSE": "pwm32x-LICENSE.txt",
       "native-genesis/LICENSE": "ymfm-LICENSE.txt",
-      "native-x68000/snapshot/third_party/mame-okim6258/LICENSE": "okim6258-LICENSE.txt"
+      "native-x68000/snapshot/third_party/mame-okim6258/LICENSE": "okim6258-LICENSE.txt",
+      "native-msx/snapshot/third_party/mame-ay8910/LICENSE": "ay8910-LICENSE.txt"
     }
   }
 }

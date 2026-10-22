@@ -27,6 +27,24 @@ fn main() {
     println!("cargo:rerun-if-changed=native-master-system");
     println!("cargo:rerun-if-changed=src/native_genesis_master_system.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_master_system.h");
+    println!("cargo:rerun-if-changed=src/native_genesis_opll.h");
+    println!("cargo:rerun-if-changed=native-msx");
+    println!("cargo:rerun-if-changed=src/native_genesis_msx.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_msx.h");
+    // MSX references the same OPLL provider as Master System. GNU ld requires
+    // this dependent archive before that provider and the common ymfm archive.
+    cc::Build::new()
+        .cpp(true)
+        .flag_if_supported("/EHsc")
+        .std("c++14")
+        .opt_level(2)
+        .include("native-msx/snapshot/third_party/mame-ay8910")
+        .include("native-master-system/snapshot/src")
+        .include("native-genesis")
+        .file("src/native_genesis_msx.cpp")
+        .file("native-msx/snapshot/third_party/mame-ay8910/ay8910.cpp")
+        .warnings(false)
+        .compile("tetorica_native_msx");
     // The OPLL wrapper needs shared ymfm ADPCM and Sega PSG symbols below.
     // Keep the dependent archive before the common provider for GNU ld.
     cc::Build::new()
