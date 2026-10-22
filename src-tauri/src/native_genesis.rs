@@ -39,6 +39,8 @@ mod monitor;
 mod msx;
 #[path = "native_genesis_nes.rs"]
 mod nes;
+#[path = "native_genesis_opl.rs"]
+mod opl;
 #[path = "native_genesis_snes.rs"]
 mod snes;
 #[path = "native_genesis_x68000.rs"]
@@ -174,6 +176,7 @@ enum Action {
     X68000(Arc<x68000::Prepared>),
     MasterSystem(Arc<master_system::Prepared>),
     Msx(Arc<msx::Prepared>),
+    Opl(Arc<opl::Prepared>),
     Pwm(Arc<pwm::Prepared>),
 
     RfWrite(u8, u8, bool),
@@ -284,6 +287,9 @@ enum CommandAction {
     Msx {
         message: msx::Message,
     },
+    Opl {
+        message: opl::Message,
+    },
     Pwm {
         message: pwm::Message,
     },
@@ -389,6 +395,7 @@ impl Command {
             CommandAction::X68000 { ref message } => Action::X68000(message.prepare()?),
             CommandAction::MasterSystem { ref message } => Action::MasterSystem(message.prepare()?),
             CommandAction::Msx { ref message } => Action::Msx(message.prepare()?),
+            CommandAction::Opl { ref message } => Action::Opl(message.prepare()?),
             CommandAction::Pwm { ref message } => Action::Pwm(message.prepare()?),
 
             CommandAction::Rf5c164Write {
@@ -589,6 +596,7 @@ struct Shared {
     x68000: Option<x68000::Shared>,
     master_system: Option<master_system::Shared>,
     msx: Option<msx::Shared>,
+    opl: Option<opl::Shared>,
     pwm: Option<pwm::Shared>,
 
     rf5c164: rf5c164::Shared,
@@ -662,6 +670,7 @@ impl Shared {
             x68000: (console == Some("x68000")).then(x68000::Shared::default),
             master_system: (console == Some("master-system")).then(master_system::Shared::default),
             msx: (console == Some("msx")).then(msx::Shared::default),
+            opl: console.and_then(opl::Chip::from_mode).map(opl::Shared::new),
             pwm: (console == Some("32x")).then(pwm::Shared::default),
 
             rf5c164: rf5c164::Shared::default(),
@@ -859,6 +868,11 @@ impl Shared {
                 if matches!(&action, Action::Msx(_)) && self.msx.is_none() {
                     return Err("Native MSX commands require MSX mode".into());
                 }
+                if let Action::Opl(command) = &action {
+                    if !self.opl.as_ref().is_some_and(|chip| chip.accepts(command)) {
+                        return Err("Native OPL command requires its selected DOS PC mode".into());
+                    }
+                }
                 if matches!(&action, Action::X68000(_)) && self.x68000.is_none() {
                     return Err("Native X68000 commands require X68000 mode".into());
                 }
@@ -889,7 +903,8 @@ impl Shared {
                     || self.ym2610b.is_some()
                     || self.x68000.is_some()
                     || self.master_system.is_some()
-                    || self.msx.is_some())
+                    || self.msx.is_some()
+                    || self.opl.is_some())
                     && matches!(
                         &action,
                         Action::Write(..)
@@ -1084,6 +1099,22 @@ impl Shared {
                 .iter()
                 .filter_map(|(action, owner)| {
                     if let Action::Msx(command) = action {
+                        Some((command.clone(), *owner))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Err(error) = chip.retain(&prepared) {
+                self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
+                return Err(error);
+            }
+        }
+        if let Some(chip) = &self.opl {
+            let prepared: Vec<_> = actions
+                .iter()
+                .filter_map(|(action, owner)| {
+                    if let Action::Opl(command) = action {
                         Some((command.clone(), *owner))
                     } else {
                         None
@@ -1326,6 +1357,13 @@ impl Shared {
             } else {
                 true
             })
+            && (if let Action::Opl(command) = &*action {
+                self.opl
+                    .as_ref()
+                    .is_some_and(|chip| chip.valid_event(command, event.sequence, event.owner))
+            } else {
+                true
+            })
             && (!matches!(*action, Action::DacPlay { .. } | Action::DacStream(_))
                 || event.sequence >= self.dac_cancel_before.load(Ordering::Acquire)
                     && event.owner.is_none_or(|owner| {
@@ -1379,6 +1417,11 @@ impl Shared {
             }
             Action::Msx(command) => {
                 if let Some(chip) = &self.msx {
+                    chip.retire(command);
+                }
+            }
+            Action::Opl(command) => {
+                if let Some(chip) = &self.opl {
                     chip.retire(command);
                 }
             }
@@ -1488,6 +1531,8 @@ impl Shared {
                 chip.mode()
             } else if self.msx.is_some() {
                 "msx"
+            } else if let Some(chip) = &self.opl {
+                chip.mode()
             } else if self.master_system.is_some() {
                 "master-system"
             } else if self.x68000.is_some() {
@@ -1535,6 +1580,7 @@ impl Shared {
                         .map(master_system::Shared::opll_clock)
                 })
                 .or_else(|| self.msx.as_ref().map(msx::Shared::opll_clock))
+                .or_else(|| self.opl.as_ref().map(opl::Shared::clock))
                 .unwrap_or(7_670_454),
             psg_clock: if let Some(chip) = &self.master_system {
                 chip.clock()
@@ -1542,6 +1588,7 @@ impl Shared {
                 || self.ym2610b.is_some()
                 || self.x68000.is_some()
                 || self.msx.is_some()
+                || self.opl.is_some()
             {
                 0
             } else {
@@ -1622,6 +1669,7 @@ struct Renderer {
     x68000: Option<x68000::Renderer>,
     master_system: Option<master_system::Renderer>,
     msx: Option<msx::Renderer>,
+    opl: Option<opl::Renderer>,
     pwm: Option<pwm::Renderer>,
 
     dx7_master: f32,
@@ -1728,6 +1776,11 @@ impl Renderer {
             },
             msx: if console == Some("msx") {
                 Some(msx::Renderer::new(rate)?)
+            } else {
+                None
+            },
+            opl: if let Some(chip) = console.and_then(opl::Chip::from_mode) {
+                Some(opl::Renderer::new(rate, chip)?)
             } else {
                 None
             },
@@ -1855,6 +1908,9 @@ impl Renderer {
             if let (Some(chip), Some(state)) = (&mut self.msx, &shared.msx) {
                 chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
+            if let (Some(chip), Some(state)) = (&mut self.opl, &shared.opl) {
+                chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
+            }
             if let (Some(chip), Some(state)) = (&mut self.pwm, &shared.pwm) {
                 chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
@@ -1930,6 +1986,9 @@ impl Renderer {
             chip.publish(state);
         }
         if let (Some(chip), Some(state)) = (&self.msx, &shared.msx) {
+            chip.publish(state);
+        }
+        if let (Some(chip), Some(state)) = (&self.opl, &shared.opl) {
             chip.publish(state);
         }
         if let (Some(chip), Some(state)) = (&self.pwm, &shared.pwm) {
@@ -2048,6 +2107,16 @@ impl Renderer {
                     chip.apply(&command, owner, state);
                 }
                 shared.retire_action(Action::Msx(command));
+            }
+            Action::Opl(command) => {
+                if let (Some(chip), Some(state)) = (&mut self.opl, &shared.opl) {
+                    if command.stops() {
+                        state.cancel_before(&command, sequence.saturating_add(1), owner);
+                        shared.invalidation.fetch_add(1, Ordering::Release);
+                    }
+                    chip.apply(&command, owner, state);
+                }
+                shared.retire_action(Action::Opl(command));
             }
             Action::Pwm(command) => {
                 if command.stops() {
@@ -2243,7 +2312,8 @@ impl Renderer {
                             || self.ym2610b.is_some()
                             || self.x68000.is_some()
                             || self.master_system.is_some()
-                            || self.msx.is_some() =>
+                            || self.msx.is_some()
+                            || self.opl.is_some() =>
                     {
                         self.dx7_master_target = gains[4];
                         self.dx7_master_ramp = (shared.rate / 200).max(1);
@@ -2280,6 +2350,9 @@ impl Renderer {
                             chip.stop(state);
                         }
                         if let (Some(chip), Some(state)) = (&mut self.msx, &shared.msx) {
+                            chip.stop(state);
+                        }
+                        if let (Some(chip), Some(state)) = (&mut self.opl, &shared.opl) {
                             chip.stop(state);
                         }
                         if let Some(rf) = &mut self.rf5c164 {
@@ -2379,6 +2452,7 @@ impl Renderer {
                     Action::X68000(command) => command.starts(),
                     Action::MasterSystem(command) => command.starts(),
                     Action::Msx(command) => command.starts(),
+                    Action::Opl(command) => command.starts(),
                     Action::Pwm(command) => command.starts(),
                     Action::Mix(_)
                     | Action::RfMix(_)
@@ -2436,6 +2510,9 @@ impl Renderer {
         if let Some(chip) = &mut self.msx {
             chip.mix(&mut pcm);
         }
+        if let Some(chip) = &mut self.opl {
+            chip.mix(&mut pcm);
+        }
         if let Some(rf) = &mut self.rf5c164 {
             rf.mix(&mut pcm);
         }
@@ -2468,6 +2545,7 @@ impl Renderer {
             || self.x68000.is_some()
             || self.master_system.is_some()
             || self.msx.is_some()
+            || self.opl.is_some()
         {
             if self.dx7_master_ramp > 0 {
                 self.dx7_master +=
@@ -2521,6 +2599,9 @@ impl Renderer {
                     chip.stop(state);
                 }
                 if let (Some(chip), Some(state)) = (&mut self.msx, &shared.msx) {
+                    chip.stop(state);
+                }
+                if let (Some(chip), Some(state)) = (&mut self.opl, &shared.opl) {
                     chip.stop(state);
                 }
                 if let (Some(chip), Some(state)) = (&mut self.pwm, &shared.pwm) {
@@ -2652,7 +2733,10 @@ impl NativeGenesis {
             "x68000" => (false,false,false,Some("x68000")),
             "master-system" => (false,false,false,Some("master-system")),
             "msx" => (false,false,false,Some("msx")),
-            _ => return Err("Native output supports Genesis, Mega CD, 32X, DX7, NES, Game Boy, SNES, PC Engine, PC98, Neo Geo, X68000, Master System and MSX modes".into()),
+            "ym3526" => (false,false,false,Some("ym3526")),
+            "ym3812" => (false,false,false,Some("ym3812")),
+            "ymf262" => (false,false,false,Some("ymf262")),
+            _ => return Err("Native output supports Genesis, Mega CD, 32X, DX7, NES, Game Boy, SNES, PC Engine, PC98, Neo Geo, X68000, Master System, MSX and DOS PC modes".into()),
         };
         self.replace_running(|session| Self::launch_config(session, mega_cd, dx7, nes, console))
     }
@@ -2824,6 +2908,8 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
             Some(chip.variant())
         } else if shared.msx.is_some() {
             Some("msx")
+        } else if let Some(chip) = &shared.opl {
+            Some(chip.mode())
         } else if shared.master_system.is_some() {
             Some("master-system")
         } else if shared.x68000.is_some() {
@@ -3093,6 +3179,30 @@ pub async fn native_genesis_msx_status(
                 .msx
                 .as_ref()
                 .ok_or("Native MSX status requires MSX mode")?;
+            if let Some(id) = after {
+                chip.wait_applied(id)?;
+            }
+            chip.status(shared.frame.load(Ordering::Acquire))
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+#[tauri::command]
+pub async fn native_genesis_opl_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    after: Option<u64>,
+) -> Result<opl::Status, String> {
+    crate::allowed(&window)?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.with_session(session, |shared| {
+            let chip = shared
+                .opl
+                .as_ref()
+                .ok_or("Native OPL status requires DOS PC mode")?;
             if let Some(id) = after {
                 chip.wait_applied(id)?;
             }

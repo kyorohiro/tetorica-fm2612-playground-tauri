@@ -1,0 +1,57 @@
+{
+  "source": "hello_ymfm Browser YM3526/YM3812/YMF262 and shared ymfm OPL/PCM",
+  "license": "BSD-3-Clause (ymfm Aaron Giles)",
+  "adaptation": "Synthesis sources unchanged and compiled exactly once by native-master-system. Only the selected DOS OPL core is constructed. Native mirrors the shipped OPL Worklet source-rate average/hold resampler, all four OPL3 output buses folded A+C/B+D into stereo, authoring register shadow, forced channel mute and TL restoration, deferred manual retrigger, clock and source phase preservation, and silent Stop with retained configuration. Y8950/MSX Audio is not enabled.",
+  "files": {
+    "wasm/ym3526_wasm.cpp": {
+      "snapshot": "snapshot/wasm/ym3526_wasm.cpp",
+      "sha256": "cf9aa371dcf1e0146558b7f32343b9b5793300e1030b594ea4d1f9d8d8f700bd"
+    },
+    "wasm/ym3812_wasm.cpp": {
+      "snapshot": "snapshot/wasm/ym3812_wasm.cpp",
+      "sha256": "44d2692f2281e9e34eedf72bada6846fcc83ec0d3db0989f020784cc7c047427"
+    },
+    "wasm/ymf262_wasm.cpp": {
+      "snapshot": "snapshot/wasm/ymf262_wasm.cpp",
+      "sha256": "68a8cf2c1fd2f45065653ba3b83debd4c01e2fb534446db0141dd0e5e8e822c2"
+    },
+    "web/ym3526.js": {
+      "snapshot": "snapshot/web/ym3526.js",
+      "sha256": "3ce49fa8e36520db7a7d30edf03761cbacb4addf54f7d27dc00c80a908a3a71f"
+    },
+    "web/ym3812.js": {
+      "snapshot": "snapshot/web/ym3812.js",
+      "sha256": "ce35055a3a3c558c7af4a2ba662a53e4a39e3edaa5a0391ea5c6831de2a0d089"
+    },
+    "web/ymf262.js": {
+      "snapshot": "snapshot/web/ymf262.js",
+      "sha256": "0505487ec8488b9bdf0fffa6d95b3477289e9723f1ccadd03177aa5beab3ebe3"
+    },
+    "web/opl_synth.js": {
+      "snapshot": "snapshot/web/opl_synth.js",
+      "sha256": "18ac5165c25956409cc2acdca9bca48847b1ff597a1d16eaa381f0633b354a48"
+    },
+    "web/playground_opl_worklet.js": {
+      "snapshot": "snapshot/web/playground_opl_worklet.js",
+      "sha256": "3615ad518ab38471a17f9f84a3fb95b76a23a4da585ef0f9dbee34c9ebc94527"
+    },
+    "web/playground_opl_inspector.js": {
+      "snapshot": "snapshot/web/playground_opl_inspector.js",
+      "sha256": "260a783931acb3f678998ac30e3d2ba63759d9b5697c5240d50cef64784f742a"
+    },
+    "web/playground_chip_clock.js": {
+      "snapshot": "snapshot/web/playground_chip_clock.js",
+      "sha256": "a26dfc6fa3bf97d35cd1255691fa11227744e2a59fe91261735e885561eff1b4"
+    },
+    "wasm/ymfm_wasm_interface.h": {
+      "snapshot": "snapshot/wasm/ymfm_wasm_interface.h",
+      "sha256": "533cb78ac8b79d48768abc5703ed03c814da22fa81358b2b65af1bbd2fe3735f"
+    }
+  },
+  "sharedOplProvider": {
+    "src/ymfm_opl.cpp": "6f0c68b4d7126f63231b889e12489732088d129c99aa4aa61a1d2d085bc1f501",
+    "src/ymfm_opl.h": "6760e0fd1678439d4eda8bb98e1a8af30b17ba6a00b9f6e7a6c150689e9c42ce",
+    "src/ymfm_pcm.cpp": "3099d770b876dcdcb8a4c15df48fcc3475f22eca5a144b66581bfa7ebbf499ab",
+    "src/ymfm_pcm.h": "d738b45f9406da413d29334ec062f217c42811af68ffa599ae4a2dc839cc2200"
+  }
+}

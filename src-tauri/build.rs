@@ -31,6 +31,21 @@ fn main() {
     println!("cargo:rerun-if-changed=native-msx");
     println!("cargo:rerun-if-changed=src/native_genesis_msx.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_msx.h");
+    println!("cargo:rerun-if-changed=native-opl");
+    println!("cargo:rerun-if-changed=src/native_genesis_opl.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_opl.h");
+    // The selected DOS OPL core references the same ymfm OPL/PCM provider as
+    // Master System and MSX. Compile it once and keep consumers first on GNU ld.
+    cc::Build::new()
+        .cpp(true)
+        .flag_if_supported("/EHsc")
+        .std("c++14")
+        .opt_level(2)
+        .include("native-master-system/snapshot/src")
+        .include("native-genesis")
+        .file("src/native_genesis_opl.cpp")
+        .warnings(false)
+        .compile("tetorica_native_opl");
     // MSX references the same OPLL provider as Master System. GNU ld requires
     // this dependent archive before that provider and the common ymfm archive.
     cc::Build::new()
