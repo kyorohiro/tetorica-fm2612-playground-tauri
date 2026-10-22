@@ -1,0 +1,54 @@
+{
+  "source": "hello_ymfm Browser PC-98 YM2203 / OPN",
+  "license": "BSD-3-Clause (ymfm Aaron Giles)",
+  "adaptation": "Unmodified OPN/SSG synthesis is compiled exactly once by native-genesis. The selected standalone YM2203 has three FM and three SSG voices with no Genesis/OPNA chip. FM plus all three SSG integer outputs are summed and clipped before the shipped source-rate average/hold resampler; mono is duplicated to L/R. Default master clock is 4000000 Hz and MAX fidelity output rate is clock/4. Prescalers, frequency latches/channel3 special mode, timer/status/IRQ and SSG I/O reads retain core semantics. Forced mute preserves authored TL; SSG Stop retains authored level including explicit zero, periods, shared noise/envelope and clock. Preview retrigger waits at least one real FM clock interval.",
+  "files": {
+    "wasm/ym2203_wasm.cpp": {
+      "snapshot": "snapshot/wasm/ym2203_wasm.cpp",
+      "sha256": "9744d178ea2aa251183bdee330b532216d653946a72eb148f5196a1463b6f63d"
+    },
+    "wasm/opn_state.h": {
+      "snapshot": "snapshot/wasm/opn_state.h",
+      "sha256": "fbddfeef9d1f8413f97949d5b5602296fcd3f59ae837c1561c5d03e1d17fc8b0"
+    },
+    "web/ym2203.js": {
+      "snapshot": "snapshot/web/ym2203.js",
+      "sha256": "d66a1f566a58d80e9db8b83c420ed14b05a3be14e9a32d7d282ec1fc3390b065"
+    },
+    "web/ym2203audioengine.js": {
+      "snapshot": "snapshot/web/ym2203audioengine.js",
+      "sha256": "341c1921602fec7da90e49c20c93d79cfca0d1c417f90761d295950945df3dc5"
+    },
+    "web/ym2203-worklet.js": {
+      "snapshot": "snapshot/web/ym2203-worklet.js",
+      "sha256": "dc63cf0c8cc0fef70505f55a73a1ded99ae06658595c85c7c6ca0a9c02e8bc60"
+    },
+    "web/playground_opn_worklet.js": {
+      "snapshot": "snapshot/web/playground_opn_worklet.js",
+      "sha256": "8091ee30f227a6efbfebe268d95c68003ccc6b638b5f26dbd0cff9d7ff7401f2"
+    },
+    "web/playground_opn_inspector.js": {
+      "snapshot": "snapshot/web/playground_opn_inspector.js",
+      "sha256": "faa5c0c8b35196ab3be94fdebeaf95a00ec49bcc75d7f5ba35c587b1bd1c527b"
+    },
+    "web/playground_audition_guard.js": {
+      "snapshot": "snapshot/web/playground_audition_guard.js",
+      "sha256": "1b683b44ddd8e07930cebbf2f98c3924016509ab11b1f40e5cd58d69677a3310"
+    },
+    "wasm/ymfm_wasm_interface.h": {
+      "snapshot": "snapshot/wasm/ymfm_wasm_interface.h",
+      "sha256": "533cb78ac8b79d48768abc5703ed03c814da22fa81358b2b65af1bbd2fe3735f"
+    }
+  },
+  "sharedProviders": {
+    "src/ymfm.h": "f5ab6fed63c8669abab8403e0e93132e1dad0ae4d8e4954e7836ab9e5b228405",
+    "src/ymfm_fm.h": "1b27bfb7fa4963d7c54cb06fd9bf659450362d8ed496c6af7d487b068cac45c9",
+    "src/ymfm_fm.ipp": "aaf9e663d706aa4d5df828bb97b71a7ba75aea77ae9636cd07edb3754aa2eae6",
+    "src/ymfm_opn.cpp": "0babc16706b0039ea5e515e8672373ad0b567d93b3cdd58d18af664e179888f2",
+    "src/ymfm_opn.h": "b918c6eeb7fa2b45ced97c58609baa4b54daedb917c8a73303710661fb786b39",
+    "src/ymfm_ssg.cpp": "73a3028a77f13f3769b7705079659eb8325431a67b8164ded25e12f324f42bfd",
+    "src/ymfm_ssg.h": "27966b0887fe98f2d06a96be2776c911107e2f2a13a64f9a349e1ffc19cf7584",
+    "src/ymfm_adpcm.cpp": "74e5ded129ea7e532112e5b637d0a7bd4e127fd83331f1fac32011723051d4e0",
+    "src/ymfm_adpcm.h": "5933691971493b853a9be443f6e6fd74f63869aa21225f66dd89fc20de20914d"
+  }
+}

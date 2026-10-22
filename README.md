@@ -62,7 +62,7 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 **Native (experimental)** を明示的に選べます。切替時は演奏を停止し、
 編集中のプロジェクトを引き継いでページを開き直します。選択だけではデバイスを開かず、
 RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
-Native選択中のModeには、対応するGenesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engine／PC-98（YM2608）／Neo Geo／Neo Geo（YM2610B）／X68000／Game Gear／Master System／MSX／MSX Audio／DOS PC（OPL／OPL2／OPL3）を表示します。他modeへ移るときは先にWeb Audioへ戻してください。
+Native選択中のModeには、対応するGenesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engine／PC-98（YM2203／YM2608）／Neo Geo／Neo Geo（YM2610B）／X68000／Game Gear／Master System／MSX／MSX Audio／DOS PC（OPL／OPL2／OPL3）を表示します。他modeへ移るときは先にWeb Audioへ戻してください。
 これらのmodeでNativeを選べます。Web Audioでは全Modeを選べます。
 
 NativeはGenesis modeのYM2612＋Sega PSG、Main／Worker実行、音色・レジスター操作、Keyboard、
@@ -114,6 +114,12 @@ Master SystemではSega PSG（3音＋noise）とYM2413 OPLLを、両方3,579,545
 OPLLはROM楽器・共有User音色・9 FM声、または6 FM声＋5 rhythm音を使えます。
 Stopは音色・PSGのperiod／noise設定・clockを保持し、発音と予約を止めます。
 由来・ハッシュは`src-tauri/native-master-system/`に保存し、ymfmとSegaPSGは共有providerを一度だけ組み込みます。
+
+PC-98（YM2203）では4 MHzのYM2203だけを生成し、FM 3CH＋SSG 3CHをモノラルで左右へ出力します。
+`fm`／`ssg`／`play`、Main／Worker、6声のKeyboard／音源タブに対応します。
+Stopは音色・clock・CH3特殊モード・SSGのtone／noise／envelopeと保持音量を残します。
+SSGの明示的な音量0とkeyOffを区別し、Workerから表示へ渡す状態を音声命令として再送しません。
+原典・ハッシュは`src-tauri/native-ym2203/`に保存しています。
 
 MSXではYM2413（3,579,545 Hz）とAY-3-8910（1,789,773 Hz）をNative生成します。
 `opll`／`ay`、Main／Worker、Keyboard／Operators、独立ミキサーと共通FX／liveFx・monitor・録音を使えます。
