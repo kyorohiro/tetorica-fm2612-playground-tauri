@@ -15,6 +15,20 @@ fn main() {
     println!("cargo:rerun-if-changed=native-livefx");
     println!("cargo:rerun-if-changed=src/native_genesis_livefx.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_livefx.h");
+    println!("cargo:rerun-if-changed=native-ym2608");
+    println!("cargo:rerun-if-changed=src/native_genesis_ym2608.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_ym2608.h");
+    // GNU ld scans archives in order; the PC-98 wrapper references the shared
+    // ymfm provider below, which must be linked after this wrapper.
+    cc::Build::new()
+        .cpp(true)
+        .flag_if_supported("/EHsc")
+        .std("c++14")
+        .opt_level(2)
+        .include("native-genesis")
+        .file("src/native_genesis_ym2608.cpp")
+        .warnings(false)
+        .compile("tetorica_native_ym2608");
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")

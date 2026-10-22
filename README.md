@@ -62,8 +62,8 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 **Native (experimental)** を明示的に選べます。切替時は演奏を停止し、
 編集中のプロジェクトを引き継いでページを開き直します。選択だけではデバイスを開かず、
 RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
-Native選択中のModeには、対応するGenesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engineを表示します。他modeへ移るときは先にWeb Audioへ戻してください。
-Genesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engine以外ではNativeを選べません。Web Audioでは全Modeを選べます。
+Native選択中のModeには、対応するGenesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engine／PC-98（YM2608）を表示します。他modeへ移るときは先にWeb Audioへ戻してください。
+Genesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engine／PC-98（YM2608）以外ではNativeを選べません。Web Audioでは全Modeを選べます。
 
 NativeはGenesis modeのYM2612＋Sega PSG、Main／Worker実行、音色・レジスター操作、Keyboard、
 DAC・サンプル・noise、組込みFX・JavaScriptの`liveFx`、Audioモニターと最終出力の録音に対応します。
@@ -86,6 +86,15 @@ Main／Workerのレジスター操作・frame指定の予約書込み・clock変
 PWMも共通ミキサー・FX／liveFx・monitor・録音へ入ります。Stopは予約と保持中の出力を消し、
 clock・routing・cycleを保持します。resetはレジスターも初期化します。
 32X NukedはWeb Audioで使ってください。由来とBSD-3-Clauseライセンスは`src-tauri/native-pwm/`に保存しています。
+
+PC-98 modeでは、Web版と同じymfmのYM2608をNativeで生成します。
+FM 6CH・SSG 3CH・リズム6音・ADPCM-Bを、`fm`／`ssg`／`rhythm`／`adpcm`と
+`await useSoundChip('ym2608')`から扱えます。Main／Worker、Keyboard／Operators、
+PC98サンプラー、共通FX／liveFx／monitor／録音へ接続します。
+標準clockはWeb版と同じ8 MHzで、`await fm.setClock(hz)`で変更できます。
+Stopは発音と予約を止め、音色・clock・8 KiBリズムROM／2 MiB ADPCM-B RAMを保持します。
+適用済みの状態取得は非同期です。追加音源やtimeline専用再生APIはWeb Audioを使ってください。
+原典・ハッシュは`src-tauri/native-ym2608/`に保存し、ymfmは`native-genesis`と共有します。
 
 DX7 modeではMSFAのC++音源を直接使い、16音ポリフォニーで生成します。
 `dx7`／`useSoundChip('dx7')`、音色・SysEx、オペレーター・feedback編集、Keyboard／Operatorsに対応します。

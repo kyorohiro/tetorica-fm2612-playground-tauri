@@ -60,7 +60,8 @@
       "native-snes/LICENSE": "snes-spc-COPYING.txt",
       "native-snes/README.md": "snes-spc-native-README.md",
       "native-snes/": "native-snes/",
-      "native-pwm/LICENSE": "pwm32x-LICENSE.txt"
+      "native-pwm/LICENSE": "pwm32x-LICENSE.txt",
+      "native-genesis/LICENSE": "ymfm-LICENSE.txt"
     }
   }
 }

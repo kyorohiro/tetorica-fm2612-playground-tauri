@@ -37,6 +37,8 @@ mod monitor;
 mod nes;
 #[path = "native_genesis_snes.rs"]
 mod snes;
+#[path = "native_genesis_ym2608.rs"]
+mod ym2608;
 
 #[cfg(test)]
 #[path = "native_genesis_nes_tests.rs"]
@@ -159,6 +161,7 @@ enum Action {
     Gameboy(Arc<gameboy::Prepared>),
     Snes(Arc<snes::Prepared>),
     Huc6280(Arc<huc6280::Prepared>),
+    Ym2608(Arc<ym2608::Prepared>),
     Pwm(Arc<pwm::Prepared>),
 
     RfWrite(u8, u8, bool),
@@ -253,6 +256,9 @@ enum CommandAction {
     },
     Huc6280 {
         message: huc6280::Message,
+    },
+    Ym2608 {
+        message: ym2608::Message,
     },
     Pwm {
         message: pwm::Message,
@@ -354,6 +360,7 @@ impl Command {
             CommandAction::Gameboy { ref message } => Action::Gameboy(message.prepare()?),
             CommandAction::Snes { ref message } => Action::Snes(message.prepare()?),
             CommandAction::Huc6280 { ref message } => Action::Huc6280(message.prepare()?),
+            CommandAction::Ym2608 { ref message } => Action::Ym2608(message.prepare()?),
             CommandAction::Pwm { ref message } => Action::Pwm(message.prepare()?),
 
             CommandAction::Rf5c164Write {
@@ -549,6 +556,7 @@ struct Shared {
     gameboy: Option<gameboy::Shared>,
     snes: Option<snes::Shared>,
     huc6280: Option<huc6280::Shared>,
+    ym2608: Option<ym2608::Shared>,
     pwm: Option<pwm::Shared>,
 
     rf5c164: rf5c164::Shared,
@@ -616,6 +624,7 @@ impl Shared {
             gameboy: (console == Some("gameboy")).then(gameboy::Shared::default),
             snes: (console == Some("snes")).then(snes::Shared::default),
             huc6280: (console == Some("huc6280")).then(huc6280::Shared::default),
+            ym2608: (console == Some("ym2608")).then(ym2608::Shared::default),
             pwm: (console == Some("32x")).then(pwm::Shared::default),
 
             rf5c164: rf5c164::Shared::default(),
@@ -711,6 +720,26 @@ impl Shared {
                 "Native RF5C164 upload limit reached (64 KiB per batch, 8 MiB pending)".into(),
             );
         }
+        // Bound aggregate PC98 uploads before cloning into retained callback
+        // commands. Individual uploads are additionally limited to 64 KiB.
+        let ym2608_upload_bytes: usize = commands
+            .iter()
+            .filter_map(|command| {
+                if let CommandAction::Ym2608 { message } = &command.action {
+                    match &message.method {
+                        ym2608::Method::Rom { data, .. } | ym2608::Method::Memory { data, .. } => {
+                            Some(data.len())
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            })
+            .sum();
+        if ym2608_upload_bytes > ym2608::MAX_BATCH_UPLOAD_BYTES {
+            return Err("Native YM2608 upload batch exceeds 2 MiB RAM plus 8 KiB ROM".into());
+        }
         // Resolve every bank, tag and range before admission or state mutation.
         let mut voices = HashSet::new();
         let mut streams = 0;
@@ -752,6 +781,9 @@ impl Shared {
                 if matches!(&action, Action::Huc6280(_)) && self.huc6280.is_none() {
                     return Err("Native Huc6280 requires huc6280 mode".into());
                 }
+                if matches!(&action, Action::Ym2608(_)) && self.ym2608.is_none() {
+                    return Err("Native YM2608 requires PC98 mode".into());
+                }
 
                 if matches!(&action, Action::Pwm(_)) && self.pwm.is_none() {
                     return Err("Native PWM requires 32X mode".into());
@@ -760,7 +792,8 @@ impl Shared {
                     || self.nes.is_some()
                     || self.gameboy.is_some()
                     || self.snes.is_some()
-                    || self.huc6280.is_some())
+                    || self.huc6280.is_some()
+                    || self.ym2608.is_some())
                     && matches!(
                         &action,
                         Action::Write(..)
@@ -875,6 +908,22 @@ impl Shared {
                 .iter()
                 .filter_map(|(action, _)| {
                     if let Action::Huc6280(command) = action {
+                        Some(command.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Err(error) = chip.retain(&prepared) {
+                self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
+                return Err(error);
+            }
+        }
+        if let Some(chip) = &self.ym2608 {
+            let prepared: Vec<_> = actions
+                .iter()
+                .filter_map(|(action, _)| {
+                    if let Action::Ym2608(command) = action {
                         Some(command.clone())
                     } else {
                         None
@@ -1087,6 +1136,7 @@ impl Shared {
                     | Action::Gameboy(_)
                     | Action::Snes(_)
                     | Action::Huc6280(_)
+                    | Action::Ym2608(_)
                     | Action::Pwm(_)
             ) || event.sequence >= self.nes_cancel_before.load(Ordering::Acquire)
                 && event.owner.is_none_or(|owner| {
@@ -1122,6 +1172,11 @@ impl Shared {
             }
             Action::Huc6280(command) => {
                 if let Some(chip) = &self.huc6280 {
+                    chip.retire(command);
+                }
+            }
+            Action::Ym2608(command) => {
+                if let Some(chip) = &self.ym2608 {
                     chip.retire(command);
                 }
             }
@@ -1227,6 +1282,8 @@ impl Shared {
                 "gameboy"
             } else if self.snes.is_some() {
                 "snes"
+            } else if self.ym2608.is_some() {
+                "pc98"
             } else if self.huc6280.is_some() {
                 "huc6280"
             } else if self.dx7.is_some() {
@@ -1243,11 +1300,15 @@ impl Shared {
             gameboy_clock: self.gameboy.as_ref().map(gameboy::Shared::clock),
             snes_clock: self.snes.as_ref().map(snes::Shared::clock),
             huc6280_clock: self.huc6280.as_ref().map(huc6280::Shared::clock),
+            ym2608_clock: self.ym2608.as_ref().map(ym2608::Shared::clock),
             pwm_clock: self.pwm.as_ref().map(pwm::Shared::clock),
             sample_rate: self.rate,
             frame: self.frame.load(Ordering::Acquire),
-            ym_clock: 7_670_454,
-            psg_clock: 3_579_545,
+            ym_clock: self
+                .ym2608
+                .as_ref()
+                .map_or(7_670_454, ym2608::Shared::clock),
+            psg_clock: if self.ym2608.is_some() { 0 } else { 3_579_545 },
             running: !self.failed.load(Ordering::Acquire),
             queued: self.pending.load(Ordering::Acquire),
             late_commands: self.late.load(Ordering::Relaxed),
@@ -1315,6 +1376,7 @@ struct Renderer {
     gameboy: Option<gameboy::Renderer>,
     snes: Option<snes::Renderer>,
     huc6280: Option<huc6280::Renderer>,
+    ym2608: Option<ym2608::Renderer>,
     pwm: Option<pwm::Renderer>,
 
     dx7_master: f32,
@@ -1396,6 +1458,11 @@ impl Renderer {
             },
             huc6280: if console == Some("huc6280") {
                 Some(huc6280::Renderer::new(rate)?)
+            } else {
+                None
+            },
+            ym2608: if console == Some("ym2608") {
+                Some(ym2608::Renderer::new(rate)?)
             } else {
                 None
             },
@@ -1508,6 +1575,9 @@ impl Renderer {
             if let (Some(chip), Some(state)) = (&mut self.huc6280, &shared.huc6280) {
                 chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
+            if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
+                chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
+            }
             if let (Some(chip), Some(state)) = (&mut self.pwm, &shared.pwm) {
                 chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
@@ -1568,6 +1638,9 @@ impl Renderer {
             chip.publish(state);
         }
         if let (Some(chip), Some(state)) = (&self.huc6280, &shared.huc6280) {
+            chip.publish(state);
+        }
+        if let (Some(chip), Some(state)) = (&self.ym2608, &shared.ym2608) {
             chip.publish(state);
         }
         if let (Some(chip), Some(state)) = (&self.pwm, &shared.pwm) {
@@ -1637,6 +1710,15 @@ impl Renderer {
                     chip.apply(&command, owner, state);
                 }
                 shared.retire_action(Action::Huc6280(command));
+            }
+            Action::Ym2608(command) => {
+                if command.stops() {
+                    shared.cancel_nes_before(owner, sequence.saturating_add(1));
+                }
+                if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
+                    chip.apply(&command, owner, state);
+                }
+                shared.retire_action(Action::Ym2608(command));
             }
             Action::Pwm(command) => {
                 if command.stops() {
@@ -1827,7 +1909,8 @@ impl Renderer {
                             || self.nes.is_some()
                             || self.gameboy.is_some()
                             || self.snes.is_some()
-                            || self.huc6280.is_some() =>
+                            || self.huc6280.is_some()
+                            || self.ym2608.is_some() =>
                     {
                         self.dx7_master_target = gains[4];
                         self.dx7_master_ramp = (shared.rate / 200).max(1);
@@ -1847,6 +1930,9 @@ impl Renderer {
                             chip.stop(state);
                         }
                         if let (Some(chip), Some(state)) = (&mut self.huc6280, &shared.huc6280) {
+                            chip.stop(state);
+                        }
+                        if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
                             chip.stop(state);
                         }
                         if let Some(rf) = &mut self.rf5c164 {
@@ -1941,6 +2027,7 @@ impl Renderer {
                     Action::Gameboy(command) => command.starts(),
                     Action::Snes(command) => command.starts(),
                     Action::Huc6280(command) => command.starts(),
+                    Action::Ym2608(command) => command.starts(),
                     Action::Pwm(command) => command.starts(),
                     Action::Mix(_)
                     | Action::RfMix(_)
@@ -1983,6 +2070,9 @@ impl Renderer {
         if let Some(chip) = &mut self.huc6280 {
             chip.mix(&mut pcm);
         }
+        if let Some(chip) = &mut self.ym2608 {
+            chip.mix(&mut pcm);
+        }
         if let Some(rf) = &mut self.rf5c164 {
             rf.mix(&mut pcm);
         }
@@ -2010,6 +2100,7 @@ impl Renderer {
             || self.gameboy.is_some()
             || self.snes.is_some()
             || self.huc6280.is_some()
+            || self.ym2608.is_some()
         {
             if self.dx7_master_ramp > 0 {
                 self.dx7_master +=
@@ -2047,6 +2138,9 @@ impl Renderer {
                     chip.stop(state);
                 }
                 if let (Some(chip), Some(state)) = (&mut self.huc6280, &shared.huc6280) {
+                    chip.stop(state);
+                }
+                if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
                     chip.stop(state);
                 }
                 if let (Some(chip), Some(state)) = (&mut self.pwm, &shared.pwm) {
@@ -2116,6 +2210,8 @@ pub struct Status {
     #[serde(skip_serializing_if = "Option::is_none")]
     huc6280_clock: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    ym2608_clock: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pwm_clock: Option<u32>,
     sample_rate: u32,
     frame: u64,
@@ -2161,7 +2257,8 @@ impl NativeGenesis {
             "gameboy" => (false,false,false,Some("gameboy")),
             "snes" => (false,false,false,Some("snes")),
             "pc-engine" | "huc6280" => (false,false,false,Some("huc6280")),
-            _ => return Err("Native output supports Genesis, Mega CD, 32X, DX7, NES, Game Boy, SNES and PC Engine modes".into()),
+            "pc98" | "ym2608" => (false,false,false,Some("ym2608")),
+            _ => return Err("Native output supports Genesis, Mega CD, 32X, DX7, NES, Game Boy, SNES, PC Engine and PC98 modes".into()),
         };
         self.replace_running(|session| Self::launch_config(session, mega_cd, dx7, nes, console))
     }
@@ -2329,6 +2426,8 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
             Some("gameboy")
         } else if shared.snes.is_some() {
             Some("snes")
+        } else if shared.ym2608.is_some() {
+            Some("ym2608")
         } else if shared.huc6280.is_some() {
             Some("huc6280")
         } else {
@@ -2472,6 +2571,30 @@ pub async fn native_genesis_huc6280_status(
                 .huc6280
                 .as_ref()
                 .ok_or("Native huc6280 requires huc6280 mode")?;
+            if let Some(id) = after {
+                chip.wait_applied(id)?;
+            }
+            chip.status(shared.frame.load(Ordering::Acquire))
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+#[tauri::command]
+pub async fn native_genesis_ym2608_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    after: Option<u64>,
+) -> Result<ym2608::Status, String> {
+    crate::allowed(&window)?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.with_session(session, |shared| {
+            let chip = shared
+                .ym2608
+                .as_ref()
+                .ok_or("Native ym2608 requires ym2608 mode")?;
             if let Some(id) = after {
                 chip.wait_applied(id)?;
             }
