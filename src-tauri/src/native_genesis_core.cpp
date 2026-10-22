@@ -10,6 +10,18 @@ void ym2612_reset(void *);
 void ym2612_write(void *, uint32_t, uint8_t);
 uint32_t ym2612_sample_rate(void *, uint32_t);
 void ym2612_generate(void *, float *, float *, uint32_t);
+uint8_t ym2612_read(void *, uint32_t);
+uint8_t ym2612_read_status(void *);
+uint8_t ym2612_get_irq(void *);
+void *tetorica_nuked_create();
+void tetorica_nuked_destroy(void *);
+void tetorica_nuked_reset(void *);
+void tetorica_nuked_write(void *, uint32_t, uint8_t);
+uint32_t tetorica_nuked_sample_rate(void *, uint32_t);
+void tetorica_nuked_generate(void *, float *, float *, uint32_t);
+uint8_t tetorica_nuked_read(void *, uint32_t);
+uint8_t tetorica_nuked_read_status(void *);
+uint8_t tetorica_nuked_get_irq(void *);
 void *segapsg_create(uint32_t, uint32_t);
 void segapsg_destroy(void *);
 void segapsg_reset(void *);
@@ -21,7 +33,22 @@ void segapsg_generate(void *, float *, float *, uint32_t);
 namespace {
 constexpr uint32_t YM_CLOCK = 7670454;
 constexpr uint32_t PSG_CLOCK = 3579545;
+struct FmApi {
+    void *(*create)();
+    void (*destroy)(void *);
+    void (*reset)(void *);
+    void (*write)(void *, uint32_t, uint8_t);
+    uint32_t (*sample_rate)(void *, uint32_t);
+    void (*generate)(void *, float *, float *, uint32_t);
+    uint8_t (*read)(void *, uint32_t);
+    uint8_t (*read_status)(void *);
+    uint8_t (*get_irq)(void *);
+};
+const FmApi YMFM{ym2612_create, ym2612_destroy, ym2612_reset, ym2612_write, ym2612_sample_rate, ym2612_generate, ym2612_read, ym2612_read_status, ym2612_get_irq};
+const FmApi NUKED{tetorica_nuked_create, tetorica_nuked_destroy, tetorica_nuked_reset, tetorica_nuked_write, tetorica_nuked_sample_rate, tetorica_nuked_generate, tetorica_nuked_read, tetorica_nuked_read_status, tetorica_nuked_get_irq};
 struct NativeGenesis {
+    const bool nuked;
+    const FmApi &fm;
     void *ym = nullptr;
     void *psg = nullptr;
     uint32_t output_rate;
@@ -29,6 +56,10 @@ struct NativeGenesis {
     uint64_t remainder = 0;
     float fm_left = 0, fm_right = 0, psg_left = 0, psg_right = 0;
     float idle_left = 0, idle_right = 0;
+    double nuked_left = 0, nuked_right = 0, nuked_psg_left = 0, nuked_psg_right = 0;
+    std::array<double, 5> nuked_current{{1, 1, 1, 1, 1}}, nuked_target{{1, 1, 1, 1, 1}};
+    std::array<uint32_t, 3> nuked_ramp{};
+    bool voices_stopped = false;
     std::array<float, 5> current{{1, 1, 1, 1, 1}};
     std::array<float, 5> target{{1, 1, 1, 1, 1}};
     uint32_t ramp = 0;
@@ -39,24 +70,29 @@ struct NativeGenesis {
     std::array<uint8_t, 4> attenuation{{15,15,15,15}};
     uint8_t psg_latch = 0, noise = 0, stereo = 0xff;
 
-    explicit NativeGenesis(uint32_t rate) : output_rate(rate) {
-        ym = ym2612_create();
-        chip_rate = ym2612_sample_rate(ym, YM_CLOCK);
+    explicit NativeGenesis(uint32_t rate, bool use_nuked = false) : nuked(use_nuked), fm(use_nuked ? NUKED : YMFM), output_rate(rate) {
+        ym = fm.create();
+        if (!ym) throw std::bad_alloc();
+        chip_rate = fm.sample_rate(ym, YM_CLOCK);
         try { psg = segapsg_create(chip_rate, PSG_CLOCK); }
-        catch (...) { ym2612_destroy(ym); ym = nullptr; throw; }
-        // Match the existing Worklet's reset-idle centering exactly.
-        ym2612_generate(ym, &idle_left, &idle_right, 1);
+        catch (...) { fm.destroy(ym); ym = nullptr; throw; }
+        if (!psg) { fm.destroy(ym); ym = nullptr; throw std::bad_alloc(); }
+        // ymfm keeps its existing centering. The deployed Nuked Worklet emits
+        // the YM2612 ladder DC unchanged and does not consume a calibration frame.
+        if (!nuked) fm.generate(ym, &idle_left, &idle_right, 1);
         reset();
     }
     ~NativeGenesis() {
-        if (ym) ym2612_destroy(ym);
+        if (ym) fm.destroy(ym);
         if (psg) segapsg_destroy(psg);
     }
     void reset() {
-        ym2612_reset(ym);
+        fm.reset(ym);
         segapsg_reset(psg);
         remainder = 0;
         fm_left = fm_right = psg_left = psg_right = 0;
+        nuked_left = nuked_right = nuked_psg_left = nuked_psg_right = 0;
+        voices_stopped = false;
         registers = {};
         written = {};
         frequency_latch = {};
@@ -66,6 +102,9 @@ struct NativeGenesis {
         stereo = 0xff;
     }
     void write(uint8_t port, uint8_t reg, uint8_t value) {
+        if (port > 1) return;
+        if (nuked && port == 0 && ((reg == 0x28 && (value & 0xf0) && (value & 3) < 3) || (reg == 0x2b && (value & 0x80)) ||
+            (reg == 0x2a && (registers[0][0x2b] & 0x80)) || (reg == 0x27 && (value & 0xc1) == 0x81))) voices_stopped = false;
         if ((reg & 0xf0) == 0xa0) {
             if ((reg & 3) != 3) {
                 // ymfm shares normal/special high-frequency latches across
@@ -82,12 +121,13 @@ struct NativeGenesis {
             registers[port][reg] = value;
             written[port][reg] = true;
         }
-        ym2612_write(ym, port * 2, reg);
-        ym2612_write(ym, port * 2 + 1, value);
+        fm.write(ym, port * 2, reg);
+        fm.write(ym, port * 2 + 1, value);
     }
     void psg_write(uint8_t value) {
         if (value & 0x80) psg_latch = value & 0x70;
         const uint8_t channel = psg_latch >> 5;
+        if (nuked && (psg_latch & 0x10) && (value & 15) != 15) voices_stopped = false;
         if (psg_latch & 0x10) attenuation[channel] = value & 15;
         if (!(psg_latch & 0x10)) {
             if (channel == 3) noise = value & 7;
@@ -137,8 +177,35 @@ struct NativeGenesis {
         psg_write(0x80 | (saved_periods[0] & 15));
         stereo = saved_stereo;
         segapsg_set_stereo(psg, stereo);
+        if (nuked) voices_stopped = true;
+    }
+    void sample_nuked(float *output) {
+        for (size_t source = 0; source < nuked_ramp.size(); ++source) {
+            auto &remaining = nuked_ramp[source];
+            if (!remaining) continue;
+            const size_t begin = source * 2, end = std::min(begin + 2, nuked_current.size());
+            for (size_t i = begin; i < end; ++i)
+                nuked_current[i] += (nuked_target[i] - nuked_current[i]) / remaining;
+            --remaining;
+        }
+        remainder += chip_rate;
+        const uint32_t count = static_cast<uint32_t>(remainder / output_rate);
+        remainder -= static_cast<uint64_t>(count) * output_rate;
+        if (count) {
+            double fl = 0, fr = 0, pl = 0, pr = 0;
+            for (uint32_t i = 0; i < count; ++i) {
+                float l, r; fm.generate(ym, &l, &r, 1);
+                fl += double(l) * nuked_current[0]; fr += double(r) * nuked_current[1];
+                segapsg_generate(psg, &l, &r, 1); pl += l; pr += r;
+            }
+            nuked_left = fl / count; nuked_right = fr / count;
+            nuked_psg_left = pl / count; nuked_psg_right = pr / count;
+        }
+        output[0] = voices_stopped ? 0 : float(std::max(-1.0, std::min(1.0, nuked_left * .9 + nuked_psg_left * .35 * nuked_current[2])));
+        output[1] = voices_stopped ? 0 : float(std::max(-1.0, std::min(1.0, nuked_right * .9 + nuked_psg_right * .35 * nuked_current[3])));
     }
     void sample(float *output) {
+        if (nuked) { sample_nuked(output); return; }
         if (ramp) {
             for (size_t i = 0; i < current.size(); ++i)
                 current[i] += (target[i] - current[i]) / ramp;
@@ -151,7 +218,7 @@ struct NativeGenesis {
             float fl = 0, fr = 0, pl = 0, pr = 0;
             for (uint32_t i = 0; i < count; ++i) {
                 float left, right;
-                ym2612_generate(ym, &left, &right, 1);
+                fm.generate(ym, &left, &right, 1);
                 fl += (left - idle_left) * current[0];
                 fr += (right - idle_right) * current[1];
                 segapsg_generate(psg, &left, &right, 1);
@@ -172,6 +239,10 @@ struct NativeGenesis {
 extern "C" {
 void *native_genesis_create(uint32_t rate) {
     try { return new NativeGenesis(rate); } catch (...) { return nullptr; }
+}
+void *native_genesis_create_nuked(uint32_t rate) {
+    if (rate < 8000 || rate > 384000) return nullptr;
+    try { return new NativeGenesis(rate, true); } catch (...) { return nullptr; }
 }
 void native_genesis_destroy(void *ptr) { delete static_cast<NativeGenesis *>(ptr); }
 void native_genesis_reset(void *ptr) { static_cast<NativeGenesis *>(ptr)->reset(); }
@@ -195,9 +266,26 @@ void native_genesis_psg_stereo(void *ptr, uint8_t value) {
 }
 void native_genesis_mix(void *ptr, const float *gains) {
     auto *core = static_cast<NativeGenesis *>(ptr);
-    std::copy(gains, gains + 5, core->target.begin());
-    core->ramp = std::max(1u, core->output_rate / 200); // 5 ms parameter ramp.
+    if (core->nuked) {
+        // The combined transport sends all gains for a source-specific edit.
+        // Preserve ramps belonging to sources whose target did not change.
+        for (size_t source = 0; source < core->nuked_ramp.size(); ++source) {
+            const size_t begin = source * 2, end = std::min(begin + 2, core->nuked_target.size());
+            bool changed = false;
+            for (size_t i = begin; i < end; ++i) changed |= core->nuked_target[i] != gains[i];
+            if (changed) {
+                for (size_t i = begin; i < end; ++i) core->nuked_target[i] = gains[i];
+                core->nuked_ramp[source] = std::max(1u, (core->output_rate + 100) / 200);
+            }
+        }
+    } else {
+        std::copy(gains, gains + 5, core->target.begin());
+        core->ramp = std::max(1u, core->output_rate / 200); // Existing ymfm 5 ms ramp.
+    }
 }
-float native_genesis_master(void *ptr) { return static_cast<NativeGenesis *>(ptr)->current[4]; }
+float native_genesis_master(void *ptr) { auto *core = static_cast<NativeGenesis *>(ptr); return core->nuked ? float(core->nuked_current[4]) : core->current[4]; }
+uint8_t native_genesis_read(void *ptr, uint32_t port) { auto *core=static_cast<NativeGenesis *>(ptr); return core->fm.read(core->ym, port); }
+uint8_t native_genesis_read_status(void *ptr) { auto *core=static_cast<NativeGenesis *>(ptr); return core->fm.read_status(core->ym); }
+uint8_t native_genesis_get_irq(void *ptr) { auto *core=static_cast<NativeGenesis *>(ptr); return core->fm.get_irq(core->ym); }
 void native_genesis_sample(void *ptr, float *output) { static_cast<NativeGenesis *>(ptr)->sample(output); }
 }

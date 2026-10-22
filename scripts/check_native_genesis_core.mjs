@@ -13,10 +13,15 @@ const directory = mkdtempSync(join(tmpdir(), 'tetorica-native-genesis-'));
 try {
   const native = join(repo, 'src-tauri/native-genesis');
   const executable = join(directory, 'render');
-  const files = ['src/native_genesis_fixture.cpp', 'src/native_genesis_core.cpp',
+  const nuked = join(repo, 'src-tauri/native-nuked/snapshot/third_party/nuked-opn2');
+  const provider = join(directory, 'nuked.o');
+  const symbols = ['Reset', 'SetChipType', 'Clock', 'Write', 'SetTestPin', 'ReadTestPin', 'ReadIRQPin', 'Read'];
+  const c = spawnSync(process.env.CC ?? 'cc', ['-std=c11', '-O2', '-fwrapv', ...symbols.map(name => `-DOPN2_${name}=tetorica_nuked_OPN2_${name}`), '-I', nuked, '-c', join(nuked, 'ym3438.c'), '-o', provider], {encoding: 'utf8'});
+  assert.equal(c.status, 0, c.stderr);
+  const files = ['src/native_genesis_fixture.cpp', 'src/native_genesis_core.cpp', 'src/native_genesis_nuked.cpp',
     ...['ym2612_wasm.cpp', 'segapsg_wasm.cpp', 'ymfm_opn.cpp', 'ymfm_adpcm.cpp', 'ymfm_ssg.cpp', 'segapsg.cpp'].map(name => `native-genesis/${name}`)];
-  const compiled = spawnSync(process.env.CXX ?? 'c++', ['-std=c++14', '-O2', '-I', native,
-    ...files.map(file => join(repo, 'src-tauri', file)), '-o', executable], {encoding: 'utf8'});
+  const compiled = spawnSync(process.env.CXX ?? 'c++', ['-std=c++14', '-O2', '-I', native, '-I', nuked,
+    ...files.map(file => join(repo, 'src-tauri', file)), provider, '-o', executable], {encoding: 'utf8'});
   assert.equal(compiled.status, 0, compiled.stderr);
   const [fmFactory, psgFactory, fmApi, psgApi] = await Promise.all([
     import(pathToFileURL(join(source, 'docs/generated/ym2612_wasm.js'))),

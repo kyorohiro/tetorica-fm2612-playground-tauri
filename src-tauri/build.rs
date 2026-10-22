@@ -9,6 +9,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_fx.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_fx.h");
     println!("cargo:rerun-if-changed=src/native_genesis_core.cpp");
+    println!("cargo:rerun-if-changed=native-nuked");
+    println!("cargo:rerun-if-changed=src/native_genesis_nuked.cpp");
     println!("cargo:rerun-if-changed=native-megacd");
     println!("cargo:rerun-if-changed=src/native_genesis_rf5c164.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_rf5c164.h");
@@ -152,6 +154,33 @@ fn main() {
         .file("native-genesis/segapsg.cpp")
         .warnings(false)
         .compile("tetorica_native_genesis");
+    // GNU ld sees the common-core consumer, then the prefixed adapter, then
+    // its one C provider. Keep these in dependency order without duplicate FM.
+    cc::Build::new()
+        .cpp(true)
+        .flag_if_supported("/EHsc")
+        .std("c++14")
+        .opt_level(2)
+        .include("native-nuked/snapshot/third_party/nuked-opn2")
+        .file("src/native_genesis_nuked.cpp")
+        .warnings(false)
+        .compile("tetorica_native_nuked");
+    cc::Build::new()
+        .std("c11")
+        .opt_level(2)
+        .flag_if_supported("-fwrapv")
+        .define("OPN2_Reset", "tetorica_nuked_OPN2_Reset")
+        .define("OPN2_SetChipType", "tetorica_nuked_OPN2_SetChipType")
+        .define("OPN2_Clock", "tetorica_nuked_OPN2_Clock")
+        .define("OPN2_Write", "tetorica_nuked_OPN2_Write")
+        .define("OPN2_SetTestPin", "tetorica_nuked_OPN2_SetTestPin")
+        .define("OPN2_ReadTestPin", "tetorica_nuked_OPN2_ReadTestPin")
+        .define("OPN2_ReadIRQPin", "tetorica_nuked_OPN2_ReadIRQPin")
+        .define("OPN2_Read", "tetorica_nuked_OPN2_Read")
+        .include("native-nuked/snapshot/third_party/nuked-opn2")
+        .file("native-nuked/snapshot/third_party/nuked-opn2/ym3438.c")
+        .warnings(false)
+        .compile("tetorica_native_nuked_opn2");
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")

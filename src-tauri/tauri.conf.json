@@ -47,6 +47,8 @@
     ],
     "resources": {
       "../audio-sidecar-bundle/": "audio-sidecar/",
+      "../native-source-bundle/": "native-sources/",
+      "native-nuked/": "native-nuked/",
       "native-livefx/quickjs-ng/LICENSE": "quickjs-ng-LICENSE.txt",
       "native-megacd/LICENSE": "rf5c164-LICENSE.txt",
       "native-dx7/COPYING": "msfa-dx7-LICENSE.txt",

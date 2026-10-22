@@ -60,6 +60,9 @@ mod noise;
 #[cfg(test)]
 #[path = "native_genesis_noise_tests.rs"]
 mod noise_tests;
+#[cfg(test)]
+#[path = "native_genesis_nuked_tests.rs"]
+mod nuked_tests;
 #[path = "native_genesis_pwm.rs"]
 mod pwm;
 #[cfg(test)]
@@ -80,6 +83,7 @@ static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 
 extern "C" {
     fn native_genesis_create(rate: u32) -> *mut c_void;
+    fn native_genesis_create_nuked(rate: u32) -> *mut c_void;
     fn native_genesis_destroy(core: *mut c_void);
     fn native_genesis_reset(core: *mut c_void);
     fn native_genesis_stop_voices(core: *mut c_void);
@@ -99,10 +103,22 @@ struct Core(*mut c_void);
 unsafe impl Send for Core {}
 impl Core {
     fn new(rate: u32) -> Result<Self, String> {
+        Self::new_engine(rate, false)
+    }
+    fn new_nuked(rate: u32) -> Result<Self, String> {
+        Self::new_engine(rate, true)
+    }
+    fn new_engine(rate: u32, nuked: bool) -> Result<Self, String> {
         if !(8000..=384000).contains(&rate) {
             return Err("Unsupported native sample rate".into());
         }
-        let ptr = unsafe { native_genesis_create(rate) };
+        let ptr = unsafe {
+            if nuked {
+                native_genesis_create_nuked(rate)
+            } else {
+                native_genesis_create(rate)
+            }
+        };
         if ptr.is_null() {
             Err("Could not allocate native Genesis sound cores".into())
         } else {
@@ -593,6 +609,8 @@ impl Command {
 
 struct Shared {
     mega_cd: bool,
+    nuked: bool,
+    genesis_engine: Option<&'static str>,
     dx7: Option<dx7::Shared>,
     nes: Option<nes::Shared>,
     gameboy: Option<gameboy::Shared>,
@@ -665,8 +683,19 @@ impl Shared {
         nes: bool,
         console: Option<&str>,
     ) -> Self {
+        let nuked = matches!(console, Some("32x-nuked" | "genesis-nuked"));
+        let genesis_engine = if !dx7
+            && !nes
+            && console.is_none_or(|mode| matches!(mode, "32x" | "32x-nuked" | "genesis-nuked"))
+        {
+            Some(if nuked { "nuked" } else { "ymfm" })
+        } else {
+            None
+        };
         Self {
             mega_cd,
+            nuked,
+            genesis_engine,
             dx7: dx7.then(dx7::Shared::default),
             nes: nes.then(nes::Shared::default),
             gameboy: (console == Some("gameboy")).then(gameboy::Shared::default),
@@ -684,7 +713,7 @@ impl Shared {
             },
             msx: matches!(console, Some("msx" | "msx-audio")).then(msx::Shared::default),
             opl: console.and_then(opl::Chip::from_mode).map(opl::Shared::new),
-            pwm: (console == Some("32x")).then(pwm::Shared::default),
+            pwm: matches!(console, Some("32x" | "32x-nuked")).then(pwm::Shared::default),
 
             rf5c164: rf5c164::Shared::default(),
             rf_memory: Mutex::new(Vec::new()),
@@ -1588,8 +1617,13 @@ impl Shared {
     fn status(&self) -> Status {
         Status {
             session: self.session,
+            engine: self.genesis_engine,
             mode: if self.pwm.is_some() {
-                "32x"
+                if self.nuked {
+                    "genesis-full-nuked"
+                } else {
+                    "32x"
+                }
             } else if self.gameboy.is_some() {
                 "gameboy"
             } else if self.snes.is_some() {
@@ -1618,6 +1652,8 @@ impl Shared {
                 "dx7"
             } else if self.nes.is_some() {
                 "nes"
+            } else if self.nuked {
+                "genesis-nuked"
             } else if self.mega_cd {
                 "mega-cd"
             } else {
@@ -1800,6 +1836,9 @@ struct Renderer {
     raw_dac_owner: Option<Owner>,
     raw_dac_enabled: bool,
     fm_owners: [Option<Owner>; 6],
+    fm_key_masks: [u8; 6],
+    fm_mode_register: u8,
+    csm_owner: Option<Owner>,
     psg_owners: [Option<Owner>; 4],
     psg_latch: u8,
     invalidation: u64,
@@ -1838,8 +1877,14 @@ impl Renderer {
         console: Option<&str>,
     ) -> Result<Self, String> {
         Ok(Self {
-            core: if dx7 || nes || console.is_some_and(|mode| mode != "32x") {
+            core: if dx7
+                || nes
+                || console
+                    .is_some_and(|mode| !matches!(mode, "32x" | "32x-nuked" | "genesis-nuked"))
+            {
                 Core::empty()
+            } else if matches!(console, Some("32x-nuked" | "genesis-nuked")) {
+                Core::new_nuked(rate)?
             } else {
                 Core::new(rate)?
             },
@@ -1903,7 +1948,7 @@ impl Renderer {
             } else {
                 None
             },
-            pwm: if console == Some("32x") {
+            pwm: if matches!(console, Some("32x" | "32x-nuked")) {
                 Some(pwm::Renderer::new(rate)?)
             } else {
                 None
@@ -1926,6 +1971,9 @@ impl Renderer {
             raw_dac_owner: None,
             raw_dac_enabled: false,
             fm_owners: [None; 6],
+            fm_key_masks: [0; 6],
+            fm_mode_register: 0,
+            csm_owner: None,
             psg_owners: [None; 4],
             psg_latch: 0,
             invalidation: 0,
@@ -1976,6 +2024,20 @@ impl Renderer {
                 keep
             });
             shared.pending.fetch_sub(removed, Ordering::AcqRel);
+            if self.csm_owner.is_some() && !shared.valid_owner(self.csm_owner) {
+                // CSM can sound CH3 from Timer A without register 0x28. Stop
+                // that source independently of a still-valid explicit/manual
+                // CH3 key gate, preserving other voices and Timer B.
+                self.fm_mode_register &= !0x81;
+                self.core
+                    .apply(Action::Write(0, 0x27, self.fm_mode_register));
+                self.csm_owner = None;
+                if self.fm_key_masks[2] == 0 || !shared.valid_owner(self.fm_owners[2]) {
+                    self.core.apply(Action::Write(0, 0x28, 2));
+                    self.fm_key_masks[2] = 0;
+                    self.fm_owners[2] = None;
+                }
+            }
             for channel in 0..6 {
                 if self.fm_owners[channel].is_some() && !shared.valid_owner(self.fm_owners[channel])
                 {
@@ -1985,6 +2047,7 @@ impl Renderer {
                         (channel % 3 + if channel >= 3 { 4 } else { 0 }) as u8,
                     ));
                     self.fm_owners[channel] = None;
+                    self.fm_key_masks[channel] = 0;
                 }
             }
             for channel in 0..4 {
@@ -2415,12 +2478,24 @@ impl Renderer {
                         if *port == 0 && *reg == 0x2a && self.raw_dac_enabled {
                             self.raw_dac_owner = owner;
                         }
+                        if *port == 0 && *reg == 0x27 {
+                            self.fm_mode_register = *value;
+                            // Nuked selects CSM only for mode 2; mode 3 is CH3
+                            // special without CSM in the pinned OPN2 core.
+                            let csm = if shared.nuked {
+                                value & 0xc1 == 0x81
+                            } else {
+                                value & 0x81 == 0x81
+                            };
+                            self.csm_owner = if csm { owner } else { None };
+                        }
                         if *port == 0 && *reg == 0x28 {
                             let low = (value & 3) as usize;
                             if low < 3 {
                                 let channel = low + if value & 4 != 0 { 3 } else { 0 };
                                 self.fm_owners[channel] =
                                     if value & 0xf0 != 0 { owner } else { None };
+                                self.fm_key_masks[channel] = value >> 4;
                             }
                         }
                     }
@@ -2502,6 +2577,9 @@ impl Renderer {
                         }
                         self.pan_register = 0;
                         self.fm_owners = [None; 6];
+                        self.fm_key_masks = [0; 6];
+                        self.fm_mode_register = 0;
+                        self.csm_owner = None;
                         self.psg_owners = [None; 4];
                         self.psg_latch = 0;
                     }
@@ -2761,6 +2839,9 @@ impl Renderer {
                 self.fx.stop();
                 self.livefx.end_stop();
                 self.fm_owners = [None; 6];
+                self.fm_key_masks = [0; 6];
+                self.fm_mode_register &= 0xc0;
+                self.csm_owner = None;
                 self.psg_owners = [None; 4];
                 self.idle = true;
                 shared.stopped_epoch.store(self.epoch, Ordering::Release);
@@ -2807,6 +2888,8 @@ impl Renderer {
 pub struct Status {
     session: u64,
     mode: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    engine: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     rf5c164_clock: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2866,10 +2949,12 @@ impl NativeGenesis {
     fn start(&self) -> Result<Status, String> {
         self.replace_running(Self::launch)
     }
-    fn start_mode(&self, mode: Option<&str>) -> Result<Status, String> {
-        let (mega_cd, dx7, nes, console) = match mode.unwrap_or("genesis") {
+    fn mode_config(mode: Option<&str>) -> Result<(bool, bool, bool, Option<&'static str>), String> {
+        Ok(match mode.unwrap_or("genesis") {
             "genesis" => (false, false, false, None),
             "32x" => (true, false, false, Some("32x")),
+            "genesis-full-nuked" => (true,false,false,Some("32x-nuked")),
+            "genesis-nuked" => (false,false,false,Some("genesis-nuked")),
             "mega-cd" => (true, false, false, None),
             "dx7" => (false, true, false, None),
             "nes" => (false, false, true, None),
@@ -2888,8 +2973,11 @@ impl NativeGenesis {
             "ym3526" => (false,false,false,Some("ym3526")),
             "ym3812" => (false,false,false,Some("ym3812")),
             "ymf262" => (false,false,false,Some("ymf262")),
-            _ => return Err("Native output supports Genesis, Mega CD, 32X, DX7, NES, Game Boy, SNES, PC Engine, PC98, PC98-26, Neo Geo, X68000, Master System, Game Gear, MSX, MSX Audio and DOS PC modes".into()),
-        };
+            _ => return Err("Native output supports Genesis, Mega CD, 32X, 32X Nuked, Genesis Nuked, DX7, NES, Game Boy, SNES, PC Engine, PC98, PC98-26, Neo Geo, X68000, Master System, Game Gear, MSX, MSX Audio and DOS PC modes".into()),
+        })
+    }
+    fn start_mode(&self, mode: Option<&str>) -> Result<Status, String> {
+        let (mega_cd, dx7, nes, console) = Self::mode_config(mode)?;
         self.replace_running(|session| Self::launch_config(session, mega_cd, dx7, nes, console))
     }
     fn replace_running(
@@ -3051,7 +3139,9 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
         shared.dx7.is_some(),
         shared.nes.is_some(),
         if shared.pwm.is_some() {
-            Some("32x")
+            Some(if shared.nuked { "32x-nuked" } else { "32x" })
+        } else if shared.nuked {
+            Some("genesis-nuked")
         } else if shared.gameboy.is_some() {
             Some("gameboy")
         } else if shared.snes.is_some() {

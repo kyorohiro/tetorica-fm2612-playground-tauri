@@ -62,8 +62,8 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 **Native (experimental)** を明示的に選べます。切替時は演奏を停止し、
 編集中のプロジェクトを引き継いでページを開き直します。選択だけではデバイスを開かず、
 RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
-Native選択中のModeには、対応するGenesis／Mega CD／32X／NES＋FDS／DX7／Game Boy／SNES／PC Engine／PC-98（YM2203／YM2608）／Neo Geo／Neo Geo（YM2610B）／X68000／Game Gear／Master System／MSX／MSX Audio／DOS PC（OPL／OPL2／OPL3）を表示します。他modeへ移るときは先にWeb Audioへ戻してください。
-これらのmodeでNativeを選べます。Web Audioでは全Modeを選べます。
+Native選択中も、Genesis／Mega CD／32X／32X Nuked／NES＋FDS／DX7／Game Boy／SNES／PC Engine／PC-98（YM2203／YM2608）／Neo Geo／Neo Geo（YM2610B）／X68000／Game Gear／Master System／MSX／MSX Audio／DOS PC（OPL／OPL2／OPL3）の全標準Modeを選べます。
+旧`genesis-nuked` URLでもNativeを選べます。Web Audioでは従来どおり全Modeを選べます。
 
 NativeはGenesis modeのYM2612＋Sega PSG、Main／Worker実行、音色・レジスター操作、Keyboard、
 DAC・サンプル・noise、組込みFX・JavaScriptの`liveFx`、Audioモニターと最終出力の録音に対応します。
@@ -85,7 +85,15 @@ Browser／npmのWASMと同じC++コアを使い、`pwm`／`await useSoundChip('p
 Main／Workerのレジスター操作・frame指定の予約書込み・clock変更に対応します。
 PWMも共通ミキサー・FX／liveFx・monitor・録音へ入ります。Stopは予約と保持中の出力を消し、
 clock・routing・cycleを保持します。resetはレジスターも初期化します。
-32X NukedはWeb Audioで使ってください。由来とBSD-3-Clauseライセンスは`src-tauri/native-pwm/`に保存しています。
+PWMの由来とBSD-3-Clauseライセンスは`src-tauri/native-pwm/`に保存しています。
+
+32X NukedはYM2612部分をBrowser版と同じNuked OPN2でNative生成し、PSG／RF5C164／PWMは32Xと共通です。
+旧Genesis Nuked URLではNuked OPN2＋PSGを使います。通常のGenesis／32Xは引き続きymfmです。
+Main／Worker、Keyboard／Operators、DAC、共通ミキサー・FX／liveFx・monitor・録音へ接続します。
+レジスターのaddress／data書込み後に24内部clockを進めるWASM版の挙動を維持します。
+NukedはLGPL-2.1-or-laterで、由来・対応ソース・ライセンスを`src-tauri/native-nuked/`へ保存します。
+配布アプリには`native-sources/application-sources.zip`も同梱し、静的リンクしたNuked／SNESを
+変更して再ビルドできるようにします。手順と収録範囲は[NATIVE-SOURCES.md](NATIVE-SOURCES.md)を参照。
 
 PC-98 modeでは、Web版と同じymfmのYM2608をNativeで生成します。
 FM 6CH・SSG 3CH・リズム6音・ADPCM-Bを、`fm`／`ssg`／`rhythm`／`adpcm`と

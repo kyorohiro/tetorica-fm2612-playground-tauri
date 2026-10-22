@@ -1,0 +1,51 @@
+# Rebuilding the Native application
+
+`native-source-bundle/application-sources.zip` accompanies this build. It contains
+the matching Rust and C/C++ application sources, native library snapshots,
+Cargo/npm lockfiles, build scripts, Tauri configuration, icons, desktop bridge,
+audio-sidecar sources and the exact imported frontend. `SOURCE-MANIFEST.json`
+records their SHA-256 hashes and the frontend release archive hash.
+
+Nuked OPN2 and SNES-SPC are **LGPL-2.1-or-later**. Their licenses, copyright
+notices, provenance and corresponding modified sources are under
+`src-tauri/native-nuked/` and `src-tauri/native-snes/`. These components are
+statically linked. The application sources and build material are provided so
+that you can modify either library and rebuild/relink the application with it.
+Other code retains its existing license; the individual component notices apply.
+This distribution does not prohibit modification for your own use or reverse
+engineering to debug those modifications as permitted by LGPL 2.1 section 6.
+
+## Build with a modified library
+
+1. Extract `application-sources.zip` and enter `tetorica-playground-source`.
+2. Install Node.js 22 or later, Python 3, Rust (CI uses 1.91.1), a C/C++17
+   compiler and the platform dependencies listed below.
+3. Modify the actual source consumed by `src-tauri/build.rs`:
+   Nuked sources under `src-tauri/native-nuked/`, or
+   `src-tauri/native-snes/snapshot/third_party/snes-spc/snes_spc/` for SNES.
+   Do not run a source refresh command after editing; it would replace your edits.
+4. Run `npm ci`, then `npm run build -- -- --locked` to create the application
+   bundle. This prepares the optional Audify runtime and matching source ZIP.
+   `npm run dev` runs a development build. An unsigned local build can be used
+   to test the modified sound core without the distributor's signing key.
+
+The exact Nuked source paths and its build recipe are documented in
+`src-tauri/native-nuked/README.md`; the standalone SNES rebuild recipe is
+`src-tauri/native-snes/rebuild.sh`. Snapshot verification checks the distributed
+sources; a deliberate modification will of course change the recorded hashes.
+
+Windows uses the Visual Studio C++ Build Tools and WebView2. macOS uses Xcode
+Command Line Tools. Ubuntu 24.04 uses `libwebkit2gtk-4.1-dev`,
+`libayatana-appindicator3-dev`, `librsvg2-dev`, `patchelf`, `xdg-utils`,
+`libasound2-dev`, `libpulse-dev`, `libjack-jackd2-dev`, `cmake`, and `ninja-build`.
+The included `.github/workflows/build-desktop.yml` contains the CI build recipe.
+Cargo and npm download their locked dependencies on the first build; dependencies
+remain under their own licenses. The compiler and operating system are not bundled.
+
+The source ZIP is generated from the same working tree during Tauri's normal
+pre-build step. It excludes local credentials, Git history, installed dependencies,
+compiled output and the source ZIP itself. To regenerate it independently:
+
+```sh
+python3 scripts/prepare_native_sources.py
+```

@@ -41,4 +41,5 @@ if(replaced)await cp(await findNodeLicense(nodeSource),join(bundle,'NODE_LICENSE
 await cp(join(root,'dist/LICENSE'),join(bundle,'TETORICA_LICENSE'));
 await writeFile(join(bundle,'package.json'),JSON.stringify({private:true,type:'module'}));
 if(process.platform==='darwin')await signAudioSidecar(bundle);
+execFileSync(process.platform==='win32'?'python':'python3',['scripts/prepare_native_sources.py'],{cwd:root,stdio:'inherit'});
 console.log(`Prepared Audify sidecar for ${process.platform}/${process.env.TETORICA_AUDIO_ARCH??process.arch}`);

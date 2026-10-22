@@ -1,0 +1,43 @@
+{
+  "source": "hello_ymfm Browser Nuked OPN2 / ym2612-worklet-nuked.js",
+  "license": "LGPL-2.1-or-later (Nuked OPN2, Alexey Khokholov)",
+  "adaptation": "Pinned synthesis C and WASM wrapper remain unchanged. Native macro-prefixes ym2612 exports and all OPN2 symbols, avoiding the existing ymfm provider. The global chip type is selected once before publishing the first core, so later constructors do not race audio callbacks. native_genesis_create_nuked selects only Nuked plus the existing common PSG. Every raw address/data write advances the original 24 internal clocks. PCM sums 24 clocks and scales by 11, clock/144, as Browser. Native preserves raw Nuked idle DC; only explicit Native Stop suppresses emitted PCM until a new voice/DAC/PSG trigger. The ymfm constructor and centering path stay unchanged.",
+  "files": {
+    "third_party/nuked-opn2/ym3438.c": {
+      "snapshot": "snapshot/third_party/nuked-opn2/ym3438.c",
+      "sha256": "8fa385546f0f2d1c975d097002af00cd729ae2ae097c068e9c883ce08ddf3a76"
+    },
+    "third_party/nuked-opn2/ym3438.h": {
+      "snapshot": "snapshot/third_party/nuked-opn2/ym3438.h",
+      "sha256": "8e60e35f77049d0e600ad1a47bfc3dfc8b832483e614104473a83c1f33cd7189"
+    },
+    "third_party/nuked-opn2/LICENSE": {
+      "snapshot": "snapshot/third_party/nuked-opn2/LICENSE",
+      "sha256": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331"
+    },
+    "third_party/nuked-opn2/README.md": {
+      "snapshot": "snapshot/third_party/nuked-opn2/README.md",
+      "sha256": "8296e38872f66aa2598ca9d17360bc65e45254ee2028320f512f131712b940aa"
+    },
+    "wasm/nuked_opn2_wasm.c": {
+      "snapshot": "snapshot/wasm/nuked_opn2_wasm.c",
+      "sha256": "85cb336960d5bfbff1265268f732a48a426ecb943810e0165a1bbb1750839115"
+    },
+    "web/ym2612.js": {
+      "snapshot": "snapshot/web/ym2612.js",
+      "sha256": "a94016aa0f36d8a48465d7c8420af282e00c27e3ffb2b6d00d668f266a4f92b2"
+    },
+    "web/ym2612-worklet-nuked.js": {
+      "snapshot": "snapshot/web/ym2612-worklet-nuked.js",
+      "sha256": "95c2701815bbe6fc392fca084621f04f274b00669b571d93492a6fac4f9dc6ed"
+    },
+    "web/segapsg.js": {
+      "snapshot": "snapshot/web/segapsg.js",
+      "sha256": "e63e1c25a9ac80721f8cd7ea1474710af125c83d4d2e682e6c4a97f40aa50bed"
+    },
+    "web/ym2612_dac.js": {
+      "snapshot": "snapshot/web/ym2612_dac.js",
+      "sha256": "c5b5c78066cc665604085efb5ad395efddee39ebcc760bc7e7adbe4960e2bcaf"
+    }
+  }
+}
