@@ -8,5 +8,14 @@
     "native/audio_effect/reverb.c": "983469a02979c04189b7e0ca6c3b1a3360f8ab8bb2cf34cfe1b3154a0b587d19",
     "native/audio_effect/extra_fx.c": "1b6cad91d18f3080bb921f39398312830b72b0775b47ebf34f80ffe2966577b3",
     "native/audio_effect/graph.c": "8637dff231d3960961f043b1f2738d79264a6f5d8abe6de3f3029d15e7cd9f61"
+  },
+  "generated_sha256": {
+    "gain.inc": "932040919d015476ae0aea7fe67cb86878bee0b3fba97ef7f07bc83c0726c8dd",
+    "eq.inc": "393c1f383b76f10d77cd7f6be75d861f7bd7394f3bae020976208245acf2db57",
+    "noise_gate.inc": "4653b16118baf341fb70099c28e79f3cae53ffde4ba729bd958c92185a12ad7f",
+    "compressor.inc": "74602986c5472cd90918246bbca1ab18c3b0bb6cd4a1c180354cbc7821c3532e",
+    "reverb.inc": "dbf9d05dbc3818faae206c37819a48866d67a4e01c34506db9163a7506bd3957",
+    "extra_fx.inc": "148eed78b38de29da76d20ded0728286278a07cd1dda3fa2b27140f1a287fdc9",
+    "graph.inc": "0929c17d0ea9e721ac253e761df22fb386fe8d8a76fd5f7d77e52902942bd142"
   }
 }

@@ -62,10 +62,23 @@ jobs:
         run: python scripts/import_release.py --check
       - name: Prepare bundled audio runtime before Cargo tests
         run: node scripts/prepare_audio_sidecar.mjs
+      - name: Verify Native source snapshots and matching source ZIP offline
+        timeout-minutes: 3
+        run: python scripts/check_native_sources.py --bundle --out=native-validation/sources.json
       - name: Verify bundled Audify loads and exits normally
         run: node scripts/check_audio_sidecar_bundle.mjs
       - name: Test native MCP protocol and transport
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - name: Check Native stability without audio devices
+        timeout-minutes: 10
+        run: node scripts/check_native_stability.mjs --out=native-validation/stability.json
+      - name: Upload Native validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-validation-${{ matrix.platform }}
+          if-no-files-found: warn
+          path: native-validation/*.json
       - name: Build desktop app
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: tauri-apps/tauri-action@v0

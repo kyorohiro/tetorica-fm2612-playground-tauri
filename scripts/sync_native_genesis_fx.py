@@ -43,27 +43,30 @@ def transform(name, source):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--source', type=Path, default=Path(__file__).resolve().parents[3])
+    parser.add_argument('--source', type=Path, help='optional hello_ymfm comparison; offline --check uses the pinned input')
     parser.add_argument('--check', action='store_true')
     args = parser.parse_args()
-    upstream = args.source.resolve() / 'native' / 'audio_effect'
     out = Path(__file__).resolve().parents[1] / 'src-tauri' / 'native-fx'
+    source = args.source or (out / 'snapshot' if args.check else Path(__file__).resolve().parents[3])
     hashes = {}
     expected = {}
     for name in FILES:
-        path = upstream / (name + '.c')
-        raw = path.read_bytes()
-        hashes['native/audio_effect/' + path.name] = hashlib.sha256(raw).hexdigest()
-        expected[name + '.inc'] = transform(name, raw.decode())
-    expected['sources.json'] = json.dumps({'source': 'hello_ymfm', 'sha256': hashes}, indent=2) + '\n'
-    for name, text in expected.items():
+        relative = 'native/audio_effect/' + name + '.c'
+        raw = (source / relative).read_bytes()
+        hashes[relative] = hashlib.sha256(raw).hexdigest()
+        expected[name + '.inc'] = transform(name, raw.decode()).encode()
+        expected['snapshot/' + relative] = raw
+    generated_hashes = {name: hashlib.sha256(data).hexdigest() for name, data in expected.items() if name.endswith('.inc')}
+    expected['sources.json'] = (json.dumps({'source': 'hello_ymfm', 'sha256': hashes,
+        'generated_sha256': generated_hashes}, indent=2) + '\n').encode()
+    for name, data in expected.items():
         path = out / name
         if args.check:
-            if not path.exists() or path.read_text() != text:
+            if not path.exists() or path.read_bytes() != data:
                 raise SystemExit('Native FX snapshot differs: ' + str(path))
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text)
+            path.write_bytes(data)
     print('Native FX snapshot: ' + ('verified' if args.check else 'updated'))
 
 

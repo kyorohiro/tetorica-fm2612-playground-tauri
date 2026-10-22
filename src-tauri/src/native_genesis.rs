@@ -63,6 +63,9 @@ mod noise_tests;
 #[cfg(test)]
 #[path = "native_genesis_nuked_tests.rs"]
 mod nuked_tests;
+#[cfg(test)]
+#[path = "native_genesis_stability_tests.rs"]
+mod stability_tests;
 #[path = "native_genesis_pwm.rs"]
 mod pwm;
 #[cfg(test)]

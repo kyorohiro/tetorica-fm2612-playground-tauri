@@ -10,7 +10,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 PREFIX = 'tetorica-playground-source/'
 EXCLUDED = {'.git', 'node_modules', 'target', 'gen', '__pycache__', '.DS_Store', '__MACOSX', '.env', '.npmrc'}
-ROOT_FILES = ['package.json', 'package-lock.json', 'README.md', 'NATIVE-SOURCES.md', 'release.lock.json']
+ROOT_FILES = ['.gitattributes', 'package.json', 'package-lock.json', 'README.md', 'NATIVE-SOURCES.md', 'release.lock.json']
 DIRECTORIES = ['audio-sidecar', 'desktop', 'dist', 'scripts', 'tests', 'assets', '.github']
 
 

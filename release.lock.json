@@ -1,5 +1,5 @@
 {
-  "archive": "hello_ymfm_wasm_native-nuked_itch_playground.zip",
+  "archive": "hello_ymfm_wasm_native-stability_itch_playground.zip",
   "files": {
     "LICENSE": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c",
     "THIRD_PARTY_LICENSES.txt": "ef04fe333da2c357590410e879781855bd8fb03125810e8cea6197a8affa8f85",
@@ -175,7 +175,7 @@
     "generated/ym3812_wasm.wasm": "cb7fbf2d59d02ca3bec669b9cf0db3a6d1cc33c94ade8b7a0d89bcb04b4286f3",
     "generated/ymf262_wasm.js": "f3da0aa0d81d430ad12e27743c91af7dbf7d1b2cf71a423f042ccd6d13242cf7",
     "generated/ymf262_wasm.wasm": "8038b36eb950d32a347fea0098f5857afe05875ddbcc83620c22f7653826fc1c",
-    "index.html": "08f32a711e6acc1f93784326f17c74a0d5105ee425b306b107f0c31cc378e15d",
+    "index.html": "6c6de5dd7021d92513571846bbf02278aad1244b4a0aa02144ecdc9946f16d74",
     "js/adpcm_b_sample.js": "6cd2346c09713427384f14c152c03b2334928f10e618184a521790a7e9815f93",
     "js/audio-diagnostic-worklet.js": "55214aaa2bd7b3f971a8c25b6a44561df822f73c498c8209f9bd8e227d2abfc9",
     "js/audio_decode.js": "0f972b3983adb38f09e218cf4f1b1dc2fc5e840f0e3cf754c4bd2cd40083e9f4",
@@ -250,7 +250,7 @@
     "js/native_genesis_rf5c164.js": "a662eadd02c5e27b1b7c0c9fbaec8bf8cd81a0649d58ce4f0ca654e3e9019fd7",
     "js/native_genesis_segapsg.js": "f9510859a4f62805efba67ce400ca9ad3baba270488a9db4b01188ba4391d340",
     "js/native_genesis_snes.js": "c13393c4bdaea35bfaaacba1d841f4ac08dd5c64802c30ca5c1f5feaa07c2c68",
-    "js/native_genesis_synth.js": "5a74e02aa83150d9a65552971b0de0a2fee955f3ed1c77ffb535faaf83786834",
+    "js/native_genesis_synth.js": "26800a9e63413af827e6ddb57b4af79c6946142edc36eb75a9a1cf3efe566851",
     "js/native_genesis_voice_endpoint.js": "5b981d7617848e6138082ca4a334d3a5b840fad6181761e7f5e2298eab6cfa43",
     "js/native_genesis_worker.js": "987390adcaaf6dee6f005b0b621b81883a3c2376ef1d15b5dd3674fe4a0ce208",
     "js/native_genesis_x68000.js": "61cea188f8f285d046ad60ae18dbfea057ebd760b335a41e9fd122e96d7163ad",
@@ -484,8 +484,8 @@
     "licenses/tetorica-nes/UPSTREAM-FDS.md": "012c4710304da747754bc21ab7683e41f406e83de42b03b0bc4531c0ba5e1316",
     "licenses/tetorica-nes/UPSTREAM-JSNES.md": "58808d4249949339577eff9a5312ebc357755cd328d8bfa59621d399f2bac792",
     "llms.txt": "c220e9cd8de8d1cf724996cadc5f3333b374021bb131f42e15d2e7ebe1a4fdba",
-    "playground.js": "07811e3ed28c966ac34fed17d09a7e4eb95f182dada2f6c51cb4cd8a3e52638c",
-    "playground_audio_diagnostics.js": "badc3a6c274850bdba21918ea4b68ff6123fca49209a6066e21be434d9b25967",
+    "playground.js": "ded64a979e116df5452aa5073af638e584e204141a535b05a1d7977b026ced40",
+    "playground_audio_diagnostics.js": "95c26e111974b61afebc790ee2db15ea198a45ef404bbe557af7010a17f3767e",
     "playground_audio_engine.js": "8477b8e76c46c7dc5f242ed9f751eb3a20f661432faaaaade62feab60265a819",
     "playground_audio_input.js": "3aea20a15d7c0c642f1df38be9724bef9cd77620187d991754af144aab632548",
     "playground_audio_monitor.js": "7a75febe0c38063a50e0217b9bd42c93cb196fbab88717af8689e192663c020d",
@@ -847,6 +847,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "58cb2096631756e9b33dd713e251d7bb5cd7e2cf2e4469ef2c83255a1d844802"
   },
-  "sha256": "af95db5171db7e3d0d9c76799735d9742b421a46662ccda5afe8a7554180dc0f",
-  "version": "sha256-af95db5171db"
+  "sha256": "7f66062dd8f5b96b05ad43d548ea2122fdb0d51b2a7da094c9739f805062e921",
+  "version": "sha256-7f66062dd8f5"
 }

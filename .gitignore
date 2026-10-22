@@ -6,3 +6,4 @@
 /src-tauri/gen/
 __pycache__/
 .DS_Store
+/native-validation/

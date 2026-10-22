@@ -14,5 +14,9 @@
     "web/custom_fx.js": "f719e32f063bdbdb4d7cb9bb7aff1087dde2152ade7449b2819f2d3a6cc4424e",
     "web/native_livefx_context.js": "2bf0d1eacceceea2932304505b2c68d01b8d1be174a93a09d0af7432361318f1"
   },
+  "generated_sha256": {
+    "custom_fx.inc": "f3ed4898ae453e9ce17582090a32479b0d0ee96919a0e0df6a09ed521514f613",
+    "context.inc": "8e97d8dd45108bd05e7dc17eab621543bdccd7f117f0250dac8603d62e900b66"
+  },
   "transformation": "Replace the sole export class LiveFX with class LiveFX; C-string encode without modifying rack behavior."
 }

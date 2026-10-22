@@ -216,6 +216,33 @@ python3 scripts/sync_native_genesis.py --check --source ../..
 python3 scripts/sync_native_genesis_noise.py --check --source ../..
 ```
 
+全Modeの反復・長時間生成と、同梱ソースの照合も音声デバイスなしで実行できます。
+ソースZIPはcheckoutが変わるたびに再生成します。親checkoutなしでも原典の照合は可能です。
+
+```sh
+python3 scripts/prepare_native_sources.py
+python3 scripts/check_native_sources.py --bundle --out=native-validation/sources.json
+node scripts/check_native_stability.mjs --out=native-validation/stability.json
+node scripts/check_native_stability.mjs --long --out=native-validation/long.json
+```
+
+短時間版は標準21 Mode＋旧Genesis Nukedの生成・破棄、可変callback、所有者取消し、
+Stop／再開、未来命令・保持参照の回収を確認します。長時間版は各演奏30秒を3周し、
+処理時間と実時間に対する生成速度をJSONへ記録します。固定の速度閾値は設けません。
+GitHub Actionsの5環境でも原典・ソースZIPと短時間版を照合し、失敗時もJSONを保存します。
+これらの結果は物理音声デバイスの長時間安定性や聴感上のノイズを保証するものではありません。
+
+親のBrowser/WASM checkoutがある場合、同じ命令列を継続して生成・比較できます。
+次はFM単独／FM＋PSGを各60秒、44.1／48／96 kHzで比較します。
+
+```sh
+node scripts/check_native_genesis_core.mjs ../.. --seconds=60 --out=native-validation/web-native.json
+```
+
+Menu → Audio diagnosticsのNative録音JSONには、開始・終了近くのキュー状態、遅延命令、
+overflow、liveFx under／overrunと差分も保存します。通常再生時のpollingや時計の再設定は追加しません。
+状態読取りが失敗・timeoutになっても正常な録音は保存できます。これらは機器のdropout数とは区別してください。
+
 機器を無音で開いて時計・停止・解放だけ確認する場合は、明示的に実行します。
 音符の発音・録音・出力機器の変更は行いません。
 

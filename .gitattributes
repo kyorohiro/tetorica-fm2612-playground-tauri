@@ -1,2 +1,7 @@
 # Preserve imported bytes and hashes on every build platform, including Windows.
 dist/** -text
+
+# Native manifests pin byte hashes, including generated C++ mirrors.
+src-tauri/native-*/** -text
+src-tauri/src/native_genesis_*.cpp -text
+src-tauri/src/native_genesis_*.h -text

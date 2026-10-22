@@ -13,7 +13,7 @@ spec.loader.exec_module(sources)
 
 class NativeSourceTests(unittest.TestCase):
     def fixture(self, root):
-        for name in ['README.md', 'NATIVE-SOURCES.md', 'package-lock.json',
+        for name in ['.gitattributes', 'README.md', 'NATIVE-SOURCES.md', 'package-lock.json',
                      'dist/playground.js', 'desktop/audio-interface.js',
                      'src-tauri/Cargo.lock', 'src-tauri/build.rs', 'src-tauri/src/main.rs',
                      'src-tauri/native-nuked/ym3438.c', 'src-tauri/native-nuked/LICENSE',
