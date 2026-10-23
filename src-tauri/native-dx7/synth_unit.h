@@ -58,7 +58,9 @@ class SynthUnit {
   void AllNotesOff();
   // Native host: no callback allocation; return the fixed preallocated slot.
   int NativeNoteOn(int midi_note, int velocity);
+  int NativeNoteOnMask(int midi_note, int velocity, uint16_t preserve_mask);
   void NativeReleaseSlot(int slot);
+  void NativeKillSlot(int slot);
   void NativePanic();
 
   SynthUnit(const SynthUnit &) = delete;

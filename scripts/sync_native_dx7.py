@@ -43,14 +43,43 @@ def native_bytes(name, data):
         text = text.replace('  void AllNotesOff();', '''  void AllNotesOff();
   // Native host: no callback allocation; return the fixed preallocated slot.
   int NativeNoteOn(int midi_note, int velocity);
+  int NativeNoteOnMask(int midi_note, int velocity, uint16_t preserve_mask);
   void NativeReleaseSlot(int slot);
+  void NativeKillSlot(int slot);
   void NativePanic();''')
     if name.endswith('/synth_unit.cc'):
         text = text.replace('#include <string.h>', '#include <string.h>\n#include <new>')
+        # A failed additional-rack creation must release the notes allocated
+        # before std::bad_alloc; the destructor is not run for a partial object.
+        start = '  for (int note = 0; note < max_active_notes; ++note) {\n    active_note_[note].dx7_note = new Dx7Note();'
+        finish = '    active_note_[note].live = false;\n  }\n  input_buffer_index_ = 0;'
+        if text.count(start) != 1 or text.count(finish) != 1:
+            raise ValueError('MSFA note construction changed; review the Native patch')
+        text = text.replace(start, '''  for (int note = 0; note < max_active_notes; ++note) active_note_[note].dx7_note = nullptr;
+  try {
+  for (int note = 0; note < max_active_notes; ++note) {
+    active_note_[note].dx7_note = new Dx7Note();''')
+        text = text.replace(finish, '''    active_note_[note].live = false;
+  }
+  } catch (...) {
+    for (int note = 0; note < max_active_notes; ++note) delete active_note_[note].dx7_note;
+    throw;
+  }
+  input_buffer_index_ = 0;''')
         text += '''
 // Native host extension: all 16 Dx7Note objects were allocated at construction.
 int SynthUnit::NativeNoteOn(int midi_note, int velocity) {
-  int slot = AllocateNote();
+  return NativeNoteOnMask(midi_note, velocity, 0);
+}
+int SynthUnit::NativeNoteOnMask(int midi_note, int velocity, uint16_t preserve_mask) {
+  int slot = current_note_;
+  int attempts = 0;
+  for (; attempts < max_active_notes; ++attempts) {
+    if (!(preserve_mask & (uint16_t(1) << slot)) && !active_note_[slot].keydown) break;
+    slot = (slot + 1) % max_active_notes;
+  }
+  if (attempts == max_active_notes) return -1;
+  current_note_ = (slot + 1) % max_active_notes;
   if (slot < 0) return -1;
   lfo_.keydown();
   ActiveNote &note = active_note_[slot];
@@ -67,6 +96,13 @@ void SynthUnit::NativeReleaseSlot(int slot) {
   ActiveNote &note = active_note_[slot];
   if (note.keydown) note.dx7_note->keyup();
   note.keydown = note.sustained = false;
+}
+void SynthUnit::NativeKillSlot(int slot) {
+  if (slot < 0 || slot >= max_active_notes) return;
+  ActiveNote &note = active_note_[slot];
+  note.midi_note = -1;
+  note.voice_id = 0;
+  note.keydown = note.sustained = note.live = false;
 }
 void SynthUnit::NativePanic() {
   for (int slot = 0; slot < max_active_notes; ++slot) {

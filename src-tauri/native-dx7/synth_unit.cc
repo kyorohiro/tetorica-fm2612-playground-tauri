@@ -59,6 +59,8 @@ void SynthUnit::Init(double sample_rate) {
 // Tetorica modification: initialize state that upstream left indeterminate.
 SynthUnit::SynthUnit(RingBuffer *ring_buffer) : lfo_(), controllers_() {
   ring_buffer_ = ring_buffer;
+  for (int note = 0; note < max_active_notes; ++note) active_note_[note].dx7_note = nullptr;
+  try {
   for (int note = 0; note < max_active_notes; ++note) {
     active_note_[note].dx7_note = new Dx7Note();
     active_note_[note].midi_note = -1;
@@ -66,6 +68,10 @@ SynthUnit::SynthUnit(RingBuffer *ring_buffer) : lfo_(), controllers_() {
     active_note_[note].keydown = false;
     active_note_[note].sustained = false;
     active_note_[note].live = false;
+  }
+  } catch (...) {
+    for (int note = 0; note < max_active_notes; ++note) delete active_note_[note].dx7_note;
+    throw;
   }
   input_buffer_index_ = 0;
   voice_id_ = 0;
@@ -355,7 +361,17 @@ void SynthUnit::GetSamples(int n_samples, int16_t *buffer) {
 
 // Native host extension: all 16 Dx7Note objects were allocated at construction.
 int SynthUnit::NativeNoteOn(int midi_note, int velocity) {
-  int slot = AllocateNote();
+  return NativeNoteOnMask(midi_note, velocity, 0);
+}
+int SynthUnit::NativeNoteOnMask(int midi_note, int velocity, uint16_t preserve_mask) {
+  int slot = current_note_;
+  int attempts = 0;
+  for (; attempts < max_active_notes; ++attempts) {
+    if (!(preserve_mask & (uint16_t(1) << slot)) && !active_note_[slot].keydown) break;
+    slot = (slot + 1) % max_active_notes;
+  }
+  if (attempts == max_active_notes) return -1;
+  current_note_ = (slot + 1) % max_active_notes;
   if (slot < 0) return -1;
   lfo_.keydown();
   ActiveNote &note = active_note_[slot];
@@ -372,6 +388,13 @@ void SynthUnit::NativeReleaseSlot(int slot) {
   ActiveNote &note = active_note_[slot];
   if (note.keydown) note.dx7_note->keyup();
   note.keydown = note.sustained = false;
+}
+void SynthUnit::NativeKillSlot(int slot) {
+  if (slot < 0 || slot >= max_active_notes) return;
+  ActiveNote &note = active_note_[slot];
+  note.midi_note = -1;
+  note.voice_id = 0;
+  note.keydown = note.sustained = note.live = false;
 }
 void SynthUnit::NativePanic() {
   for (int slot = 0; slot < max_active_notes; ++slot) {

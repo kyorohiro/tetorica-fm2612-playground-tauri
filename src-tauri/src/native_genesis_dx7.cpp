@@ -56,9 +56,16 @@ void native_dx7_voice(void *ptr, const uint8_t *voice, uint32_t id, bool live) {
 int native_dx7_note_on(void *ptr, uint8_t note, uint8_t velocity) {
   return static_cast<NativeDx7 *>(ptr)->synth.NativeNoteOn(note, velocity);
 }
+int native_dx7_note_on_mask(void *ptr, uint8_t note, uint8_t velocity, uint16_t preserve_mask) {
+  return static_cast<NativeDx7 *>(ptr)->synth.NativeNoteOnMask(note, velocity, preserve_mask);
+}
 void native_dx7_release_slot(void *ptr, uint8_t slot) {
   static_cast<NativeDx7 *>(ptr)->synth.NativeReleaseSlot(slot);
 }
+void native_dx7_kill_slot(void *ptr, uint8_t slot) {
+  static_cast<NativeDx7 *>(ptr)->synth.NativeKillSlot(slot);
+}
 void native_dx7_panic(void *ptr) { static_cast<NativeDx7 *>(ptr)->panic(); }
 float native_dx7_sample(void *ptr) { return static_cast<NativeDx7 *>(ptr)->sample(); }
+size_t native_dx7_core_size() { return sizeof(NativeDx7) + 16 * sizeof(Dx7Note); }
 }
