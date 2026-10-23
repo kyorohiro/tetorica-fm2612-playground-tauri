@@ -10,6 +10,7 @@ typedef struct NativeSnesState {
   uint32_t timeline_loaded, timeline_playing, timeline_position, timeline_total;
 } NativeSnesState;
 void* native_snes_create(uint32_t rate);
+uint32_t native_snes_core_size(void);
 void native_snes_destroy(void*);
 void native_snes_reset(void*);
 void native_snes_stop(void*);

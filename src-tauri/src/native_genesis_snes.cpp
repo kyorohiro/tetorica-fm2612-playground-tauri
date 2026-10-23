@@ -73,6 +73,7 @@ struct Core {
 }
 extern "C" {
 void* native_snes_create(uint32_t rate){if(rate<8000||rate>384000)return nullptr;return new(std::nothrow)Core(rate);}
+uint32_t native_snes_core_size(void){return sizeof(Core);}
 void native_snes_destroy(void* p){delete static_cast<Core*>(p);}
 void native_snes_reset(void* p){auto& c=*static_cast<Core*>(p);c.clear_timeline();c.ram.fill(0);c.dsp.reset();c.frames=0;c.pending_kon=0;c.kon_frame=UINT64_MAX;c.resampler_reset();}
 void native_snes_stop(void* p){static_cast<Core*>(p)->stop();}

@@ -2,8 +2,8 @@
 //! control thread; the device callback owns their exclusive mutable access.
 use super::{
     extra_budget, extra_dx7, extra_gameboy, extra_huc6280, extra_msx, extra_nes, extra_okim6258,
-    extra_opl, extra_pwm, extra_rf5c164, extra_ym2151, extra_ym2608, extra_ym2610, master_system,
-    ym2203, ym2612, Owner, MAX_SAFE_INTEGER,
+    extra_opl, extra_pwm, extra_rf5c164, extra_snes, extra_ym2151, extra_ym2608, extra_ym2610,
+    master_system, ym2203, ym2612, Owner, MAX_SAFE_INTEGER,
 };
 use std::{
     cell::UnsafeCell,
@@ -42,6 +42,7 @@ pub enum State {
     Huc6280(extra_huc6280::Shared),
     Dx7(extra_dx7::Shared),
     Pwm(extra_pwm::Shared),
+    Snes(extra_snes::Shared),
     Nes(extra_nes::Shared),
     Ym3812(extra_opl::Shared),
     Ym3526(extra_opl::Shared),
@@ -64,6 +65,7 @@ enum Kind {
     Huc6280,
     Dx7,
     Pwm,
+    Snes,
     Nes,
     Ym3812,
     Ym3526,
@@ -85,6 +87,7 @@ enum Core {
     Huc6280(extra_huc6280::Renderer),
     Dx7(extra_dx7::Renderer),
     Pwm(extra_pwm::Renderer),
+    Snes(extra_snes::Renderer),
     Nes(extra_nes::Renderer),
     Ym3812(extra_opl::Renderer),
     Ym3526(extra_opl::Renderer),
@@ -244,6 +247,13 @@ impl Instance {
             Err("Additional instance is not a PWM".into())
         }
     }
+    pub fn snes(&self) -> Result<&extra_snes::Shared, String> {
+        if let State::Snes(state) = &self.state {
+            Ok(state)
+        } else {
+            Err("Additional instance is not a SNES".into())
+        }
+    }
     pub fn gameboy(&self) -> Result<&extra_gameboy::Shared, String> {
         if let State::Gameboy(state) = &self.state {
             Ok(state)
@@ -275,6 +285,7 @@ impl Instance {
             State::Huc6280(_) => Kind::Huc6280,
             State::Dx7(_) => Kind::Dx7,
             State::Pwm(_) => Kind::Pwm,
+            State::Snes(_) => Kind::Snes,
             State::Nes(_) => Kind::Nes,
             State::Ym3812(_) => Kind::Ym3812,
             State::Ym3526(_) => Kind::Ym3526,
@@ -304,6 +315,7 @@ pub enum Payload {
     Huc6280(Arc<extra_huc6280::Prepared>),
     Dx7(Arc<extra_dx7::Prepared>),
     Pwm(Arc<extra_pwm::Prepared>),
+    Snes(Arc<extra_snes::Prepared>),
     Nes(Arc<extra_nes::Prepared>),
     Ym3812(Arc<extra_opl::Prepared>),
     Ym3526(Arc<extra_opl::Prepared>),
@@ -327,6 +339,7 @@ impl Payload {
             Self::Huc6280(v) => v.retained_bytes(),
             Self::Dx7(v) => v.retained_bytes(),
             Self::Pwm(v) => v.retained_bytes(),
+            Self::Snes(v) => v.retained_bytes(),
             Self::Nes(v) => v.retained_bytes(),
             Self::Ym3812(v) => v.retained_bytes(),
             Self::Ym3526(v) => v.retained_bytes(),
@@ -350,6 +363,7 @@ impl Payload {
             Self::Huc6280(v) => Arc::strong_count(v) == 1,
             Self::Dx7(v) => Arc::strong_count(v) == 1,
             Self::Pwm(v) => Arc::strong_count(v) == 1,
+            Self::Snes(v) => Arc::strong_count(v) == 1,
             Self::Nes(v) => Arc::strong_count(v) == 1,
             Self::Ym3812(v) => Arc::strong_count(v) == 1,
             Self::Ym3526(v) => Arc::strong_count(v) == 1,
@@ -400,6 +414,58 @@ impl Shared {
         }
         Ok(())
     }
+    pub fn check_snes_captures(&self, incoming: usize) -> Result<(), String> {
+        let mut control = self
+            .control
+            .lock()
+            .map_err(|_| "Additional sound-chip control unavailable")?;
+        Self::collect(&mut control);
+        let retained: usize = control
+            .payloads
+            .iter()
+            .map(|v| {
+                if let Payload::Snes(c) = &v.payload {
+                    c.capture_bytes()
+                } else {
+                    0
+                }
+            })
+            .sum();
+        if retained + incoming > 1024 * 1024 {
+            return Err(
+                "Native additional SNES pending RAM snapshot limit reached (16 across shared rack)"
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+    pub fn check_snes_uploads(&self, incoming: usize) -> Result<(), String> {
+        if incoming > extra_snes::RAM {
+            return Err("Native additional SNES upload batch exceeds 64 KiB".into());
+        }
+        let mut control = self
+            .control
+            .lock()
+            .map_err(|_| "Additional sound-chip control unavailable")?;
+        Self::collect(&mut control);
+        let retained: usize = control
+            .payloads
+            .iter()
+            .map(|v| {
+                if let Payload::Snes(c) = &v.payload {
+                    c.upload_bytes()
+                } else {
+                    0
+                }
+            })
+            .sum();
+        if retained + incoming > 1024 * 1024 {
+            return Err(
+                "Native additional SNES pending uploads exceed 1 MiB across the shared rack".into(),
+            );
+        }
+        Ok(())
+    }
     fn collect(control: &mut Control) {
         for instance in &control.instances {
             match &instance.state {
@@ -418,6 +484,7 @@ impl Shared {
                 State::Huc6280(s) => s.collect_retired(),
                 State::Dx7(s) => s.collect_retired(),
                 State::Pwm(s) => s.collect_retired(),
+                State::Snes(s) => s.collect_retired(),
                 State::Nes(s) => s.collect_retired(),
                 State::Ym3812(s) => s.collect_retired(),
                 State::Ym3526(s) => s.collect_retired(),
@@ -577,6 +644,38 @@ impl Shared {
             active: AtomicBool::new(true),
             state: State::Pwm(state),
             core: UnsafeCell::new(Core::Pwm(core)),
+            _memory: memory,
+        });
+        control.highest = id;
+        control.instances.push(instance.clone());
+        Ok(instance)
+    }
+    pub fn create_snes(&self, id: u64, epoch: u64, rate: u32) -> Result<Arc<Instance>, String> {
+        // Keep this constructor separate from the legacy multi-core factory:
+        // debug codegen reserves its large enum temporaries for every branch.
+        let mut control = self
+            .control
+            .lock()
+            .map_err(|_| "Additional sound-chip control state is unavailable")?;
+        Self::collect(&mut control);
+        if id == 0 || id > MAX_SAFE_INTEGER || id <= control.highest {
+            return Err(
+                "Additional sound-chip instance ID must be positive, unique and increasing".into(),
+            );
+        }
+        if control.instances.len() >= LIMIT {
+            return Err(format!("Additional sound-chip instance limit ({LIMIT}) reached; wait for retired instances to drain"));
+        }
+        let memory = self.budget.reserve(extra_snes::INSTANCE_BYTES)?;
+        let state = extra_snes::Shared::default();
+        let core = extra_snes::Renderer::new(rate)?;
+        core.publish(&state);
+        let instance = Arc::new(Instance {
+            id,
+            epoch,
+            active: AtomicBool::new(true),
+            state: State::Snes(state),
+            core: UnsafeCell::new(Core::Snes(core)),
             _memory: memory,
         });
         control.highest = id;
@@ -1050,6 +1149,9 @@ impl Shared {
     pub fn dispose_pwm(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Pwm)
     }
+    pub fn dispose_snes(&self, id: u64) -> Result<(), String> {
+        self.dispose_kind(id, Kind::Snes)
+    }
     pub fn dispose_gameboy(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Gameboy)
     }
@@ -1099,6 +1201,21 @@ impl Shared {
         Self::collect(&mut control);
         Ok(())
     }
+    pub fn expire_snes_captures(
+        &self,
+        valid: impl Fn(Option<Owner>) -> bool,
+    ) -> Result<(), String> {
+        let control = self
+            .control
+            .lock()
+            .map_err(|_| "Additional sound-chip control unavailable")?;
+        for instance in &control.instances {
+            if let State::Snes(state) = &instance.state {
+                state.expire_captures(&valid);
+            }
+        }
+        Ok(())
+    }
     pub fn collect_retired(&self) -> Result<(), String> {
         let mut control = self
             .control
@@ -1123,6 +1240,9 @@ impl Renderer {
     pub fn install_at(&mut self, instance: Arc<Instance>, frame: u64) {
         unsafe {
             if let Core::Pwm(core) = instance.callback_core() {
+                core.set_frame(frame);
+            }
+            if let Core::Snes(core) = instance.callback_core() {
                 core.set_frame(frame);
             }
         }
@@ -1190,6 +1310,9 @@ impl Renderer {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Pwm(core), State::Pwm(state)) => {
+                                core.cancel_invalid(&valid, state)
+                            }
+                            (Core::Snes(core), State::Snes(state)) => {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Gameboy(core), State::Gameboy(state)) => {
@@ -1424,6 +1547,23 @@ impl Renderer {
             }
         }
     }
+    pub fn apply_snes(
+        &mut self,
+        instance: &Instance,
+        command: &Arc<extra_snes::Prepared>,
+        owner: Option<Owner>,
+        frame: u64,
+    ) {
+        unsafe {
+            match (instance.callback_core(), &instance.state) {
+                (Core::Snes(core), State::Snes(state)) => {
+                    core.set_frame(frame);
+                    core.apply(command, owner, state)
+                }
+                _ => unreachable!("Additional SNES target"),
+            }
+        }
+    }
     pub fn apply_gameboy(
         &mut self,
         instance: &Instance,
@@ -1480,6 +1620,7 @@ impl Renderer {
                     (Core::Huc6280(core), _) => core.mix(pcm),
                     (Core::Dx7(core), _) => core.mix(pcm),
                     (Core::Pwm(core), State::Pwm(state)) => core.mix_additional(pcm, state),
+                    (Core::Snes(core), State::Snes(state)) => core.mix_additional(pcm, state),
                     (Core::Nes(core), _) => core.mix(pcm),
                     (Core::Ym3812(core), _) => core.mix(pcm),
                     (Core::Ym3526(core), _) => core.mix(pcm),

@@ -118,17 +118,17 @@
     },
     "src-tauri/src/native_genesis_snes.cpp": {
       "snapshot": "snapshot/application/src-tauri/src/native_genesis_snes.cpp",
-      "sha256": "ff6fb26440dfe9b43cffff3e60b9e089bf6734a95311e27d9973608956d9035f",
+      "sha256": "736c581fae2c7ac439f0815776aa044ab980d44ac3cbfeffd29306aac8e58921",
       "origin": "application"
     },
     "src-tauri/src/native_genesis_snes.h": {
       "snapshot": "snapshot/application/src-tauri/src/native_genesis_snes.h",
-      "sha256": "0e663bdaf29d22e601d8c95ea2f346a84569d667a937332f2ea948b4097d7a2d",
+      "sha256": "cb56f2fa0b5c915cf3b9dfe8d3125aed354f71f60b766a60d6a8035cfd842526",
       "origin": "application"
     },
     "src-tauri/src/native_genesis_snes_fixture.cpp": {
       "snapshot": "snapshot/application/src-tauri/src/native_genesis_snes_fixture.cpp",
-      "sha256": "df9934c6306637c1fe888b649b8b9580c9fd9c8b9f70fc9ecdb9e4c42fde77ca",
+      "sha256": "37a61a69a0bd1022fc20841d062b00e95ec121a9fbad238ac9c00304845db5a5",
       "origin": "application"
     }
   }

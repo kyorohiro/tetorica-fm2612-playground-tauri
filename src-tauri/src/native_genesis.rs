@@ -75,6 +75,11 @@ mod extra_rf5c164;
 #[cfg(test)]
 #[path = "native_genesis_extra_rf5c164_tests.rs"]
 mod extra_rf5c164_tests;
+#[path = "native_genesis_extra_snes.rs"]
+mod extra_snes;
+#[cfg(test)]
+#[path = "native_genesis_extra_snes_tests.rs"]
+mod extra_snes_tests;
 #[path = "native_genesis_extra_ym2151.rs"]
 mod extra_ym2151;
 #[cfg(test)]
@@ -281,6 +286,7 @@ enum Action {
     ExtraHuc6280(Arc<extra_psg::Instance>, Arc<extra_huc6280::Prepared>),
     ExtraDx7(Arc<extra_psg::Instance>, Arc<extra_dx7::Prepared>),
     ExtraPwm(Arc<extra_psg::Instance>, Arc<extra_pwm::Prepared>),
+    ExtraSnes(Arc<extra_psg::Instance>, Arc<extra_snes::Prepared>),
     ExtraNes(Arc<extra_psg::Instance>, Arc<extra_nes::Prepared>),
     ExtraYm3812(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
     ExtraYm3526(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
@@ -432,6 +438,10 @@ enum CommandAction {
     ExtraPwm {
         instance: u64,
         message: extra_pwm::Message,
+    },
+    ExtraSnes {
+        instance: u64,
+        message: extra_snes::Message,
     },
     ExtraGameboy {
         instance: u64,
@@ -599,6 +609,7 @@ impl Command {
             | CommandAction::ExtraHuc6280 { .. }
             | CommandAction::ExtraDx7 { .. }
             | CommandAction::ExtraPwm { .. }
+            | CommandAction::ExtraSnes { .. }
             | CommandAction::ExtraNes { .. }
             | CommandAction::ExtraYm3812 { .. }
             | CommandAction::ExtraYm3526 { .. }
@@ -1068,6 +1079,35 @@ impl Shared {
             })
             .sum();
         self.extra_psg.check_nes_uploads(extra_nes_upload_bytes)?;
+        let extra_snes_upload_bytes: usize = commands
+            .iter()
+            .filter_map(|c| {
+                if let CommandAction::ExtraSnes { message, .. } = &c.action {
+                    Some(message.upload_bytes())
+                } else {
+                    None
+                }
+            })
+            .sum();
+        self.extra_psg.check_snes_uploads(extra_snes_upload_bytes)?;
+        let extra_snes_capture_bytes: usize = commands
+            .iter()
+            .filter_map(|c| {
+                if let CommandAction::ExtraSnes { message, .. } = &c.action {
+                    Some(
+                        if matches!(message.method, extra_snes::Method::Barrier { ram: true }) {
+                            extra_snes::RAM
+                        } else {
+                            0
+                        },
+                    )
+                } else {
+                    None
+                }
+            })
+            .sum();
+        self.extra_psg
+            .check_snes_captures(extra_snes_capture_bytes)?;
         let extra_permits = self
             .extra_psg
             .reserve_payloads(commands.iter().filter_map(|cmd| match &cmd.action {
@@ -1086,6 +1126,7 @@ impl Shared {
                 CommandAction::ExtraHuc6280 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraDx7 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraPwm { message, .. } => Some(message.prepared_bytes()),
+                CommandAction::ExtraSnes { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraNes { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm3812 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm3526 { message, .. } => Some(message.prepared_bytes()),
@@ -1337,6 +1378,20 @@ impl Shared {
                         );
                     }
                     Action::ExtraPwm(target, prepared)
+                } else if let CommandAction::ExtraSnes { instance, message } = &command.action {
+                    if command.frame > MAX_SAFE_INTEGER {
+                        return Err("Invalid native command frame".into());
+                    }
+                    let target = self
+                        .extra_psg
+                        .get(*instance, self.epoch.load(Ordering::Acquire))?;
+                    let prepared = target.snes()?.prepare_message(message)?;
+                    if prepared.is_owner_cancel() && command.frame != 0 {
+                        return Err(
+                            "Native SNES owner cancellation requires immediate frame zero".into(),
+                        );
+                    }
+                    Action::ExtraSnes(target, prepared)
                 } else if let CommandAction::ExtraGameboy { instance, message } = &command.action {
                     if command.frame > MAX_SAFE_INTEGER {
                         return Err("Invalid native command frame".into());
@@ -1812,6 +1867,15 @@ impl Shared {
                     self.invalidation.fetch_add(1, Ordering::Release);
                 }
             }
+            if let Action::ExtraSnes(instance, command) = action {
+                if instance
+                    .snes()
+                    .expect("SNES action target")
+                    .commit_cancel(command)
+                {
+                    self.invalidation.fetch_add(1, Ordering::Release);
+                }
+            }
             if let Action::ExtraGameboy(instance, command) = action {
                 if instance
                     .gameboy()
@@ -1934,6 +1998,7 @@ impl Shared {
                     Action::ExtraHuc6280(_, c) => Some(extra_psg::Payload::Huc6280(c.clone())),
                     Action::ExtraDx7(_, c) => Some(extra_psg::Payload::Dx7(c.clone())),
                     Action::ExtraPwm(_, c) => Some(extra_psg::Payload::Pwm(c.clone())),
+                    Action::ExtraSnes(_, c) => Some(extra_psg::Payload::Snes(c.clone())),
                     Action::ExtraNes(_, c) => Some(extra_psg::Payload::Nes(c.clone())),
                     Action::ExtraYm3812(_, c) => Some(extra_psg::Payload::Ym3812(c.clone())),
                     Action::ExtraYm3526(_, c) => Some(extra_psg::Payload::Ym3526(c.clone())),
@@ -1963,6 +2028,7 @@ impl Shared {
                 | Action::ExtraHuc6280(instance, _)
                 | Action::ExtraDx7(instance, _)
                 | Action::ExtraPwm(instance, _)
+                | Action::ExtraSnes(instance, _)
                 | Action::ExtraNes(instance, _)
                 | Action::ExtraYm3812(instance, _)
                 | Action::ExtraYm3526(instance, _)
@@ -2155,6 +2221,19 @@ impl Shared {
                         .collect();
                     instance.pwm()?.retain(&prepared)
                 }
+                Action::ExtraSnes(_, _) => {
+                    let prepared: Vec<_> = actions
+                        .iter()
+                        .filter_map(|(action, owner)| {
+                            if let Action::ExtraSnes(target, command) = action {
+                                (target.id == instance.id).then(|| (command.clone(), *owner))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    instance.snes()?.retain(&prepared)
+                }
                 Action::ExtraGameboy(_, _) => {
                     let prepared: Vec<_> = actions
                         .iter()
@@ -2245,6 +2324,7 @@ impl Shared {
                         | Action::ExtraHuc6280(target, _)
                         | Action::ExtraDx7(target, _)
                         | Action::ExtraPwm(target, _)
+                        | Action::ExtraSnes(target, _)
                         | Action::ExtraNes(target, _)
                         | Action::ExtraYm3812(target, _)
                         | Action::ExtraYm3526(target, _)
@@ -2326,6 +2406,11 @@ impl Shared {
                 }
                 Action::ExtraPwm(instance, command) => {
                     let state = instance.pwm().expect("PWM action target");
+                    state.rollback(command.clone());
+                    let _ = state.status(self.frame.load(Ordering::Acquire));
+                }
+                Action::ExtraSnes(instance, command) => {
+                    let state = instance.snes().expect("SNES action target");
                     state.rollback(command.clone());
                     let _ = state.status(self.frame.load(Ordering::Acquire));
                 }
@@ -2927,6 +3012,40 @@ impl Shared {
         *sequence = next_sequence;
         status
     }
+    fn create_extra_snes(&self, instance: u64) -> Result<extra_snes::Status, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self.extra_psg.create_snes(instance, epoch, self.rate) {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target.snes()?.status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional SNES install capacity"));
+        *sequence = next_sequence;
+        status
+    }
     fn create_extra_gameboy(
         &self,
         instance: u64,
@@ -3299,6 +3418,15 @@ impl Shared {
         self.invalidation.fetch_add(1, Ordering::Release);
         Ok(())
     }
+    fn dispose_extra_snes(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose_snes(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
     fn dispose_extra_gameboy(&self, instance: u64) -> Result<(), String> {
         let _producer = self
             .producer
@@ -3571,6 +3699,26 @@ impl Shared {
         target
             .pwm()?
             .status_after(self.frame.load(Ordering::Acquire), after)
+    }
+    fn extra_snes_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+        ram: bool,
+    ) -> Result<extra_snes::Status, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        if let Some(id) = after {
+            target.snes()?.wait_applied(id)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional SNES instance has expired".into());
+        }
+        target
+            .snes()?
+            .status_after(self.frame.load(Ordering::Acquire), after, ram)
     }
     fn extra_gameboy_status(
         &self,
@@ -3912,6 +4060,14 @@ impl Shared {
                             event.owner,
                         )
                 }
+                Action::ExtraSnes(instance, command) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
+                        && instance.snes().expect("SNES action target").valid_event(
+                            command,
+                            event.sequence,
+                            event.owner,
+                        )
+                }
                 Action::ExtraGameboy(instance, command) => {
                     instance.valid(self.epoch.load(Ordering::Acquire))
                         && instance
@@ -4077,6 +4233,9 @@ impl Shared {
             Action::ExtraPwm(instance, command) => {
                 instance.pwm().expect("PWM action target").retire(command)
             }
+            Action::ExtraSnes(instance, command) => {
+                instance.snes().expect("SNES action target").retire(command)
+            }
             Action::ExtraGameboy(instance, command) => instance
                 .gameboy()
                 .expect("Game Boy action target")
@@ -4236,6 +4395,8 @@ impl Shared {
             "stop" | "cancel-owner" => return Ok(self.status()),
             _ => return Err("Unknown native performance operation".into()),
         }
+        self.extra_psg
+            .expire_snes_captures(|owner| self.valid_owner(owner))?;
         self.invalidation.fetch_add(1, Ordering::Release);
         Ok(self.status())
     }
@@ -4995,6 +5156,16 @@ impl Renderer {
                     .apply_pwm(&instance, &command, owner, self.frame);
                 state.retire(command);
             }
+            Action::ExtraSnes(instance, command) => {
+                let state = instance.snes().expect("SNES action target");
+                if command.stops() {
+                    state.cancel_before(&command, sequence.saturating_add(1), owner);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.extra_psg
+                    .apply_snes(&instance, &command, owner, self.frame);
+                state.retire(command);
+            }
             Action::ExtraGameboy(instance, command) => {
                 let state = instance.gameboy().expect("Game Boy action target");
                 if command.stops() {
@@ -5503,6 +5674,7 @@ impl Renderer {
                     Action::ExtraHuc6280(_, command) => command.starts(),
                     Action::ExtraDx7(_, command) => command.starts(),
                     Action::ExtraPwm(_, command) => command.starts(),
+                    Action::ExtraSnes(_, command) => command.starts(),
                     Action::ExtraNes(_, command) => command.starts(),
                     Action::ExtraYm3812(_, command) => command.starts(),
                     Action::ExtraYm3526(_, command) => command.starts(),
@@ -8356,6 +8528,16 @@ pub fn native_genesis_extra_pwm_create(
     state.with_session(session, |shared| shared.create_extra_pwm(instance))
 }
 #[tauri::command]
+pub fn native_genesis_extra_snes_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<extra_snes::Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.create_extra_snes(instance))
+}
+#[tauri::command]
 pub fn native_genesis_extra_gameboy_create(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, NativeGenesis>,
@@ -8442,6 +8624,16 @@ pub fn native_genesis_extra_pwm_dispose(
 ) -> Result<(), String> {
     crate::allowed(&window)?;
     state.with_session(session, |shared| shared.dispose_extra_pwm(instance))
+}
+#[tauri::command]
+pub fn native_genesis_extra_snes_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_snes(instance))
 }
 #[tauri::command]
 pub fn native_genesis_extra_gameboy_dispose(
@@ -8565,6 +8757,25 @@ pub async fn native_genesis_extra_pwm_status(
         tauri::async_runtime::spawn_blocking(move || shared.extra_pwm_status(instance, after))
             .await
             .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+#[tauri::command]
+pub async fn native_genesis_extra_snes_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+    ram: Option<bool>,
+) -> Result<extra_snes::Status, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        shared.extra_snes_status(instance, after, ram.unwrap_or(false))
+    })
+    .await
+    .map_err(|error| error.to_string())??;
     state.with_session(session, |_| Ok(()))?;
     Ok(status)
 }
