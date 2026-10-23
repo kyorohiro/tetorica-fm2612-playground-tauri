@@ -53,7 +53,7 @@ def main():
             raise SystemExit('Synchronize native-genesis first; ymfm provider differs: ' + name)
     manifest.write_text(json.dumps({'source': 'hello_ymfm shared ymfm OPNB core',
         'license': 'BSD-3-Clause',
-        'adaptation': 'No synthesis changes. native_genesis_ym2610b.cpp preallocates memory and mirrors Ym2610BAudioEngine resampling; ymfm provider is compiled once in native-genesis.',
+        'adaptation': 'Unmodified pinned ymfm provider, compiled once in native-genesis. native_genesis_ym2610b.cpp retains the primary dense-ROM adapter, adds independent four-FM sparse ROM with immutable control-prepared pages, mirrors the additional Worklet resampling, and provides observational metadata and host voice cancellation.',
         'files': files, 'sharedYmfm': shared}, indent=2) + '\n')
     print(f'Native YM2610B synchronized ({len(files)} files, {len(shared)} shared ymfm sources)')
 

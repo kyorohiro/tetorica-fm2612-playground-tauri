@@ -39,10 +39,41 @@ static void fm(void *chip, uint8_t channel) {
     write(chip, port, 0xa4 + ch, 0x22); write(chip, port, 0xa0 + ch, 0x69);
     write(chip, 0, 0x28, 0xf0 | (channel < 3 ? channel : channel + 1));
 }
+struct PageVersion { uint8_t bank; uint16_t index; void *ptr; };
+struct Pages {
+    void *slots[2][256] = {};
+    std::vector<void *> owned;
+    explicit Pages(void *) {}
+    std::vector<PageVersion> prepare(uint8_t bank, uint32_t offset, const uint8_t *bytes, uint32_t size) {
+        assert(bank < 2 && offset <= 0x1000000 && size <= 0x1000000 - offset);
+        std::vector<PageVersion> result;
+        if (!size) return result;
+        result.reserve((offset % 65536 + size + 65535) / 65536);
+        while (size) {
+            const uint16_t index = offset / 65536;
+            auto *p = native_ym2610b_alloc_rom_page(); assert(p); owned.push_back(p);
+            if (slots[bank][index]) std::memcpy(p, slots[bank][index], 65536);
+            const uint32_t count = std::min(size, 65536 - offset % 65536);
+            std::memcpy(static_cast<uint8_t *>(p) + offset % 65536, bytes, count);
+            slots[bank][index] = p; result.push_back({bank, index, p});
+            bytes += count; offset += count; size -= count;
+        }
+        return result;
+    }
+    void forget(uint8_t bank) { for (auto &page : slots[bank]) page = nullptr; }
+    static void publish(void *chip, const std::vector<PageVersion> &pages) {
+        for (const auto &p : pages) assert(native_ym2610b_install_rom_page(chip, p.bank, p.index, p.ptr));
+    }
+    ~Pages() { for (void *p : owned) native_ym2610b_free_rom_page(p); }
+};
 static int self_test() {
     assert(!native_ym2610b_create(0, 1)); assert(!native_ym2610b_create(48000, 2));
+    static_assert(sizeof(NativeYm2610BState) == 524, "primary state ABI");
+    static_assert(sizeof(NativeYm2610BExtraState) == 536, "additional state ABI");
+    assert(!native_ym2610b_create_extra(0));
     for (uint8_t variant = 0; variant < 2; ++variant) {
         void *chip = native_ym2610b_create(48000, variant); assert(chip);
+
         uint8_t bytes[256], readback[256];
         for (uint32_t i = 0; i < 256; ++i) bytes[i] = static_cast<uint8_t>(i * 7);
         NativeYm2610BState state{};
@@ -120,7 +151,7 @@ static int self_test() {
         for (uint8_t voice = 0; voice < 16; ++voice) native_ym2610b_key_off(chip, voice);
         // Missing YM2610 FM channels remain silent; the B variant enables them.
         native_ym2610b_reset(chip); fm(chip, 0);
-        const double extra = render(chip, 1000); assert(variant ? extra > 1 : extra == 0);
+        const double masked = render(chip, 1000); assert(variant ? masked > 1 : masked == 0);
         native_ym2610b_clear_rom(chip, 0); native_ym2610b_clear_rom(chip, 1);
         audit = false;
         assert(allocations == 0 && frees == 0);
@@ -129,10 +160,83 @@ static int self_test() {
     std::puts("YM2610/YM2610B variant/status/EOS/Stop/reset/independent ROM self-test passed; callback allocations 0, frees 0");
     return 0;
 }
-struct Event { uint32_t frame = 0, a = 0, b = 0, c = 0; std::string op; std::vector<uint8_t> bytes; };
+static int extra_self_test() {
+    static_assert(sizeof(NativeYm2610BExtraState) == 536, "additional ABI");
+    assert(!native_ym2610b_create_extra(0));
+    void *first = native_ym2610b_create_extra(48000), *reference = native_ym2610b_create_extra(48000); assert(first && reference);
+    Pages pages(first), reference_pages(reference);
+    uint8_t data[8192], copied[8192]; for (uint32_t i = 0; i < sizeof data; ++i) data[i] = uint8_t(i * 13 + 7);
+    auto a = pages.prepare(0, 0, data, sizeof data), b = pages.prepare(1, 0, data, sizeof data);
+    auto a_reference = reference_pages.prepare(0, 0, data, sizeof data), b_reference = reference_pages.prepare(1, 0, data, sizeof data);
+    auto boundary = pages.prepare(0, 65536 - 128, data, 256);
+    const auto *old_version = static_cast<const uint8_t *>(a[0].ptr);
+    std::vector<uint8_t> full_rom(0x1000000, 0x5a);
+    auto full_publication = pages.prepare(0, 0, full_rom.data(), full_rom.size()); assert(full_publication.size() == 256);
+    audit = true;
+    assert(!native_ym2610b_load_rom(first, 0, data, 0, sizeof data));
+    assert(native_ym2610b_copy_rom(first, 0, copied, 0, sizeof copied)); for (auto v : copied) assert(!v);
+    Pages::publish(first, a); Pages::publish(first, b);
+    assert(native_ym2610b_copy_rom(reference, 0, copied, 0, sizeof copied)); for (auto v : copied) assert(!v);
+    Pages::publish(reference, a_reference); Pages::publish(reference, b_reference);
+    Pages::publish(first, boundary);
+    assert(native_ym2610b_copy_rom(first, 0, copied, 65536 - 128, 256)); assert(!std::memcmp(copied, data, 256));
+    assert(!std::memcmp(old_version, data, sizeof data)); // New versions never mutate old storage.
+    assert(!native_ym2610b_install_rom_page(first, 2, 0, a[0].ptr));
+    assert(!native_ym2610b_install_rom_page(first, 0, 256, a[0].ptr));
+    assert(!native_ym2610b_install_rom_page(first, 0, 0, nullptr));
+    assert(native_ym2610b_install_rom_page(first, 0, 0, a[0].ptr)); // Replacement and idempotent publication.
+    assert(native_ym2610b_install_rom_page(first, 0, 0, a[0].ptr));
+    for (void *p : {first, reference}) {
+        fm(p, 4);
+        write(p, 0, 0, 0x34); write(p, 0, 1, 2); write(p, 0, 7, 0x3e); write(p, 0, 8, 12);
+        write(p, 1, 1, 63);
+        for (uint8_t ch = 0; ch < 6; ++ch) { write(p, 1, 0x10 + ch, 0); write(p, 1, 0x18 + ch, 0); write(p, 1, 0x20 + ch, 0); write(p, 1, 0x28 + ch, 0); write(p, 1, 8 + ch, 0xdf); }
+        write(p, 1, 0, 63);
+        write(p, 0, 0x11, 0xc0); write(p, 0, 0x12, 0); write(p, 0, 0x13, 0); write(p, 0, 0x14, 31); write(p, 0, 0x15, 0);
+        write(p, 0, 0x19, 0); write(p, 0, 0x1a, 0x40); write(p, 0, 0x1b, 180); write(p, 0, 0x10, 0xb0);
+    }
+    for (uint32_t clock : {8000000u, 100000u, 8000000u}) {
+        fm(first, 1); assert(native_ym2610b_set_clock(first, clock)); assert(native_ym2610b_set_clock(reference, clock));
+        for (uint32_t frame = 0; frame < 4096; ++frame) {
+            if (frame == 701) native_ym2610b_key_off(first, 1);
+            if (frame == 1703) { native_ym2610b_key_off(first, 2); write(first, 0, 0x41, 7); }
+            if (frame == 2801) native_ym2610b_key_off(first, 5);
+            NativeYm2610BExtraState inspected{}; native_ym2610b_get_extra_state(first, &inspected);
+            float l, r, expected_l, expected_r; native_ym2610b_sample(first, &l, &r); native_ym2610b_sample(reference, &expected_l, &expected_r);
+            if (frame >= 701) assert(l == expected_l && r == expected_r);
+        }
+    }
+    NativeYm2610BExtraState meta{};
+    write(first, 0, 0x28, 0xa2); write(first, 0, 8, 16); write(first, 0, 0x27, 0x8f);
+    native_ym2610b_cancel_csm(first); native_ym2610b_get_extra_state(first, &meta);
+    assert(meta.keys[2] == 10 && !(meta.registers[0x27] & 0x81) && (meta.registers[0x27] & 2));
+    write(first, 0, 0x27, 0x8f); native_ym2610b_key_off_fm(first, 2); native_ym2610b_get_extra_state(first, &meta);
+    assert(!meta.keys[2] && (meta.registers[0x27] & 0x81) == 0x81);
+    native_ym2610b_cancel_csm(first); native_ym2610b_key_off(first, 6); native_ym2610b_get_extra_state(first, &meta);
+    assert(!(meta.registers[0x27] & 0x81) && meta.ssg_levels[0] == 16 && meta.registers[8] == 0);
+    native_ym2610b_set_retained_ssg_level(first, 0, 0); native_ym2610b_get_extra_state(first, &meta); assert(meta.ssg_levels[0] == 0);
+    native_ym2610b_audition_fm_key_on(first, 1, 5); native_ym2610b_stop(first); assert(render(first, 200) == 0);
+    native_ym2610b_get_extra_state(first, &meta); assert(!meta.keys[1]);
+    native_ym2610b_audition_fm_key_on(first, 1, 5); native_ym2610b_reset(first); render(first, 200);
+    native_ym2610b_get_extra_state(first, &meta); assert(!meta.keys[1] && !meta.variant);
+    native_ym2610b_clear_rom(first, 0); assert(native_ym2610b_copy_rom(first, 0, copied, 0, sizeof copied)); for (auto v : copied) assert(!v);
+    assert(!std::memcmp(old_version, data, sizeof data));
+    assert(native_ym2610b_copy_rom(first, 1, copied, 0, sizeof copied)); assert(!std::memcmp(copied, data, sizeof data));
+    assert(native_ym2610b_copy_rom(reference, 0, copied, 0, sizeof copied)); assert(!std::memcmp(copied, data, sizeof data));
+    Pages::publish(first, full_publication);
+    for (uint32_t index = 0; index < 256; ++index) { assert(native_ym2610b_copy_rom(first, 0, copied, index * 65536 + 65535, 1)); assert(copied[0] == 0x5a); }
+    assert(!std::memcmp(old_version, data, sizeof data));
+    audit = false; assert(!allocations && !frees);
+    native_ym2610b_destroy(first); native_ym2610b_destroy(reference);
+    std::puts("Additional YM2610 immutable sparse pages/isolation/cancel/CSM/snapshot self-test passed; callback allocations 0, frees 0");
+    return 0;
+}
+struct Event { uint32_t frame = 0, a = 0, b = 0, c = 0; std::string op; std::vector<uint8_t> bytes; std::vector<PageVersion> pages; };
 int main(int argc, char **argv) {
     try {
-        if (argc == 2 && std::string(argv[1]) == "--self-test") return self_test();
+        const bool extra = argc > 1 && std::string(argv[1]) == "--extra";
+        if (extra) { --argc; ++argv; }
+        if (argc == 2 && std::string(argv[1]) == "--self-test") return extra ? extra_self_test() : self_test();
         if (argc != 4) return 2;
         const uint32_t rate = std::stoul(argv[1]), frames = std::stoul(argv[2]), variant = std::stoul(argv[3]);
         if (frames > 10000000) return 2;
@@ -152,8 +256,15 @@ int main(int argc, char **argv) {
             events.push_back(std::move(event));
         }
         std::stable_sort(events.begin(), events.end(), [](const Event &a, const Event &b) { return a.frame < b.frame; });
-        void *chip = native_ym2610b_create(rate, variant); if (!chip) return 3;
-        std::vector<float> pcm(frames * 2);
+        if (extra && variant) return 2;
+        void *chip = extra ? native_ym2610b_create_extra(rate) : native_ym2610b_create(rate, variant); if (!chip) return 3;
+        Pages pages(chip);
+        if (extra) for (auto &e : events) {
+            if (e.op == "rom") e.pages = pages.prepare(e.a, e.b, e.bytes.data(), e.bytes.size());
+            else if (e.op == "clear") pages.forget(e.a);
+        }
+        const uint32_t planes = extra ? 9 : 2;
+        std::vector<float> pcm(frames * planes);
         size_t next = 0;
         audit = true;
         for (uint32_t frame = 0; frame < frames; ++frame) {
@@ -163,12 +274,18 @@ int main(int argc, char **argv) {
                 else if (e.op == "clock") assert(native_ym2610b_set_clock(chip, e.a));
                 else if (e.op == "mute") native_ym2610b_set_source_mute_mask(chip, e.a);
                 else if (e.op == "off") native_ym2610b_key_off(chip, e.a);
-                else if (e.op == "rom") assert(native_ym2610b_load_rom(chip, e.a, e.bytes.data(), e.b, e.bytes.size()));
+                else if (e.op == "rom") { if (extra) Pages::publish(chip, e.pages); else assert(native_ym2610b_load_rom(chip, e.a, e.bytes.data(), e.b, e.bytes.size())); }
                 else if (e.op == "clear") native_ym2610b_clear_rom(chip, e.a);
                 else if (e.op == "reset") native_ym2610b_reset(chip);
                 else if (e.op == "stop") native_ym2610b_stop(chip);
             }
-            native_ym2610b_sample(chip, &pcm[frame * 2], &pcm[frame * 2 + 1]);
+            native_ym2610b_sample(chip, &pcm[frame * planes], &pcm[frame * planes + 1]);
+            if (extra) {
+                pcm[frame * planes + 2] = native_ym2610b_read_status(chip);
+                pcm[frame * planes + 3] = native_ym2610b_read_status_hi(chip);
+                pcm[frame * planes + 4] = native_ym2610b_get_irq(chip);
+                for (uint8_t port = 0; port < 4; ++port) pcm[frame * planes + 5 + port] = native_ym2610b_read(chip, port);
+            }
         }
         audit = false;
         assert(allocations == 0 && frees == 0);
