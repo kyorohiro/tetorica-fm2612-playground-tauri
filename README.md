@@ -156,7 +156,7 @@ DX7 modeではMSFAのC++音源を直接使い、16音ポリフォニーで生成
 `dx7`／`useSoundChip('dx7')`、音色・SysEx、オペレーター・feedback編集、Keyboard／Operatorsに対応します。
 Main／Workerとも共通FX・liveFx・Audioモニター・最終出力録音を通ります。
 Stopは音色バンクと選択を保持して発音を止めます。YM2612／PSGは生成しません。
-内部44,100 Hz固定で出力機器のsample rateへ変換します。`createSoundChip('dx7')`による独立音源の追加はWeb Audioを使ってください。
+内部44,100 Hz固定で出力機器のsample rateへ変換します。`createSoundChip('dx7')`による独立音源の追加にも対応します。
 由来とApache-2.0ライセンスは`src-tauri/native-dx7/`に保存し、ライセンスをアプリにも同梱します。
 
 NES＋FDS modeでは、現在のJSNES APUとFDSのJS実装をC++へ移植した音源を使います。
@@ -175,9 +175,15 @@ Operatorsの音色・波形編集／試聴、clock変更に対応します。Sto
 SNESではS-DSPをNativeで動かし、8声のBRR楽器・サンプルRAM・ADSR／GAIN・noise・echoを使えます。
 `snes`／`useSoundChip('snes')`、BRRアップロード、Main／Worker、Keyboard／Operators、
 キャプチャ済みDSP／RAM timelineの準備・再生・停止・状態取得に対応します。
-StopはBRR・RAMと設定を保持して発音を止めます。SPC700 CPUを実行するSPCファイルプレーヤーはWeb Audioを使ってください。
+StopはBRR・RAMと設定を保持して発音を止めます。SPC700 CPUを実行するファイルプレーヤーは、別の`createSoundChip('spc')`で追加できます。
 3モードとも共通ミキサー・FX／liveFx・最終出力monitor／録音へ接続し、Genesis音源は生成しません。
 Game Boy／HuC6280のBSDライセンス、SNES_SPCのLGPL-2.1とソース・ビルド手順を同梱しています。
+
+Nativeの`createSoundChip()`はPlaygroundの公開21種類に対応し、合計16台・64 MiBの管理予算で独立した音源を追加できます。
+Mode内蔵音源を借りる`useSoundChip()`とは別に、個別のMixer ID・Keyboard・音色情報・破棄を扱います。
+Genesis／Mega CD／32X系の新しいCassetteにある`examples/genesis/mixed-chip-stability.js`は、
+独立したYM2612・RF5C164・DX7を混ぜる40秒の反復曲です。同じコードでWeb Audio／Native、Main／Workerを比較できます。
+Keyboardは曲と別のFM CH2–6を使います。Mixerの`scene-fm`／`scene-pcm`／`scene-dx7`でSolo／Muteして試聴できます。
 
 `liveFx`は既存の`custom_fx.js`をQuickJS-NGで実行します。
 使用中だけNativeの専用workerで処理し、2048フレーム（48kHzで約42.7ms）の遅延が加わります。
@@ -199,7 +205,7 @@ cargo test --offline --locked --manifest-path src-tauri/Cargo.toml native_live_f
 `noise.create()`は共通C DSPのwhite／pink／brown／gray／clipを32声まで生成します。
 filter・ramp・attack／releaseに対応し、loop取消しではrelease後に領域を回収します。
 圧縮サンプルは読込み時だけブラウザーのofflineデコーダーを使い、Native側で再生します。
-追加チップ、stream、FM／PSGのchip clock変更、独立した音色ファイルの試聴、
+stream、FM／PSGのchip clock変更、独立した音色ファイルの試聴、
 PSGの適用済み状態表示は未対応です。
 対応するWeb Audioへ設定で切り戻してください。FMの編集情報はJS側の設定値であり、
 Native内部のエンベロープ等の観測ではありません。
@@ -224,6 +230,8 @@ python3 scripts/prepare_native_sources.py
 python3 scripts/check_native_sources.py --bundle --out=native-validation/sources.json
 node scripts/check_native_stability.mjs --out=native-validation/stability.json
 node scripts/check_native_stability.mjs --long --out=native-validation/long.json
+node scripts/check_native_extra_stability.mjs --out=native-validation/extra-stability.json
+node scripts/check_native_extra_stability.mjs --long --out=native-validation/extra-stability-long.json
 ```
 
 短時間版は標準21 Mode＋旧Genesis Nukedの生成・破棄、可変callback、所有者取消し、
@@ -231,6 +239,13 @@ Stop／再開、未来命令・保持参照の回収を確認します。長時�
 処理時間と実時間に対する生成速度をJSONへ記録します。固定の速度閾値は設けません。
 GitHub Actionsの5環境でも原典・ソースZIPと短時間版を照合し、失敗時もJSONを保存します。
 これらの結果は物理音声デバイスの長時間安定性や聴感上のノイズを保証するものではありません。
+
+追加音源の試験は実RustのShared／Rendererと混在ラックを使います。FM／PCM／DX7、SNES／SPC、
+YM2608／YM2610の転送を含む3構成（代表7種類）で、4,096フレームの固定／可変callbackのPCM bit一致、
+owner取消し、破棄と再生成、Stop後の保持参照・予算の回収を確認します。
+16台の制限、トランザクション失敗の巻き戻し、音源別と制限前の混合信号のpeak／RMS／AC-RMSも記録します。
+長時間版は各30秒を2 Run×3周で継続生成します。予約bytesはNativeの管理対象であり、プロセスのRSSではありません。
+試験用音色の音量値から、共通のデフォルト音量を自動変更することはありません。
 
 親のBrowser/WASM checkoutがある場合、同じ命令列を継続して生成・比較できます。
 次はFM単独／FM＋PSGを各60秒、44.1／48／96 kHzで比較します。

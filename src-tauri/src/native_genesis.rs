@@ -141,6 +141,9 @@ mod ym2610b;
 mod ym2612;
 
 #[cfg(test)]
+#[path = "native_genesis_extra_stability_tests.rs"]
+mod extra_stability_tests;
+#[cfg(test)]
 #[path = "native_genesis_nes_tests.rs"]
 mod nes_tests;
 #[path = "native_genesis_noise.rs"]

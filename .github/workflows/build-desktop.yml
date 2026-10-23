@@ -72,6 +72,9 @@ jobs:
       - name: Check Native stability without audio devices
         timeout-minutes: 10
         run: node scripts/check_native_stability.mjs --out=native-validation/stability.json
+      - name: Check mixed Native extra-chip stability without audio devices
+        timeout-minutes: 10
+        run: node scripts/check_native_extra_stability.mjs --out=native-validation/extra-stability.json
       - name: Upload Native validation reports
         if: always()
         uses: actions/upload-artifact@v4
