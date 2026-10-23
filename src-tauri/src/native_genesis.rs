@@ -23,6 +23,11 @@ mod dx7;
 #[cfg(test)]
 #[path = "native_genesis_dx7_tests.rs"]
 mod dx7_tests;
+#[path = "native_genesis_extra_psg.rs"]
+mod extra_psg;
+#[cfg(test)]
+#[path = "native_genesis_extra_psg_tests.rs"]
+mod extra_psg_tests;
 #[path = "native_genesis_gameboy.rs"]
 mod gameboy;
 #[path = "native_genesis_huc6280.rs"]
@@ -63,9 +68,6 @@ mod noise_tests;
 #[cfg(test)]
 #[path = "native_genesis_nuked_tests.rs"]
 mod nuked_tests;
-#[cfg(test)]
-#[path = "native_genesis_stability_tests.rs"]
-mod stability_tests;
 #[path = "native_genesis_pwm.rs"]
 mod pwm;
 #[cfg(test)]
@@ -78,6 +80,9 @@ mod rf5c164;
 #[cfg(test)]
 #[path = "native_genesis_rf5c164_tests.rs"]
 mod rf5c164_tests;
+#[cfg(test)]
+#[path = "native_genesis_stability_tests.rs"]
+mod stability_tests;
 const OWNERS: usize = 512;
 const CAPACITY: usize = 65_536;
 const MAX_BATCH: usize = 4096;
@@ -187,6 +192,8 @@ impl Drop for Core {
 
 #[derive(Clone, Debug)]
 enum Action {
+    ExtraPsgInstall(Arc<extra_psg::Instance>),
+    ExtraPsg(Arc<extra_psg::Instance>, Arc<master_system::Prepared>),
     Dx7(Arc<dx7::Prepared>),
     Nes(Arc<nes::Prepared>),
     Gameboy(Arc<gameboy::Prepared>),
@@ -279,6 +286,10 @@ pub struct Command {
 #[derive(Deserialize, Debug)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 enum CommandAction {
+    ExtraPsg {
+        instance: u64,
+        message: master_system::Message,
+    },
     Dx7 {
         message: dx7::Message,
     },
@@ -410,6 +421,9 @@ impl Command {
             return Err("Invalid native command frame".into());
         }
         Ok(match self.action {
+            CommandAction::ExtraPsg { .. } => {
+                return Err("Additional PSG commands require instance resolution".into())
+            }
             CommandAction::Dx7 { ref message } => Action::Dx7(message.prepare()?),
             CommandAction::Nes { ref message } => Action::Nes(message.prepare()?),
             CommandAction::Gameboy { ref message } => Action::Gameboy(message.prepare()?),
@@ -611,6 +625,7 @@ impl Command {
 }
 
 struct Shared {
+    extra_psg: extra_psg::Shared,
     mega_cd: bool,
     nuked: bool,
     genesis_engine: Option<&'static str>,
@@ -696,6 +711,7 @@ impl Shared {
             None
         };
         Self {
+            extra_psg: extra_psg::Shared::default(),
             mega_cd,
             nuked,
             genesis_engine,
@@ -866,7 +882,17 @@ impl Shared {
             .iter()
             .map(|command| {
                 let owner = command.owner(self)?;
-                let action = if let CommandAction::Noise { message } = &command.action {
+                let action = if let CommandAction::ExtraPsg { instance, message } = &command.action
+                {
+                    if command.frame > MAX_SAFE_INTEGER {
+                        return Err("Invalid native command frame".into());
+                    }
+                    let target = self
+                        .extra_psg
+                        .get(*instance, self.epoch.load(Ordering::Acquire))?;
+                    let prepared = target.prepare(message)?;
+                    Action::ExtraPsg(target, prepared)
+                } else if let CommandAction::Noise { message } = &command.action {
                     Action::Noise(noise_plan.prepare(message, self.rate)?)
                 } else {
                     command.resolve(&store, self.rate, owner)?
@@ -1007,6 +1033,10 @@ impl Shared {
             self.overflows.fetch_add(1, Ordering::Relaxed);
             return Err("Native command queue is full; playback was not silently truncated".into());
         }
+        if let Err(error) = self.retain_extra_psg(&actions) {
+            self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
+            return Err(error);
+        }
         if let Some(dx7) = &self.dx7 {
             let prepared: Vec<_> = actions
                 .iter()
@@ -1019,6 +1049,7 @@ impl Shared {
                 })
                 .collect();
             if let Err(error) = dx7.retain(&prepared) {
+                self.rollback_extra_psg(&actions);
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
@@ -1035,6 +1066,7 @@ impl Shared {
                 })
                 .collect();
             if let Err(error) = nes.retain(&prepared) {
+                self.rollback_extra_psg(&actions);
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
@@ -1051,6 +1083,7 @@ impl Shared {
                 })
                 .collect();
             if let Err(error) = chip.retain(&prepared) {
+                self.rollback_extra_psg(&actions);
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
@@ -1067,6 +1100,7 @@ impl Shared {
                 })
                 .collect();
             if let Err(error) = chip.retain(&prepared) {
+                self.rollback_extra_psg(&actions);
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
@@ -1083,6 +1117,7 @@ impl Shared {
                 })
                 .collect();
             if let Err(error) = chip.retain(&prepared) {
+                self.rollback_extra_psg(&actions);
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
@@ -1099,6 +1134,7 @@ impl Shared {
                 })
                 .collect();
             if let Err(error) = chip.retain(&prepared) {
+                self.rollback_extra_psg(&actions);
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
@@ -1115,6 +1151,7 @@ impl Shared {
                 })
                 .collect();
             if let Err(error) = chip.retain(&prepared) {
+                self.rollback_extra_psg(&actions);
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
@@ -1131,6 +1168,7 @@ impl Shared {
                 })
                 .collect();
             if let Err(error) = chip.retain(&prepared) {
+                self.rollback_extra_psg(&actions);
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
@@ -1147,6 +1185,7 @@ impl Shared {
                 })
                 .collect();
             if let Err(error) = chip.retain(&prepared) {
+                self.rollback_extra_psg(&actions);
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
@@ -1163,6 +1202,7 @@ impl Shared {
                 })
                 .collect();
             if let Err(error) = chip.retain(&prepared) {
+                self.rollback_extra_psg(&actions);
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
@@ -1194,6 +1234,7 @@ impl Shared {
                 chip.retain(&prepared)
             };
             if let Err(error) = result {
+                self.rollback_extra_psg(&actions);
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
@@ -1209,6 +1250,7 @@ impl Shared {
                 })
                 .collect();
             if let Err(error) = chip.retain(&prepared) {
+                self.rollback_extra_psg(&actions);
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
@@ -1225,6 +1267,7 @@ impl Shared {
                 })
                 .collect();
             if let Err(error) = chip.retain(&prepared) {
+                self.rollback_extra_psg(&actions);
                 self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
                 return Err(error);
             }
@@ -1276,6 +1319,121 @@ impl Shared {
             }
         }
         Ok(())
+    }
+    fn retain_extra_psg(&self, actions: &[(Action, Option<Owner>)]) -> Result<(), String> {
+        let mut retained: Vec<(Arc<extra_psg::Instance>, Arc<master_system::Prepared>)> =
+            Vec::new();
+        let mut seen = HashSet::new();
+        for (action, _) in actions {
+            if let Action::ExtraPsg(instance, _) = action {
+                if !seen.insert(instance.id) {
+                    continue;
+                }
+                let prepared: Vec<_> = actions
+                    .iter()
+                    .filter_map(|(action, owner)| {
+                        if let Action::ExtraPsg(target, command) = action {
+                            (target.id == instance.id).then(|| (command.clone(), *owner))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                if let Err(error) = instance.state.retain(&prepared) {
+                    for (instance, command) in retained {
+                        instance.state.retire(command);
+                        let _ = instance
+                            .state
+                            .game_gear_status(self.frame.load(Ordering::Acquire));
+                    }
+                    return Err(extra_psg::error(error));
+                }
+                retained.extend(
+                    prepared
+                        .into_iter()
+                        .map(|(command, _)| (instance.clone(), command)),
+                );
+            }
+        }
+        Ok(())
+    }
+    fn rollback_extra_psg(&self, actions: &[(Action, Option<Owner>)]) {
+        for (action, _) in actions {
+            if let Action::ExtraPsg(instance, command) = action {
+                instance.state.retire(command.clone());
+                let _ = instance
+                    .state
+                    .game_gear_status(self.frame.load(Ordering::Acquire));
+            }
+        }
+    }
+    fn create_extra_psg(
+        &self,
+        instance: u64,
+        clock: Option<u32>,
+    ) -> Result<master_system::GameGearStatus, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self.extra_psg.create(instance, epoch, self.rate, clock) {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target
+            .state
+            .game_gear_status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional PSG install capacity"));
+        *sequence = next_sequence;
+        status
+    }
+    fn dispose_extra_psg(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
+    fn extra_psg_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+    ) -> Result<master_system::GameGearStatus, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        if let Some(id) = after {
+            target.state.wait_applied(id).map_err(extra_psg::error)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional PSG instance has expired".into());
+        }
+        target
+            .state
+            .game_gear_status(self.frame.load(Ordering::Acquire))
     }
     fn enqueue_special(&self, action: Action) -> Result<(), String> {
         let mut sequence = self
@@ -1407,6 +1565,18 @@ impl Shared {
     fn valid_event(&self, event: &Event) -> bool {
         let action = event.action.borrow();
         self.valid_owner(event.owner)
+            && match &*action {
+                Action::ExtraPsgInstall(instance) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
+                }
+                Action::ExtraPsg(instance, command) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
+                        && instance
+                            .state
+                            .valid_event(command, event.sequence, event.owner)
+                }
+                _ => true,
+            }
             && event.epoch == self.epoch.load(Ordering::Acquire)
             && (!matches!(
                 *action,
@@ -1469,6 +1639,10 @@ impl Shared {
     }
     fn retire_action(&self, action: Action) {
         match action {
+            Action::ExtraPsg(instance, command) => {
+                instance.state.retire(command);
+            }
+            Action::ExtraPsgInstall(_) => {}
             Action::Nes(command) => {
                 if let Some(nes) = &self.nes {
                     nes.retire(command);
@@ -1762,6 +1936,7 @@ impl Shared {
             .producer
             .lock()
             .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.deactivate_all()?;
         let epoch = self.epoch.fetch_add(1, Ordering::AcqRel) + 1;
         self.active_performance.store(0, Ordering::Release);
         let start = Instant::now();
@@ -1774,6 +1949,7 @@ impl Shared {
             }
             std::thread::sleep(Duration::from_millis(2));
         }
+        self.extra_psg.collect_retired()?;
         self.noise
             .lock()
             .map_err(|_| "Native noise state is unavailable")?
@@ -1810,6 +1986,7 @@ struct DacStream {
 }
 
 struct Renderer {
+    extra_psg: extra_psg::Renderer,
     core: Core,
     dx7: Option<dx7::Renderer>,
     nes: Option<nes::Renderer>,
@@ -1880,6 +2057,7 @@ impl Renderer {
         console: Option<&str>,
     ) -> Result<Self, String> {
         Ok(Self {
+            extra_psg: extra_psg::Renderer::default(),
             core: if dx7
                 || nes
                 || console
@@ -2134,6 +2312,11 @@ impl Renderer {
                 }
             }
         }
+        self.extra_psg.prune(
+            self.epoch,
+            |owner| shared.valid_owner(owner),
+            self.fade_remaining > 0,
+        );
         // Fixed admission bounds guarantee this never reallocates. Limit work
         // per callback; large incoming batches cannot monopolize audio forever.
         for _ in 0..MAX_BATCH {
@@ -2214,6 +2397,17 @@ impl Renderer {
         let owner = event.owner;
         let sequence = event.sequence;
         match event.action.into_inner() {
+            Action::ExtraPsgInstall(instance) => self.extra_psg.install(instance),
+            Action::ExtraPsg(instance, command) => {
+                if command.stops() {
+                    instance
+                        .state
+                        .cancel_before(&command, sequence.saturating_add(1), owner);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.extra_psg.apply(&instance, &command, owner);
+                instance.state.retire(command);
+            }
             Action::Nes(command) => {
                 if command.stops() {
                     shared.cancel_nes_before(owner, sequence.saturating_add(1));
@@ -2661,6 +2855,8 @@ impl Renderer {
             let wakes_audio = {
                 let action = event.action.borrow();
                 match &*action {
+                    Action::ExtraPsgInstall(_) => false,
+                    Action::ExtraPsg(_, command) => command.starts(),
                     Action::Noise(command) => command.is_some_and(|command| command.starts()),
                     Action::Dx7(command) => command.starts(),
                     Action::Nes(command) => command.starts(),
@@ -2743,6 +2939,7 @@ impl Renderer {
         if let Some(chip) = &mut self.pwm {
             chip.mix(&mut pcm);
         }
+        self.extra_psg.mix(&mut pcm);
         self.noise.mix(&mut pcm, &shared.noise_completed);
         for slot in &mut self.voices {
             if let Some(voice) = slot {
@@ -2838,6 +3035,7 @@ impl Renderer {
                 if let Some(rf) = &mut self.rf5c164 {
                     rf.stop(&shared.rf5c164);
                 }
+                self.extra_psg.clear();
                 self.noise.reset(&shared.noise_completed);
                 self.fx.stop();
                 self.livefx.end_stop();
@@ -3445,6 +3643,44 @@ pub async fn native_genesis_master_system_status(
     })
     .await
     .map_err(|error| error.to_string())?
+}
+#[tauri::command]
+pub fn native_genesis_extra_psg_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    clock: Option<u32>,
+) -> Result<master_system::GameGearStatus, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.create_extra_psg(instance, clock))
+}
+#[tauri::command]
+pub fn native_genesis_extra_psg_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_psg(instance))
+}
+#[tauri::command]
+pub async fn native_genesis_extra_psg_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+) -> Result<master_system::GameGearStatus, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status =
+        tauri::async_runtime::spawn_blocking(move || shared.extra_psg_status(instance, after))
+            .await
+            .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
 }
 #[tauri::command]
 pub async fn native_genesis_game_gear_status(
