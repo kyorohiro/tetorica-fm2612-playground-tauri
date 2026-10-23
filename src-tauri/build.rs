@@ -50,6 +50,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_msx.h");
     println!("cargo:rerun-if-changed=native-opl");
     println!("cargo:rerun-if-changed=src/native_genesis_opl.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_extra_opl.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_extra_opl.h");
     println!("cargo:rerun-if-changed=src/native_genesis_opl.h");
     // Independent additional YM2612 consumes the common ymfm provider below.
     cc::Build::new()
@@ -81,6 +83,7 @@ fn main() {
         .include("native-master-system/snapshot/src")
         .include("native-genesis")
         .file("src/native_genesis_opl.cpp")
+        .file("src/native_genesis_extra_opl.cpp")
         .warnings(false)
         .compile("tetorica_native_opl");
     // MSX references the same OPLL provider as Master System. GNU ld requires

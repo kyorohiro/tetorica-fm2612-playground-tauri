@@ -6,6 +6,7 @@
 #include "native_genesis_ym2151.h"
 #include "native_genesis_ym2413.h"
 #include "native_genesis_ay8910.h"
+#include "native_genesis_extra_opl.h"
 #include "native_genesis_game_gear.h"
 #include <cassert>
 #include <chrono>
@@ -173,8 +174,20 @@ static void program_ay8910(void *chip, uint32_t transpose) {
     }
     native_ay8910_write(chip, 6, 7); native_ay8910_write(chip, 7, 0); native_ay8910_write(chip, 11, 31); native_ay8910_write(chip, 13, 10);
 }
+static void program_extra_opl(void *chip, uint32_t transpose, uint8_t kind) {
+    const uint8_t slots[9] = {0,1,2,8,9,10,16,17,18};
+    native_extra_opl_write(chip,1,32);
+    for (uint8_t ch=0;ch<9;++ch) {
+        for(uint8_t slot:{slots[ch],uint8_t(slots[ch]+3)}) {
+            native_extra_opl_write(chip,0x20+slot,0xe1);native_extra_opl_write(chip,0x40+slot,12);native_extra_opl_write(chip,0x60+slot,0xf5);native_extra_opl_write(chip,0x80+slot,0x58);native_extra_opl_write(chip,0xe0+slot,kind==1?ch%4:0);
+        }
+        native_extra_opl_write(chip,0xc0+ch,(ch&1)|10);native_extra_opl_write(chip,0xa0+ch,127+ch*13+transpose);native_extra_opl_write(chip,0xb0+ch,0x31);
+    }
+    native_extra_opl_write(chip,0xbd,255);
+    if(kind==3) {native_extra_opl_write(chip,8,15);native_extra_opl_write(chip,11,31);native_extra_opl_write(chip,16,255);native_extra_opl_write(chip,17,255);native_extra_opl_write(chip,18,220);native_extra_opl_write(chip,7,0xb0);}
+}
 int main(int argc, char **argv) {
-    if (argc < 4 || argc > 10) return 2;
+    if (argc < 4 || argc > 13) return 2;
     const uint32_t fm_count = std::strtoul(argv[1], nullptr, 10), psg_count = std::strtoul(argv[2], nullptr, 10);
     const uint32_t frames = std::strtoul(argv[3], nullptr, 10), rate = 48000;
     const uint32_t opn_count = argc >= 5 ? std::strtoul(argv[4], nullptr, 10) : 0;
@@ -183,8 +196,11 @@ int main(int argc, char **argv) {
     const uint32_t opm_count = argc >= 8 ? std::strtoul(argv[7], nullptr, 10) : 0;
     const uint32_t opll_count = argc >= 9 ? std::strtoul(argv[8], nullptr, 10) : 0;
     const uint32_t ay_count = argc >= 10 ? std::strtoul(argv[9], nullptr, 10) : 0;
-    if (fm_count + psg_count + opn_count + opna_count + opnb_count + opm_count + opll_count + ay_count == 0 || fm_count + psg_count + opn_count + opna_count + opnb_count + opm_count + opll_count + ay_count > 16 || !frames || frames > rate * 60) return 2;
-    std::vector<void *> fm, psg, opn, opna, opnb, opm, opll, ay, pages; fm.reserve(fm_count); psg.reserve(psg_count); opn.reserve(opn_count); opna.reserve(opna_count); opnb.reserve(opnb_count); pages.reserve(opnb_count * 2); opm.reserve(opm_count); opll.reserve(opll_count); ay.reserve(ay_count);
+    const uint32_t opl1_count = argc >= 11 ? std::strtoul(argv[10], nullptr, 10) : 0;
+    const uint32_t opl2_count = argc >= 12 ? std::strtoul(argv[11], nullptr, 10) : 0;
+    const uint32_t y8950_count = argc >= 13 ? std::strtoul(argv[12], nullptr, 10) : 0;
+    if (fm_count + psg_count + opn_count + opna_count + opnb_count + opm_count + opll_count + ay_count + opl1_count + opl2_count + y8950_count == 0 || fm_count + psg_count + opn_count + opna_count + opnb_count + opm_count + opll_count + ay_count + opl1_count + opl2_count + y8950_count > 16 || !frames || frames > rate * 60) return 2;
+    std::vector<void *> fm, psg, opn, opna, opnb, opm, opll, ay, opl1, opl2, y8950, pages; fm.reserve(fm_count); psg.reserve(psg_count); opn.reserve(opn_count); opna.reserve(opna_count); opnb.reserve(opnb_count); pages.reserve(opnb_count * 2); opm.reserve(opm_count); opll.reserve(opll_count); ay.reserve(ay_count); opl1.reserve(opl1_count); opl2.reserve(opl2_count); y8950.reserve(y8950_count);
     const auto baseline_heap = live_bytes;
     const auto baseline_rss = peak_rss();
     for (uint32_t i = 0; i < fm_count; ++i) { auto *chip = native_ym2612_create(rate); assert(chip); fm.push_back(chip); program_fm(chip, i); }
@@ -195,6 +211,8 @@ int main(int argc, char **argv) {
     for (uint32_t i = 0; i < opm_count; ++i) { auto *chip = native_ym2151_create(rate); assert(chip); opm.push_back(chip); program_ym2151(chip, i); }
     for (uint32_t i = 0; i < opll_count; ++i) { auto *chip = native_ym2413_create(rate); assert(chip); opll.push_back(chip); program_ym2413(chip, i); }
     for (uint32_t i = 0; i < ay_count; ++i) { auto *chip = native_ay8910_create(rate); assert(chip); ay.push_back(chip); program_ay8910(chip, i); }
+    for(uint8_t kind:{0,1,3}) { auto &list=kind==0?opl1:kind==1?opl2:y8950; const uint32_t count=kind==0?opl1_count:kind==1?opl2_count:y8950_count;
+        for(uint32_t i=0;i<count;++i) {void *chip=native_extra_opl_create(rate,kind);assert(chip);list.push_back(chip);program_extra_opl(chip,i,kind);} }
     const auto core_heap_bytes = live_bytes - baseline_heap;
     volatile double checksum = 0;
     auto render = [&](uint32_t n) {
@@ -208,6 +226,7 @@ int main(int argc, char **argv) {
             for (void *chip : opm) { native_ym2151_sample(chip, &l, &r); mixed_left += l; mixed_right += r; }
             for (void *chip : opll) { native_ym2413_sample(chip, &l, &r); mixed_left += l; mixed_right += r; }
             for (void *chip : ay) { native_ay8910_sample(chip, &l, &r); mixed_left += l; mixed_right += r; }
+            for(const auto *list:{&opl1,&opl2,&y8950})for(void *chip:*list){native_extra_opl_sample(chip,&l,&r);mixed_left+=l;mixed_right+=r;}
             checksum += mixed_left + mixed_right;
         }
     };
@@ -227,10 +246,11 @@ int main(int argc, char **argv) {
     for (void *chip : opm) native_ym2151_destroy(chip);
     for (void *chip : opll) native_ym2413_destroy(chip);
     for (void *chip : ay) native_ay8910_destroy(chip);
+    for(const auto *list:{&opl1,&opl2,&y8950})for(void *chip:*list)native_extra_opl_destroy(chip);
     for (void *page : pages) native_ym2610b_free_rom_page(page);
     assert(live_bytes == baseline_heap && callback_allocations == 0 && callback_frees == 0);
-    std::printf("{\"ym2612\":%u,\"segapsg\":%u,\"ym2203\":%u,\"ym2608\":%u,\"ym2610\":%u,\"ym2151\":%u,\"ym2413\":%u,\"ay8910\":%u,\"sampleRate\":%u,\"frames\":%u,\"cpuSeconds\":%.9f,\"wallSeconds\":%.9f,\"coreHeapBytes\":%zu,\"romBytes\":%u,\"ramBytes\":%u,\"ym2610RomPageBytes\":%u,\"coreHeapExcludingMemoryBytes\":%zu,\"peakRssBytes\":%llu,\"peakRssGrowthBytes\":%llu,\"renderAllocations\":%llu,\"renderFrees\":%llu,\"checksum\":%.9f}\n",
-        fm_count, psg_count, opn_count, opna_count, opnb_count, opm_count, opll_count, ay_count, rate, frames, cpu_seconds, wall_seconds, core_heap_bytes,
+    std::printf("{\"ym2612\":%u,\"segapsg\":%u,\"ym2203\":%u,\"ym2608\":%u,\"ym2610\":%u,\"ym2151\":%u,\"ym2413\":%u,\"ay8910\":%u,\"ym3526\":%u,\"ym3812\":%u,\"y8950\":%u,\"sampleRate\":%u,\"frames\":%u,\"cpuSeconds\":%.9f,\"wallSeconds\":%.9f,\"coreHeapBytes\":%zu,\"romBytes\":%u,\"ramBytes\":%u,\"ym2610RomPageBytes\":%u,\"coreHeapExcludingMemoryBytes\":%zu,\"peakRssBytes\":%llu,\"peakRssGrowthBytes\":%llu,\"renderAllocations\":%llu,\"renderFrees\":%llu,\"checksum\":%.9f}\n",
+        fm_count, psg_count, opn_count, opna_count, opnb_count, opm_count, opll_count, ay_count, opl1_count, opl2_count, y8950_count, rate, frames, cpu_seconds, wall_seconds, core_heap_bytes,
         opna_count * 8192, opna_count * 2097152, opnb_count * 2 * 65536, core_heap_bytes - opna_count * (8192 + 2097152) - opnb_count * 2 * 65536,
         static_cast<unsigned long long>(peak), static_cast<unsigned long long>(peak > baseline_rss ? peak - baseline_rss : 0),
         static_cast<unsigned long long>(callback_allocations), static_cast<unsigned long long>(callback_frees), double(checksum));
