@@ -52,14 +52,16 @@ fn extra_psg_rack_is_independent_stereo_and_does_not_change_primary() {
         .extra_psg
         .get(1, 0)
         .unwrap()
-        .state
+        .psg()
+        .unwrap()
         .game_gear_status(renderer.frame)
         .unwrap();
     let second = shared
         .extra_psg
         .get(2, 0)
         .unwrap()
-        .state
+        .psg()
+        .unwrap()
         .game_gear_status(renderer.frame)
         .unwrap();
     let first = serde_json::to_value(first).unwrap();
@@ -218,7 +220,8 @@ fn extra_psg_batch_rejection_does_not_retain_partial_prepared_commands() {
             .extra_psg
             .get(id, 0)
             .unwrap()
-            .state
+            .psg()
+            .unwrap()
             .game_gear_status(0)
             .unwrap();
         assert_eq!(
@@ -352,10 +355,16 @@ fn extra_psg_held_clock_failure_is_recoverable_and_does_not_change_other_instanc
         .unwrap();
     render(&mut renderer, &shared, 1);
     let target = shared.extra_psg.get(1, 0).unwrap();
-    target.state.wait_applied(11).unwrap();
+    target.psg().unwrap().wait_applied(11).unwrap();
     assert_eq!(
-        serde_json::to_value(target.state.game_gear_status(renderer.frame).unwrap()).unwrap()
-            ["segapsg"]["clock"],
+        serde_json::to_value(
+            target
+                .psg()
+                .unwrap()
+                .game_gear_status(renderer.frame)
+                .unwrap()
+        )
+        .unwrap()["segapsg"]["clock"],
         4_000_000
     );
 }

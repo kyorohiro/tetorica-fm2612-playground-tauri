@@ -28,6 +28,9 @@ mod extra_psg;
 #[cfg(test)]
 #[path = "native_genesis_extra_psg_tests.rs"]
 mod extra_psg_tests;
+#[cfg(test)]
+#[path = "native_genesis_extra_ym2612_tests.rs"]
+mod extra_ym2612_tests;
 #[path = "native_genesis_gameboy.rs"]
 mod gameboy;
 #[path = "native_genesis_huc6280.rs"]
@@ -56,6 +59,8 @@ mod ym2203;
 mod ym2608;
 #[path = "native_genesis_ym2610b.rs"]
 mod ym2610b;
+#[path = "native_genesis_ym2612.rs"]
+mod ym2612;
 
 #[cfg(test)]
 #[path = "native_genesis_nes_tests.rs"]
@@ -194,6 +199,7 @@ impl Drop for Core {
 enum Action {
     ExtraPsgInstall(Arc<extra_psg::Instance>),
     ExtraPsg(Arc<extra_psg::Instance>, Arc<master_system::Prepared>),
+    ExtraYm2612(Arc<extra_psg::Instance>, Arc<ym2612::Prepared>),
     Dx7(Arc<dx7::Prepared>),
     Nes(Arc<nes::Prepared>),
     Gameboy(Arc<gameboy::Prepared>),
@@ -289,6 +295,10 @@ enum CommandAction {
     ExtraPsg {
         instance: u64,
         message: master_system::Message,
+    },
+    ExtraYm2612 {
+        instance: u64,
+        message: ym2612::Message,
     },
     Dx7 {
         message: dx7::Message,
@@ -421,8 +431,8 @@ impl Command {
             return Err("Invalid native command frame".into());
         }
         Ok(match self.action {
-            CommandAction::ExtraPsg { .. } => {
-                return Err("Additional PSG commands require instance resolution".into())
+            CommandAction::ExtraPsg { .. } | CommandAction::ExtraYm2612 { .. } => {
+                return Err("Additional sound-chip commands require instance resolution".into())
             }
             CommandAction::Dx7 { ref message } => Action::Dx7(message.prepare()?),
             CommandAction::Nes { ref message } => Action::Nes(message.prepare()?),
@@ -892,6 +902,16 @@ impl Shared {
                         .get(*instance, self.epoch.load(Ordering::Acquire))?;
                     let prepared = target.prepare(message)?;
                     Action::ExtraPsg(target, prepared)
+                } else if let CommandAction::ExtraYm2612 { instance, message } = &command.action {
+                    if command.frame > MAX_SAFE_INTEGER {
+                        return Err("Invalid native command frame".into());
+                    }
+                    let target = self
+                        .extra_psg
+                        .get(*instance, self.epoch.load(Ordering::Acquire))?;
+                    target.ym2612()?;
+                    let prepared = message.prepare()?;
+                    Action::ExtraYm2612(target, prepared)
                 } else if let CommandAction::Noise { message } = &command.action {
                     Action::Noise(noise_plan.prepare(message, self.rate)?)
                 } else {
@@ -1321,49 +1341,77 @@ impl Shared {
         Ok(())
     }
     fn retain_extra_psg(&self, actions: &[(Action, Option<Owner>)]) -> Result<(), String> {
-        let mut retained: Vec<(Arc<extra_psg::Instance>, Arc<master_system::Prepared>)> =
-            Vec::new();
+        let mut retained = Vec::new();
         let mut seen = HashSet::new();
         for (action, _) in actions {
-            if let Action::ExtraPsg(instance, _) = action {
-                if !seen.insert(instance.id) {
-                    continue;
-                }
-                let prepared: Vec<_> = actions
-                    .iter()
-                    .filter_map(|(action, owner)| {
-                        if let Action::ExtraPsg(target, command) = action {
-                            (target.id == instance.id).then(|| (command.clone(), *owner))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                if let Err(error) = instance.state.retain(&prepared) {
-                    for (instance, command) in retained {
-                        instance.state.retire(command);
-                        let _ = instance
-                            .state
-                            .game_gear_status(self.frame.load(Ordering::Acquire));
-                    }
-                    return Err(extra_psg::error(error));
-                }
-                retained.extend(
-                    prepared
-                        .into_iter()
-                        .map(|(command, _)| (instance.clone(), command)),
-                );
+            let instance = match action {
+                Action::ExtraPsg(instance, _) | Action::ExtraYm2612(instance, _) => instance,
+                _ => continue,
+            };
+            if !seen.insert(instance.id) {
+                continue;
             }
+            let result = match action {
+                Action::ExtraPsg(_, _) => {
+                    let prepared: Vec<_> = actions
+                        .iter()
+                        .filter_map(|(action, owner)| {
+                            if let Action::ExtraPsg(target, command) = action {
+                                (target.id == instance.id).then(|| (command.clone(), *owner))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    instance.psg()?.retain(&prepared).map_err(extra_psg::error)
+                }
+                Action::ExtraYm2612(_, _) => {
+                    let prepared: Vec<_> = actions
+                        .iter()
+                        .filter_map(|(action, owner)| {
+                            if let Action::ExtraYm2612(target, command) = action {
+                                (target.id == instance.id).then(|| (command.clone(), *owner))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    instance.ym2612()?.retain(&prepared)
+                }
+                _ => unreachable!(),
+            };
+            if let Err(error) = result {
+                self.rollback_extra_psg(&retained);
+                return Err(error);
+            }
+            retained.extend(
+                actions
+                    .iter()
+                    .filter(|(action, _)| match action {
+                        Action::ExtraPsg(target, _) | Action::ExtraYm2612(target, _) => {
+                            target.id == instance.id
+                        }
+                        _ => false,
+                    })
+                    .cloned(),
+            );
         }
         Ok(())
     }
     fn rollback_extra_psg(&self, actions: &[(Action, Option<Owner>)]) {
         for (action, _) in actions {
-            if let Action::ExtraPsg(instance, command) = action {
-                instance.state.retire(command.clone());
-                let _ = instance
-                    .state
-                    .game_gear_status(self.frame.load(Ordering::Acquire));
+            match action {
+                Action::ExtraPsg(instance, command) => {
+                    let state = instance.psg().expect("PSG action target");
+                    state.retire(command.clone());
+                    let _ = state.game_gear_status(self.frame.load(Ordering::Acquire));
+                }
+                Action::ExtraYm2612(instance, command) => {
+                    let state = instance.ym2612().expect("YM2612 action target");
+                    state.retire(command.clone());
+                    let _ = state.status(self.frame.load(Ordering::Acquire));
+                }
+                _ => {}
             }
         }
     }
@@ -1393,7 +1441,7 @@ impl Shared {
             }
         };
         let status = target
-            .state
+            .psg()?
             .game_gear_status(self.frame.load(Ordering::Acquire));
         self.queue
             .push(Event {
@@ -1404,6 +1452,47 @@ impl Shared {
                 action: RefCell::new(Action::ExtraPsgInstall(target)),
             })
             .unwrap_or_else(|_| unreachable!("Reserved additional PSG install capacity"));
+        *sequence = next_sequence;
+        status
+    }
+    fn create_extra_ym2612(
+        &self,
+        instance: u64,
+        clock: Option<u32>,
+    ) -> Result<ym2612::Status, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self
+            .extra_psg
+            .create_ym2612(instance, epoch, self.rate, clock)
+        {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target.ym2612()?.status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional YM2612 install capacity"));
         *sequence = next_sequence;
         status
     }
@@ -1425,15 +1514,41 @@ impl Shared {
             .extra_psg
             .get(instance, self.epoch.load(Ordering::Acquire))?;
         if let Some(id) = after {
-            target.state.wait_applied(id).map_err(extra_psg::error)?;
+            target.psg()?.wait_applied(id).map_err(extra_psg::error)?;
         }
         self.check_session(self.session)?;
         if !target.valid(self.epoch.load(Ordering::Acquire)) {
             return Err("Additional PSG instance has expired".into());
         }
         target
-            .state
+            .psg()?
             .game_gear_status(self.frame.load(Ordering::Acquire))
+    }
+    fn dispose_extra_ym2612(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose_ym2612(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
+    fn extra_ym2612_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+    ) -> Result<ym2612::Status, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        if let Some(id) = after {
+            target.ym2612()?.wait_applied(id)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional YM2612 instance has expired".into());
+        }
+        target.ym2612()?.status(self.frame.load(Ordering::Acquire))
     }
     fn enqueue_special(&self, action: Action) -> Result<(), String> {
         let mut sequence = self
@@ -1571,8 +1686,17 @@ impl Shared {
                 }
                 Action::ExtraPsg(instance, command) => {
                     instance.valid(self.epoch.load(Ordering::Acquire))
+                        && instance.psg().expect("PSG action target").valid_event(
+                            command,
+                            event.sequence,
+                            event.owner,
+                        )
+                }
+                Action::ExtraYm2612(instance, command) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
                         && instance
-                            .state
+                            .ym2612()
+                            .expect("YM2612 action target")
                             .valid_event(command, event.sequence, event.owner)
                 }
                 _ => true,
@@ -1640,9 +1764,15 @@ impl Shared {
     fn retire_action(&self, action: Action) {
         match action {
             Action::ExtraPsg(instance, command) => {
-                instance.state.retire(command);
+                instance.psg().expect("PSG action target").retire(command);
             }
             Action::ExtraPsgInstall(_) => {}
+            Action::ExtraYm2612(instance, command) => {
+                instance
+                    .ym2612()
+                    .expect("YM2612 action target")
+                    .retire(command);
+            }
             Action::Nes(command) => {
                 if let Some(nes) = &self.nes {
                     nes.retire(command);
@@ -2400,13 +2530,24 @@ impl Renderer {
             Action::ExtraPsgInstall(instance) => self.extra_psg.install(instance),
             Action::ExtraPsg(instance, command) => {
                 if command.stops() {
-                    instance
-                        .state
-                        .cancel_before(&command, sequence.saturating_add(1), owner);
+                    instance.psg().expect("PSG action target").cancel_before(
+                        &command,
+                        sequence.saturating_add(1),
+                        owner,
+                    );
                     shared.invalidation.fetch_add(1, Ordering::Release);
                 }
                 self.extra_psg.apply(&instance, &command, owner);
-                instance.state.retire(command);
+                instance.psg().expect("PSG action target").retire(command);
+            }
+            Action::ExtraYm2612(instance, command) => {
+                let state = instance.ym2612().expect("YM2612 action target");
+                if command.stops() {
+                    state.cancel_before(&command, sequence.saturating_add(1), owner);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.extra_psg.apply_ym2612(&instance, &command, owner);
+                state.retire(command);
             }
             Action::Nes(command) => {
                 if command.stops() {
@@ -2857,6 +2998,7 @@ impl Renderer {
                 match &*action {
                     Action::ExtraPsgInstall(_) => false,
                     Action::ExtraPsg(_, command) => command.starts(),
+                    Action::ExtraYm2612(_, command) => command.starts(),
                     Action::Noise(command) => command.is_some_and(|command| command.starts()),
                     Action::Dx7(command) => command.starts(),
                     Action::Nes(command) => command.starts(),
@@ -3677,6 +3819,46 @@ pub async fn native_genesis_extra_psg_status(
     let shared = state.session_shared(session)?;
     let status =
         tauri::async_runtime::spawn_blocking(move || shared.extra_psg_status(instance, after))
+            .await
+            .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+#[tauri::command]
+pub fn native_genesis_extra_ym2612_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    clock: Option<u32>,
+) -> Result<ym2612::Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| {
+        shared.create_extra_ym2612(instance, clock)
+    })
+}
+#[tauri::command]
+pub fn native_genesis_extra_ym2612_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_ym2612(instance))
+}
+#[tauri::command]
+pub async fn native_genesis_extra_ym2612_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+) -> Result<ym2612::Status, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status =
+        tauri::async_runtime::spawn_blocking(move || shared.extra_ym2612_status(instance, after))
             .await
             .map_err(|error| error.to_string())??;
     state.with_session(session, |_| Ok(()))?;

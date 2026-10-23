@@ -9,6 +9,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_fx.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_fx.h");
     println!("cargo:rerun-if-changed=src/native_genesis_core.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_ym2612.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_ym2612.h");
     println!("cargo:rerun-if-changed=native-nuked");
     println!("cargo:rerun-if-changed=src/native_genesis_nuked.cpp");
     println!("cargo:rerun-if-changed=native-megacd");
@@ -43,6 +45,16 @@ fn main() {
     println!("cargo:rerun-if-changed=native-opl");
     println!("cargo:rerun-if-changed=src/native_genesis_opl.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_opl.h");
+    // Independent additional YM2612 consumes the common ymfm provider below.
+    cc::Build::new()
+        .cpp(true)
+        .flag_if_supported("/EHsc")
+        .std("c++14")
+        .opt_level(2)
+        .include("native-genesis")
+        .file("src/native_genesis_ym2612.cpp")
+        .warnings(false)
+        .compile("tetorica_native_ym2612");
     // Standalone Game Gear consumes the once-compiled common Sega PSG below.
     cc::Build::new()
         .cpp(true)
