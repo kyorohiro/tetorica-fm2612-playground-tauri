@@ -65,6 +65,11 @@ mod extra_psg;
 #[cfg(test)]
 #[path = "native_genesis_extra_psg_tests.rs"]
 mod extra_psg_tests;
+#[path = "native_genesis_extra_pwm.rs"]
+mod extra_pwm;
+#[cfg(test)]
+#[path = "native_genesis_extra_pwm_tests.rs"]
+mod extra_pwm_tests;
 #[path = "native_genesis_extra_rf5c164.rs"]
 mod extra_rf5c164;
 #[cfg(test)]
@@ -275,6 +280,7 @@ enum Action {
     ExtraGameboy(Arc<extra_psg::Instance>, Arc<extra_gameboy::Prepared>),
     ExtraHuc6280(Arc<extra_psg::Instance>, Arc<extra_huc6280::Prepared>),
     ExtraDx7(Arc<extra_psg::Instance>, Arc<extra_dx7::Prepared>),
+    ExtraPwm(Arc<extra_psg::Instance>, Arc<extra_pwm::Prepared>),
     ExtraNes(Arc<extra_psg::Instance>, Arc<extra_nes::Prepared>),
     ExtraYm3812(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
     ExtraYm3526(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
@@ -422,6 +428,10 @@ enum CommandAction {
     ExtraDx7 {
         instance: u64,
         message: extra_dx7::Message,
+    },
+    ExtraPwm {
+        instance: u64,
+        message: extra_pwm::Message,
     },
     ExtraGameboy {
         instance: u64,
@@ -588,6 +598,7 @@ impl Command {
             | CommandAction::ExtraGameboy { .. }
             | CommandAction::ExtraHuc6280 { .. }
             | CommandAction::ExtraDx7 { .. }
+            | CommandAction::ExtraPwm { .. }
             | CommandAction::ExtraNes { .. }
             | CommandAction::ExtraYm3812 { .. }
             | CommandAction::ExtraYm3526 { .. }
@@ -1074,6 +1085,7 @@ impl Shared {
                 CommandAction::ExtraGameboy { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraHuc6280 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraDx7 { message, .. } => Some(message.prepared_bytes()),
+                CommandAction::ExtraPwm { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraNes { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm3812 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm3526 { message, .. } => Some(message.prepared_bytes()),
@@ -1311,6 +1323,20 @@ impl Shared {
                         );
                     }
                     Action::ExtraDx7(target, prepared)
+                } else if let CommandAction::ExtraPwm { instance, message } = &command.action {
+                    if command.frame > MAX_SAFE_INTEGER {
+                        return Err("Invalid native command frame".into());
+                    }
+                    let target = self
+                        .extra_psg
+                        .get(*instance, self.epoch.load(Ordering::Acquire))?;
+                    let prepared = target.pwm()?.prepare_message(message)?;
+                    if prepared.is_owner_cancel() && command.frame != 0 {
+                        return Err(
+                            "Native PWM owner cancellation requires immediate frame zero".into(),
+                        );
+                    }
+                    Action::ExtraPwm(target, prepared)
                 } else if let CommandAction::ExtraGameboy { instance, message } = &command.action {
                     if command.frame > MAX_SAFE_INTEGER {
                         return Err("Invalid native command frame".into());
@@ -1777,6 +1803,15 @@ impl Shared {
                     self.invalidation.fetch_add(1, Ordering::Release);
                 }
             }
+            if let Action::ExtraPwm(instance, command) = action {
+                if instance
+                    .pwm()
+                    .expect("PWM action target")
+                    .commit_cancel(command)
+                {
+                    self.invalidation.fetch_add(1, Ordering::Release);
+                }
+            }
             if let Action::ExtraGameboy(instance, command) = action {
                 if instance
                     .gameboy()
@@ -1898,6 +1933,7 @@ impl Shared {
                     Action::ExtraGameboy(_, c) => Some(extra_psg::Payload::Gameboy(c.clone())),
                     Action::ExtraHuc6280(_, c) => Some(extra_psg::Payload::Huc6280(c.clone())),
                     Action::ExtraDx7(_, c) => Some(extra_psg::Payload::Dx7(c.clone())),
+                    Action::ExtraPwm(_, c) => Some(extra_psg::Payload::Pwm(c.clone())),
                     Action::ExtraNes(_, c) => Some(extra_psg::Payload::Nes(c.clone())),
                     Action::ExtraYm3812(_, c) => Some(extra_psg::Payload::Ym3812(c.clone())),
                     Action::ExtraYm3526(_, c) => Some(extra_psg::Payload::Ym3526(c.clone())),
@@ -1926,6 +1962,7 @@ impl Shared {
                 | Action::ExtraGameboy(instance, _)
                 | Action::ExtraHuc6280(instance, _)
                 | Action::ExtraDx7(instance, _)
+                | Action::ExtraPwm(instance, _)
                 | Action::ExtraNes(instance, _)
                 | Action::ExtraYm3812(instance, _)
                 | Action::ExtraYm3526(instance, _)
@@ -2105,6 +2142,19 @@ impl Shared {
                         .collect();
                     instance.dx7()?.retain(&prepared)
                 }
+                Action::ExtraPwm(_, _) => {
+                    let prepared: Vec<_> = actions
+                        .iter()
+                        .filter_map(|(action, owner)| {
+                            if let Action::ExtraPwm(target, command) = action {
+                                (target.id == instance.id).then(|| (command.clone(), *owner))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    instance.pwm()?.retain(&prepared)
+                }
                 Action::ExtraGameboy(_, _) => {
                     let prepared: Vec<_> = actions
                         .iter()
@@ -2194,6 +2244,7 @@ impl Shared {
                         | Action::ExtraGameboy(target, _)
                         | Action::ExtraHuc6280(target, _)
                         | Action::ExtraDx7(target, _)
+                        | Action::ExtraPwm(target, _)
                         | Action::ExtraNes(target, _)
                         | Action::ExtraYm3812(target, _)
                         | Action::ExtraYm3526(target, _)
@@ -2270,6 +2321,11 @@ impl Shared {
                 }
                 Action::ExtraDx7(instance, command) => {
                     let state = instance.dx7().expect("DX7 action target");
+                    state.rollback(command.clone());
+                    let _ = state.status(self.frame.load(Ordering::Acquire));
+                }
+                Action::ExtraPwm(instance, command) => {
+                    let state = instance.pwm().expect("PWM action target");
                     state.rollback(command.clone());
                     let _ = state.status(self.frame.load(Ordering::Acquire));
                 }
@@ -2837,6 +2893,40 @@ impl Shared {
         *sequence = next_sequence;
         status
     }
+    fn create_extra_pwm(&self, instance: u64) -> Result<extra_pwm::Status, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self.extra_psg.create_pwm(instance, epoch, self.rate) {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target.pwm()?.status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional PWM install capacity"));
+        *sequence = next_sequence;
+        status
+    }
     fn create_extra_gameboy(
         &self,
         instance: u64,
@@ -3200,6 +3290,15 @@ impl Shared {
         self.invalidation.fetch_add(1, Ordering::Release);
         Ok(())
     }
+    fn dispose_extra_pwm(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose_pwm(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
     fn dispose_extra_gameboy(&self, instance: u64) -> Result<(), String> {
         let _producer = self
             .producer
@@ -3453,6 +3552,25 @@ impl Shared {
             return Err("Additional DX7 instance has expired".into());
         }
         target.dx7()?.status(self.frame.load(Ordering::Acquire))
+    }
+    fn extra_pwm_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+    ) -> Result<extra_pwm::Status, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        if let Some(id) = after {
+            target.pwm()?.wait_applied(id)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional PWM instance has expired".into());
+        }
+        target
+            .pwm()?
+            .status_after(self.frame.load(Ordering::Acquire), after)
     }
     fn extra_gameboy_status(
         &self,
@@ -3786,6 +3904,14 @@ impl Shared {
                             event.owner,
                         )
                 }
+                Action::ExtraPwm(instance, command) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
+                        && instance.pwm().expect("PWM action target").valid_event(
+                            command,
+                            event.sequence,
+                            event.owner,
+                        )
+                }
                 Action::ExtraGameboy(instance, command) => {
                     instance.valid(self.epoch.load(Ordering::Acquire))
                         && instance
@@ -3947,6 +4073,9 @@ impl Shared {
                 .retire(command),
             Action::ExtraDx7(instance, command) => {
                 instance.dx7().expect("DX7 action target").retire(command)
+            }
+            Action::ExtraPwm(instance, command) => {
+                instance.pwm().expect("PWM action target").retire(command)
             }
             Action::ExtraGameboy(instance, command) => instance
                 .gameboy()
@@ -4725,7 +4854,7 @@ impl Renderer {
         let owner = event.owner;
         let sequence = event.sequence;
         match event.action.into_inner() {
-            Action::ExtraPsgInstall(instance) => self.extra_psg.install(instance),
+            Action::ExtraPsgInstall(instance) => self.extra_psg.install_at(instance, self.frame),
             Action::ExtraPsg(instance, command) => {
                 if command.stops() {
                     instance.psg().expect("PSG action target").cancel_before(
@@ -4854,6 +4983,16 @@ impl Renderer {
                     shared.invalidation.fetch_add(1, Ordering::Release);
                 }
                 self.extra_psg.apply_dx7(&instance, &command, owner);
+                state.retire(command);
+            }
+            Action::ExtraPwm(instance, command) => {
+                let state = instance.pwm().expect("PWM action target");
+                if command.stops() {
+                    state.cancel_before(&command, sequence.saturating_add(1), owner);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.extra_psg
+                    .apply_pwm(&instance, &command, owner, self.frame);
                 state.retire(command);
             }
             Action::ExtraGameboy(instance, command) => {
@@ -5363,6 +5502,7 @@ impl Renderer {
                     Action::ExtraGameboy(_, command) => command.starts(),
                     Action::ExtraHuc6280(_, command) => command.starts(),
                     Action::ExtraDx7(_, command) => command.starts(),
+                    Action::ExtraPwm(_, command) => command.starts(),
                     Action::ExtraNes(_, command) => command.starts(),
                     Action::ExtraYm3812(_, command) => command.starts(),
                     Action::ExtraYm3526(_, command) => command.starts(),
@@ -8206,6 +8346,16 @@ pub fn native_genesis_extra_dx7_create(
     state.with_session(session, |shared| shared.create_extra_dx7(instance))
 }
 #[tauri::command]
+pub fn native_genesis_extra_pwm_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<extra_pwm::Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.create_extra_pwm(instance))
+}
+#[tauri::command]
 pub fn native_genesis_extra_gameboy_create(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, NativeGenesis>,
@@ -8282,6 +8432,16 @@ pub fn native_genesis_extra_dx7_dispose(
 ) -> Result<(), String> {
     crate::allowed(&window)?;
     state.with_session(session, |shared| shared.dispose_extra_dx7(instance))
+}
+#[tauri::command]
+pub fn native_genesis_extra_pwm_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_pwm(instance))
 }
 #[tauri::command]
 pub fn native_genesis_extra_gameboy_dispose(
@@ -8386,6 +8546,23 @@ pub async fn native_genesis_extra_dx7_status(
     let shared = state.session_shared(session)?;
     let status =
         tauri::async_runtime::spawn_blocking(move || shared.extra_dx7_status(instance, after))
+            .await
+            .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+#[tauri::command]
+pub async fn native_genesis_extra_pwm_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+) -> Result<extra_pwm::Status, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status =
+        tauri::async_runtime::spawn_blocking(move || shared.extra_pwm_status(instance, after))
             .await
             .map_err(|error| error.to_string())??;
     state.with_session(session, |_| Ok(()))?;
