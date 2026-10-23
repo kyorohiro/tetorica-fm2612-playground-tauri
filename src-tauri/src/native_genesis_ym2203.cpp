@@ -2,14 +2,27 @@
 #include "native_genesis_ym2203.h"
 #include "ymfm_opn.h"
 #include "ymfm_wasm_interface.h"
+#include "ymfm_fm.ipp"
 #include <algorithm>
 #include <array>
 #include <cstring>
+
+// The common provider owns the FM templates. Only this small public key-source
+// helper needs a local instantiation because optimized providers inline it.
+extern template class ymfm::fm_engine_base<ymfm::opn_registers>;
+extern template class ymfm::fm_channel<ymfm::opn_registers>;
+extern template class ymfm::fm_operator<ymfm::opn_registers>;
+template void ymfm::fm_operator<ymfm::opn_registers>::keyonoff(uint32_t, ymfm::keyon_type);
 
 namespace {
 struct Chip : ymfm::ym2203 {
     explicit Chip(ymfm_wasm_interface &intf) : ym2203(intf) {}
     uint8_t prescaler() const { return m_fm.clock_prescale(); }
+    void clear_csm_key() {
+        const auto *channel = m_fm.debug_channel(2);
+        for (uint32_t op = 0; op < 4; ++op) channel->debug_operator(op)->keyonoff(0, ymfm::KEYON_CSM);
+        m_fm.invalidate_caches();
+    }
     bool next_fm_clock() const {
         // MAX fidelity uses 18 / 9 / 6 output intervals per actual FM clock.
         return m_fm_samples_per_output && m_ssg_resampler.sampindex() % m_fm_samples_per_output == 0;
@@ -19,6 +32,7 @@ struct NativeYm2203 {
     ymfm_wasm_interface intf;
     Chip chip;
     const uint32_t rate;
+    const bool additional;
     uint32_t clock = 4000000, source_mute_mask = 0, channel_mute_mask = 0, forced_mask = 0, pending = 0;
     uint64_t remainder = 0;
     double last = 0;
@@ -27,7 +41,7 @@ struct NativeYm2203 {
     std::array<uint8_t, 3> keys{}, ssg_levels{};
     std::array<uint8_t, 3> pending_keys{};
     std::array<uint8_t, 2> frequency_latch{};
-    explicit NativeYm2203(uint32_t sr) : chip(intf), rate(sr) { chip.reset(); update_mute(); }
+    explicit NativeYm2203(uint32_t sr, bool extra = false) : chip(intf), rate(sr), additional(extra) { chip.reset(); update_mute(); }
     void raw(uint8_t reg, uint8_t value) { chip.write(0, reg); chip.write(1, value); }
     void update_mute() { chip.set_mute_mask(channel_mute_mask | forced_mask | ((source_mute_mask & 2) ? 7 : 0)); }
     void restore(uint8_t channel) {
@@ -69,6 +83,19 @@ struct NativeYm2203 {
             for (uint8_t op = 0; op < 4; ++op) raw(0x40 + voice + op * 4, registers[0x40 + voice + op * 4] | 127);
             update_mute();
         } else if (voice < 6) write(8 + voice - 3, 0, false);
+        if (additional && voice < 6) {
+            if (voice == 2) write(0x27, registers[0x27] & ~0x81);
+            last = 0;
+        }
+    }
+    void off_fm(uint8_t voice) {
+        if (voice == 2 && (registers[0x27] & 0x81) == 0x81) {
+            pending &= ~4u; keys[2] = 0; registers[0x28] = 2; raw(0x28, 2);
+        } else off(voice);
+    }
+    void cancel_csm() {
+        write(0x27, registers[0x27] & ~0x81); chip.clear_csm_key();
+        if (!keys[2] && !(pending & 4)) off(2);
     }
     void audition(uint8_t voice) {
         if (voice < 3) audition_fm(voice, 15);
@@ -92,6 +119,7 @@ struct NativeYm2203 {
         // The primary YM2203 Worklet resets the chip while retaining its
         // output-rate remainder and held PCM. Keep that exact reset boundary.
         forced_mask = 0; pending = 0; update_mute(); stopped = false;
+        if (additional) { remainder = 0; last = 0; }
     }
     static float normalize(int32_t value) { return float(std::max(-32768, std::min(32767, value))) / 32768.0f; }
     void sample(float *left, float *right) {
@@ -123,11 +151,17 @@ void *native_ym2203_create(uint32_t rate) {
     if (rate < 8000 || rate > 384000) return nullptr;
     try { return new NativeYm2203(rate); } catch (...) { return nullptr; }
 }
+void *native_ym2203_create_extra(uint32_t rate) {
+    if (rate < 8000 || rate > 384000) return nullptr;
+    try { return new NativeYm2203(rate, true); } catch (...) { return nullptr; }
+}
 void native_ym2203_destroy(void *p) { delete core(p); }
 void native_ym2203_reset(void *p) { core(p)->reset(); }
 void native_ym2203_stop(void *p) { core(p)->stop(); }
 void native_ym2203_write(void *p, uint8_t port, uint8_t reg, uint8_t value) { if (port == 0) core(p)->write(reg, value); }
 void native_ym2203_key_off(void *p, uint8_t voice) { core(p)->off(voice); }
+void native_ym2203_key_off_fm(void *p, uint8_t voice) { core(p)->off_fm(voice); }
+void native_ym2203_cancel_csm(void *p) { core(p)->cancel_csm(); }
 void native_ym2203_audition_key_on(void *p, uint8_t voice) { core(p)->audition(voice); }
 void native_ym2203_audition_fm_key_on(void *p, uint8_t ch, uint8_t mask) { core(p)->audition_fm(ch, mask); }
 void native_ym2203_set_retained_ssg_level(void *p, uint8_t ch, uint8_t level) { if (ch < 3 && level < 32) core(p)->ssg_levels[ch] = level; }

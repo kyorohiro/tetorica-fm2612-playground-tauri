@@ -13,6 +13,7 @@
 #include <vector>
 static bool audit = false;
 static uint64_t allocations = 0, frees = 0;
+static void *(*create_chip)(uint32_t) = native_ym2203_create;
 void *operator new(std::size_t n) { if (audit) ++allocations; if (void *p = std::malloc(n)) return p; throw std::bad_alloc(); }
 void *operator new[](std::size_t n) { return ::operator new(n); }
 void operator delete(void *p) noexcept { if (audit && p) ++frees; std::free(p); }
@@ -35,8 +36,8 @@ static double render(void *p, uint32_t n) {
 }
 static int self_test() {
     static_assert(sizeof(NativeYm2203State) == 280, "Rust FFI layout");
-    assert(!native_ym2203_create(0) && !native_ym2203_create(384001));
-    void *p = native_ym2203_create(48000); assert(p); NativeYm2203State s{}; audit = true;
+    assert(!create_chip(0) && !create_chip(384001));
+    void *p = create_chip(48000); assert(p); NativeYm2203State s{}; audit = true;
     native_ym2203_get_state(p, &s); assert(s.clock == 4000000 && s.prescaler == 6 && render(p, 200) == 0);
     for (uint8_t ch = 0; ch < 3; ++ch) voice(p, ch);
     assert(render(p, 4000) > 1);
@@ -73,22 +74,60 @@ static int self_test() {
     audit = false; assert(allocations == 0 && frees == 0); native_ym2203_destroy(p);
     std::puts("Selected mono YM2203 only; FM/SSG six voices, source clocks/mutes, prescalers, applied frequency pairs, retained TL/SSG levels and Stop, deferred retrigger/cancellation, timers/status/IRQ passed; callback allocations 0, frees 0"); return 0;
 }
+static int extra_self_test() {
+    void *a = native_ym2203_create_extra(48000), *b = native_ym2203_create_extra(48000), *reference = native_ym2203_create_extra(48000); assert(a && b && reference);
+    audit = true;
+    voice(a, 0);
+    for (void *p : {b, reference}) {
+        voice(p, 2); write(p, 6, 13); write(p, 7, 0); write(p, 8, 16); write(p, 9, 11); write(p, 10, 7);
+        write(p, 11, 31); write(p, 13, 10); write(p, 0x2e, 0); write(p, 0x24, 255); write(p, 0x25, 3); write(p, 0x26, 253); write(p, 0x27, 0xcf);
+    }
+    for (int i = 0; i < 4096; ++i) {
+        if (i % 31 == 0) { write(a, 6, i & 31); write(a, 13, i & 15); native_ym2203_set_mute_mask(a, i & 7); assert(native_ym2203_set_clock(a, 100000 + i * 10000)); }
+        if (i == 701) native_ym2203_reset(a);
+        if (i == 1703) native_ym2203_stop(a);
+        float l, r, x, y, ignored; native_ym2203_sample(a, &ignored, &r); native_ym2203_sample(b, &l, &r); native_ym2203_sample(reference, &x, &y);
+        assert(l == x && r == y && l == r); assert(native_ym2203_read_status(b) == native_ym2203_read_status(reference)); assert(native_ym2203_get_irq(b) == native_ym2203_get_irq(reference));
+    }
+    NativeYm2203State s{};
+    for (int i = 0; i < 100; ++i) native_ym2203_get_state(b, &s);
+    native_ym2203_cancel_csm(b); write(reference, 0x27, 0x4e);
+    native_ym2203_get_state(b, &s); assert(s.keys[2] == 15 && s.registers[0x27] == 0x4e && s.ssg_levels[0] == 16 && s.prescaler == 3);
+    for (int i = 0; i < 1024; ++i) {
+        float l, r, x, y; native_ym2203_sample(b, &l, &r); native_ym2203_sample(reference, &x, &y); assert(l == x && r == y);
+    }
+    for (void *p : {b, reference}) write(p, 0x27, 0xcf);
+    render(b, 1024); render(reference, 1024); native_ym2203_key_off_fm(b, 2); write(reference, 0x28, 2);
+    native_ym2203_get_state(b, &s); assert(!s.keys[2] && s.registers[0x27] == 0xcf && s.registers[0x42] == 12);
+    for (int i = 0; i < 1024; ++i) {
+        float l, r, x, y; native_ym2203_sample(b, &l, &r); native_ym2203_sample(reference, &x, &y); assert(l == x && r == y);
+    }
+    native_ym2203_stop(b); native_ym2203_audition_fm_key_on(b, 2, 5); native_ym2203_cancel_csm(b); render(b, 1024);
+    native_ym2203_get_state(b, &s); assert(s.keys[2] == 5);
+    native_ym2203_set_clock(b, 100000); native_ym2203_stop(b); native_ym2203_reset(b); assert(render(b, 1) == 0);
+    audit = false; assert(allocations == 0 && frees == 0); native_ym2203_destroy(a);
+    audit = true; render(b, 1024); audit = false; assert(allocations == 0 && frees == 0);
+    native_ym2203_destroy(b); native_ym2203_destroy(reference);
+    std::puts("Additional YM2203: independent FM/SSG/noise/envelope/timers, CSM/normal source cancellation, reset profile, retained controls and control-thread retirement passed; callback allocations 0, frees 0"); return 0;
+}
 struct Event { uint32_t frame = 0, a = 0, b = 0; std::string op; };
 int main(int argc, char **argv) {
     try {
-        if (argc == 2 && std::string(argv[1]) == "--self-test") return self_test();
+        bool extra = argc > 1 && std::string(argv[1]) == "--extra";
+        if (extra) { create_chip = native_ym2203_create_extra; ++argv; --argc; }
+        if (argc == 2 && std::string(argv[1]) == "--self-test") { self_test(); return extra ? extra_self_test() : 0; }
         if (argc != 3) return 2;
         const uint32_t rate = std::stoul(argv[1]), frames = std::stoul(argv[2]); if (frames > 10000000) return 2;
         std::vector<Event> events; std::string line;
         while (std::getline(std::cin, line)) {
             std::istringstream in(line); Event e; if (!(in >> e.frame >> e.op)) continue;
             if (e.op == "write" || e.op == "level" || e.op == "audition-mask") in >> e.a >> e.b;
-            else if (e.op == "clock" || e.op == "source" || e.op == "mute" || e.op == "off" || e.op == "audition") in >> e.a;
-            else if (e.op != "reset" && e.op != "stop") return 2;
+            else if (e.op == "clock" || e.op == "source" || e.op == "mute" || e.op == "off" || e.op == "off-fm" || e.op == "audition") in >> e.a;
+            else if (e.op != "reset" && e.op != "stop" && e.op != "cancel-csm") return 2;
             events.push_back(std::move(e));
         }
         std::stable_sort(events.begin(), events.end(), [](const Event &a, const Event &b) { return a.frame < b.frame; });
-        void *p = native_ym2203_create(rate); if (!p) return 3;
+        void *p = create_chip(rate); if (!p) return 3;
         constexpr uint32_t PLANES = 8; std::vector<float> pcm(frames * PLANES); size_t next = 0; audit = true;
         for (uint32_t frame = 0; frame < frames; ++frame) {
             while (next < events.size() && events[next].frame == frame) {
@@ -99,6 +138,8 @@ int main(int argc, char **argv) {
                 else if (e.op == "source") native_ym2203_set_source_mute_mask(p, e.a);
                 else if (e.op == "mute") native_ym2203_set_mute_mask(p, e.a);
                 else if (e.op == "off") native_ym2203_key_off(p, e.a);
+                else if (e.op == "off-fm") native_ym2203_key_off_fm(p, e.a);
+                else if (e.op == "cancel-csm") native_ym2203_cancel_csm(p);
                 else if (e.op == "audition") native_ym2203_audition_key_on(p, e.a);
                 else if (e.op == "audition-mask") native_ym2203_audition_fm_key_on(p, e.a, e.b);
                 else if (e.op == "reset") native_ym2203_reset(p);

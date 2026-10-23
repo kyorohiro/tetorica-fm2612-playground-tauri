@@ -1,5 +1,6 @@
 // Offline DSP count-growth benchmark. No devices, threads, IPC or Worklets.
 #include "native_genesis_ym2612.h"
+#include "native_genesis_ym2203.h"
 #include "native_genesis_game_gear.h"
 #include <cassert>
 #include <chrono>
@@ -64,16 +65,33 @@ static void program_psg(void *chip, uint32_t transpose) {
     }
     native_game_gear_write(chip, 0xe7); native_game_gear_write(chip, 0xf6);
 }
+static void program_ym2203(void *chip, uint32_t transpose) {
+    auto write = [=](uint8_t reg, uint8_t value) { native_ym2203_write(chip, 0, reg, value); };
+    for (uint8_t ch = 0; ch < 3; ++ch) {
+        for (uint8_t op = 0; op < 4; ++op) {
+            const uint8_t reg = ch + op * 4;
+            write(0x30 + reg, op + 1); write(0x40 + reg, 8 + op * 9);
+            write(0x50 + reg, 31); write(0x60 + reg, 0); write(0x70 + reg, 0); write(0x80 + reg, 15);
+        }
+        write(0xb0 + ch, ch | (5 << 3)); write(0xa4 + ch, 0x22); write(0xa0 + ch, 67 + ch * 23 + transpose);
+        write(0x28, 0xf0 | ch);
+        const uint16_t period = 127 + ch * 103 + transpose;
+        write(ch * 2, period & 255); write(ch * 2 + 1, period >> 8); write(8 + ch, ch == 0 ? 16 : 14 - ch * 3);
+    }
+    write(6, 7); write(7, 0); write(11, 31); write(12, 0); write(13, 10);
+}
 int main(int argc, char **argv) {
-    if (argc != 4) return 2;
+    if (argc != 4 && argc != 5) return 2;
     const uint32_t fm_count = std::strtoul(argv[1], nullptr, 10), psg_count = std::strtoul(argv[2], nullptr, 10);
     const uint32_t frames = std::strtoul(argv[3], nullptr, 10), rate = 48000;
-    if (fm_count + psg_count == 0 || fm_count + psg_count > 16 || !frames || frames > rate * 60) return 2;
-    std::vector<void *> fm, psg; fm.reserve(fm_count); psg.reserve(psg_count);
+    const uint32_t opn_count = argc == 5 ? std::strtoul(argv[4], nullptr, 10) : 0;
+    if (fm_count + psg_count + opn_count == 0 || fm_count + psg_count + opn_count > 16 || !frames || frames > rate * 60) return 2;
+    std::vector<void *> fm, psg, opn; fm.reserve(fm_count); psg.reserve(psg_count); opn.reserve(opn_count);
     const auto baseline_heap = live_bytes;
     const auto baseline_rss = peak_rss();
     for (uint32_t i = 0; i < fm_count; ++i) { auto *chip = native_ym2612_create(rate); assert(chip); fm.push_back(chip); program_fm(chip, i); }
     for (uint32_t i = 0; i < psg_count; ++i) { auto *chip = native_game_gear_create(rate); assert(chip); psg.push_back(chip); program_psg(chip, i); }
+    for (uint32_t i = 0; i < opn_count; ++i) { auto *chip = native_ym2203_create_extra(rate); assert(chip); opn.push_back(chip); program_ym2203(chip, i); }
     const auto core_heap_bytes = live_bytes - baseline_heap;
     volatile double checksum = 0;
     auto render = [&](uint32_t n) {
@@ -81,6 +99,7 @@ int main(int argc, char **argv) {
             float mixed_left = 0, mixed_right = 0, l, r;
             for (void *chip : fm) { native_ym2612_sample(chip, &l, &r); mixed_left += l; mixed_right += r; }
             for (void *chip : psg) { native_game_gear_sample(chip, &l, &r); mixed_left += l; mixed_right += r; }
+            for (void *chip : opn) { native_ym2203_sample(chip, &l, &r); mixed_left += l; mixed_right += r; }
             checksum += mixed_left + mixed_right;
         }
     };
@@ -94,9 +113,10 @@ int main(int argc, char **argv) {
     const auto peak = peak_rss();
     for (void *chip : fm) native_ym2612_destroy(chip);
     for (void *chip : psg) native_game_gear_destroy(chip);
+    for (void *chip : opn) native_ym2203_destroy(chip);
     assert(live_bytes == baseline_heap && callback_allocations == 0 && callback_frees == 0);
-    std::printf("{\"ym2612\":%u,\"segapsg\":%u,\"sampleRate\":%u,\"frames\":%u,\"cpuSeconds\":%.9f,\"wallSeconds\":%.9f,\"coreHeapBytes\":%zu,\"peakRssBytes\":%llu,\"peakRssGrowthBytes\":%llu,\"renderAllocations\":%llu,\"renderFrees\":%llu,\"checksum\":%.9f}\n",
-        fm_count, psg_count, rate, frames, cpu_seconds, wall_seconds, core_heap_bytes,
+    std::printf("{\"ym2612\":%u,\"segapsg\":%u,\"ym2203\":%u,\"sampleRate\":%u,\"frames\":%u,\"cpuSeconds\":%.9f,\"wallSeconds\":%.9f,\"coreHeapBytes\":%zu,\"peakRssBytes\":%llu,\"peakRssGrowthBytes\":%llu,\"renderAllocations\":%llu,\"renderFrees\":%llu,\"checksum\":%.9f}\n",
+        fm_count, psg_count, opn_count, rate, frames, cpu_seconds, wall_seconds, core_heap_bytes,
         static_cast<unsigned long long>(peak), static_cast<unsigned long long>(peak > baseline_rss ? peak - baseline_rss : 0),
         static_cast<unsigned long long>(callback_allocations), static_cast<unsigned long long>(callback_frees), double(checksum));
     return 0;

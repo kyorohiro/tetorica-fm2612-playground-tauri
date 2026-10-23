@@ -29,6 +29,9 @@ mod extra_psg;
 #[path = "native_genesis_extra_psg_tests.rs"]
 mod extra_psg_tests;
 #[cfg(test)]
+#[path = "native_genesis_extra_ym2203_tests.rs"]
+mod extra_ym2203_tests;
+#[cfg(test)]
 #[path = "native_genesis_extra_ym2612_tests.rs"]
 mod extra_ym2612_tests;
 #[path = "native_genesis_gameboy.rs"]
@@ -200,6 +203,7 @@ enum Action {
     ExtraPsgInstall(Arc<extra_psg::Instance>),
     ExtraPsg(Arc<extra_psg::Instance>, Arc<master_system::Prepared>),
     ExtraYm2612(Arc<extra_psg::Instance>, Arc<ym2612::Prepared>),
+    ExtraYm2203(Arc<extra_psg::Instance>, Arc<ym2203::Prepared>),
     Dx7(Arc<dx7::Prepared>),
     Nes(Arc<nes::Prepared>),
     Gameboy(Arc<gameboy::Prepared>),
@@ -299,6 +303,10 @@ enum CommandAction {
     ExtraYm2612 {
         instance: u64,
         message: ym2612::Message,
+    },
+    ExtraYm2203 {
+        instance: u64,
+        message: ym2203::Message,
     },
     Dx7 {
         message: dx7::Message,
@@ -431,7 +439,9 @@ impl Command {
             return Err("Invalid native command frame".into());
         }
         Ok(match self.action {
-            CommandAction::ExtraPsg { .. } | CommandAction::ExtraYm2612 { .. } => {
+            CommandAction::ExtraPsg { .. }
+            | CommandAction::ExtraYm2612 { .. }
+            | CommandAction::ExtraYm2203 { .. } => {
                 return Err("Additional sound-chip commands require instance resolution".into())
             }
             CommandAction::Dx7 { ref message } => Action::Dx7(message.prepare()?),
@@ -912,6 +922,29 @@ impl Shared {
                     target.ym2612()?;
                     let prepared = message.prepare()?;
                     Action::ExtraYm2612(target, prepared)
+                } else if let CommandAction::ExtraYm2203 { instance, message } = &command.action {
+                    if command.frame > MAX_SAFE_INTEGER {
+                        return Err("Invalid native command frame".into());
+                    }
+                    let target = self
+                        .extra_psg
+                        .get(*instance, self.epoch.load(Ordering::Acquire))?;
+                    target.ym2203()?;
+                    if let ym2203::Method::Schedule {
+                        duration_samples, ..
+                    } = &message.method
+                    {
+                        let frames =
+                            (*duration_samples as u128 * self.rate as u128 + 44099) / 44100;
+                        if command.frame.max(self.frame.load(Ordering::Acquire)) as u128 + frames
+                            > MAX_SAFE_INTEGER as u128
+                        {
+                            return Err(
+                                "Native YM2203 schedule end exceeds safe frame range".into()
+                            );
+                        }
+                    }
+                    Action::ExtraYm2203(target, message.prepare()?)
                 } else if let CommandAction::Noise { message } = &command.action {
                     Action::Noise(noise_plan.prepare(message, self.rate)?)
                 } else {
@@ -1345,7 +1378,9 @@ impl Shared {
         let mut seen = HashSet::new();
         for (action, _) in actions {
             let instance = match action {
-                Action::ExtraPsg(instance, _) | Action::ExtraYm2612(instance, _) => instance,
+                Action::ExtraPsg(instance, _)
+                | Action::ExtraYm2612(instance, _)
+                | Action::ExtraYm2203(instance, _) => instance,
                 _ => continue,
             };
             if !seen.insert(instance.id) {
@@ -1378,6 +1413,19 @@ impl Shared {
                         .collect();
                     instance.ym2612()?.retain(&prepared)
                 }
+                Action::ExtraYm2203(_, _) => {
+                    let prepared: Vec<_> = actions
+                        .iter()
+                        .filter_map(|(action, owner)| {
+                            if let Action::ExtraYm2203(target, command) = action {
+                                (target.id == instance.id).then(|| (command.clone(), *owner))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    instance.ym2203()?.retain(&prepared)
+                }
                 _ => unreachable!(),
             };
             if let Err(error) = result {
@@ -1388,9 +1436,9 @@ impl Shared {
                 actions
                     .iter()
                     .filter(|(action, _)| match action {
-                        Action::ExtraPsg(target, _) | Action::ExtraYm2612(target, _) => {
-                            target.id == instance.id
-                        }
+                        Action::ExtraPsg(target, _)
+                        | Action::ExtraYm2612(target, _)
+                        | Action::ExtraYm2203(target, _) => target.id == instance.id,
                         _ => false,
                     })
                     .cloned(),
@@ -1409,6 +1457,11 @@ impl Shared {
                 Action::ExtraYm2612(instance, command) => {
                     let state = instance.ym2612().expect("YM2612 action target");
                     state.retire(command.clone());
+                    let _ = state.status(self.frame.load(Ordering::Acquire));
+                }
+                Action::ExtraYm2203(instance, command) => {
+                    let state = instance.ym2203().expect("YM2203 action target");
+                    state.rollback(command.clone());
                     let _ = state.status(self.frame.load(Ordering::Acquire));
                 }
                 _ => {}
@@ -1496,6 +1549,49 @@ impl Shared {
         *sequence = next_sequence;
         status
     }
+    fn create_extra_ym2203(
+        &self,
+        instance: u64,
+        clock: Option<u32>,
+    ) -> Result<ym2203::AdditionalStatus, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self
+            .extra_psg
+            .create_ym2203(instance, epoch, self.rate, clock)
+        {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target
+            .ym2203()?
+            .additional_status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional YM2203 install capacity"));
+        *sequence = next_sequence;
+        status
+    }
     fn dispose_extra_psg(&self, instance: u64) -> Result<(), String> {
         let _producer = self
             .producer
@@ -1549,6 +1645,34 @@ impl Shared {
             return Err("Additional YM2612 instance has expired".into());
         }
         target.ym2612()?.status(self.frame.load(Ordering::Acquire))
+    }
+    fn dispose_extra_ym2203(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose_ym2203(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
+    fn extra_ym2203_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+    ) -> Result<ym2203::AdditionalStatus, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        if let Some(id) = after {
+            target.ym2203()?.wait_applied(id)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional YM2203 instance has expired".into());
+        }
+        target
+            .ym2203()?
+            .additional_status(self.frame.load(Ordering::Acquire))
     }
     fn enqueue_special(&self, action: Action) -> Result<(), String> {
         let mut sequence = self
@@ -1699,6 +1823,13 @@ impl Shared {
                             .expect("YM2612 action target")
                             .valid_event(command, event.sequence, event.owner)
                 }
+                Action::ExtraYm2203(instance, command) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
+                        && instance
+                            .ym2203()
+                            .expect("YM2203 action target")
+                            .valid_event(command, event.sequence, event.owner)
+                }
                 _ => true,
             }
             && event.epoch == self.epoch.load(Ordering::Acquire)
@@ -1771,6 +1902,12 @@ impl Shared {
                 instance
                     .ym2612()
                     .expect("YM2612 action target")
+                    .retire(command);
+            }
+            Action::ExtraYm2203(instance, command) => {
+                instance
+                    .ym2203()
+                    .expect("YM2203 action target")
                     .retire(command);
             }
             Action::Nes(command) => {
@@ -2549,6 +2686,20 @@ impl Renderer {
                 self.extra_psg.apply_ym2612(&instance, &command, owner);
                 state.retire(command);
             }
+            Action::ExtraYm2203(instance, command) => {
+                let state = instance.ym2203().expect("YM2203 action target");
+                if command.stops() {
+                    state.cancel_before(&command, sequence.saturating_add(1), owner);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                if command.invalidates_schedule() {
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.extra_psg.apply_ym2203(&instance, &command, owner);
+                if !command.deferred_retirement() {
+                    state.retire(command);
+                }
+            }
             Action::Nes(command) => {
                 if command.stops() {
                     shared.cancel_nes_before(owner, sequence.saturating_add(1));
@@ -2999,6 +3150,7 @@ impl Renderer {
                     Action::ExtraPsgInstall(_) => false,
                     Action::ExtraPsg(_, command) => command.starts(),
                     Action::ExtraYm2612(_, command) => command.starts(),
+                    Action::ExtraYm2203(_, command) => command.starts(),
                     Action::Noise(command) => command.is_some_and(|command| command.starts()),
                     Action::Dx7(command) => command.starts(),
                     Action::Nes(command) => command.starts(),
@@ -3859,6 +4011,46 @@ pub async fn native_genesis_extra_ym2612_status(
     let shared = state.session_shared(session)?;
     let status =
         tauri::async_runtime::spawn_blocking(move || shared.extra_ym2612_status(instance, after))
+            .await
+            .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+#[tauri::command]
+pub fn native_genesis_extra_ym2203_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    clock: Option<u32>,
+) -> Result<ym2203::AdditionalStatus, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| {
+        shared.create_extra_ym2203(instance, clock)
+    })
+}
+#[tauri::command]
+pub fn native_genesis_extra_ym2203_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_ym2203(instance))
+}
+#[tauri::command]
+pub async fn native_genesis_extra_ym2203_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+) -> Result<ym2203::AdditionalStatus, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status =
+        tauri::async_runtime::spawn_blocking(move || shared.extra_ym2203_status(instance, after))
             .await
             .map_err(|error| error.to_string())??;
     state.with_session(session, |_| Ok(()))?;

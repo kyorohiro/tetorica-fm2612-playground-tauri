@@ -1,6 +1,6 @@
-//! Independent sound-chip instances (PSG and YM2612). Cores are allocated and finally destroyed on the
+//! Independent sound-chip instances (PSG, YM2612 and YM2203). Cores are allocated and finally destroyed on the
 //! control thread; the device callback owns their exclusive mutable access.
-use super::{master_system, ym2612, Owner, MAX_SAFE_INTEGER};
+use super::{master_system, ym2203, ym2612, Owner, MAX_SAFE_INTEGER};
 use std::{
     cell::UnsafeCell,
     fmt,
@@ -25,10 +25,18 @@ pub fn error(message: String) -> String {
 pub enum State {
     Psg(master_system::Shared),
     Ym2612(ym2612::Shared),
+    Ym2203(ym2203::Shared),
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Psg,
+    Ym2612,
+    Ym2203,
 }
 enum Core {
     Psg(master_system::Renderer),
     Ym2612(ym2612::Renderer),
+    Ym2203(ym2203::Renderer),
 }
 pub struct Instance {
     pub id: u64,
@@ -78,6 +86,20 @@ impl Instance {
             Err("Additional instance is not a YM2612".into())
         }
     }
+    pub fn ym2203(&self) -> Result<&ym2203::Shared, String> {
+        if let State::Ym2203(state) = &self.state {
+            Ok(state)
+        } else {
+            Err("Additional instance is not a YM2203".into())
+        }
+    }
+    fn kind(&self) -> Kind {
+        match self.state {
+            State::Psg(_) => Kind::Psg,
+            State::Ym2612(_) => Kind::Ym2612,
+            State::Ym2203(_) => Kind::Ym2203,
+        }
+    }
     // This method is private to the callback rack. No control function may use
     // it after the Instance has been inserted into the registry/event queue.
     unsafe fn callback_core(&self) -> &mut Core {
@@ -111,7 +133,7 @@ impl Shared {
         rate: u32,
         clock: Option<u32>,
     ) -> Result<Arc<Instance>, String> {
-        self.create_kind(id, epoch, rate, clock, false)
+        self.create_kind(id, epoch, rate, clock, Kind::Psg)
     }
     pub fn create_ym2612(
         &self,
@@ -120,7 +142,16 @@ impl Shared {
         rate: u32,
         clock: Option<u32>,
     ) -> Result<Arc<Instance>, String> {
-        self.create_kind(id, epoch, rate, clock, true)
+        self.create_kind(id, epoch, rate, clock, Kind::Ym2612)
+    }
+    pub fn create_ym2203(
+        &self,
+        id: u64,
+        epoch: u64,
+        rate: u32,
+        clock: Option<u32>,
+    ) -> Result<Arc<Instance>, String> {
+        self.create_kind(id, epoch, rate, clock, Kind::Ym2203)
     }
     fn create_kind(
         &self,
@@ -128,7 +159,7 @@ impl Shared {
         epoch: u64,
         rate: u32,
         clock: Option<u32>,
-        fm: bool,
+        kind: Kind,
     ) -> Result<Arc<Instance>, String> {
         let mut control = self
             .control
@@ -143,7 +174,7 @@ impl Shared {
         if control.instances.len() >= LIMIT {
             return Err(format!("Additional sound-chip instance limit ({LIMIT}) reached; wait for retired instances to drain"));
         }
-        let (state, core) = if fm {
+        let (state, core) = if kind == Kind::Ym2612 {
             let state = ym2612::Shared::default();
             let mut core = ym2612::Renderer::new(rate)?;
             if let Some(hz) = clock {
@@ -157,6 +188,21 @@ impl Shared {
             }
             core.publish(&state);
             (State::Ym2612(state), Core::Ym2612(core))
+        } else if kind == Kind::Ym2203 {
+            let state = ym2203::Shared::additional();
+            let mut core = ym2203::Renderer::new_additional(rate)?;
+            if let Some(hz) = clock {
+                let command = ym2203::Message {
+                    id: None,
+                    audition: false,
+                    group: None,
+                    method: ym2203::Method::Clock { hz },
+                }
+                .prepare()?;
+                core.apply(&command, None, &state);
+            }
+            core.publish(&state);
+            (State::Ym2203(state), Core::Ym2203(core))
         } else {
             let state = master_system::Shared::game_gear();
             let mut core = master_system::Renderer::new_game_gear(rate)?;
@@ -199,18 +245,21 @@ impl Shared {
             .ok_or_else(|| "Additional sound-chip instance has expired".into())
     }
     pub fn dispose(&self, id: u64) -> Result<(), String> {
-        self.dispose_kind(id, false)
+        self.dispose_kind(id, Kind::Psg)
     }
     pub fn dispose_ym2612(&self, id: u64) -> Result<(), String> {
-        self.dispose_kind(id, true)
+        self.dispose_kind(id, Kind::Ym2612)
     }
-    fn dispose_kind(&self, id: u64, fm: bool) -> Result<(), String> {
+    pub fn dispose_ym2203(&self, id: u64) -> Result<(), String> {
+        self.dispose_kind(id, Kind::Ym2203)
+    }
+    fn dispose_kind(&self, id: u64, kind: Kind) -> Result<(), String> {
         let mut control = self
             .control
             .lock()
             .map_err(|_| "Additional sound-chip control state is unavailable")?;
         if let Some(instance) = control.instances.iter().find(|instance| instance.id == id) {
-            if fm != matches!(instance.state, State::Ym2612(_)) {
+            if kind != instance.kind() {
                 return Err("Additional sound-chip disposal must match its chip type".into());
             }
             instance.active.store(false, Ordering::Release);
@@ -275,6 +324,9 @@ impl Renderer {
                             (Core::Ym2612(core), State::Ym2612(state)) => {
                                 core.cancel_invalid(&valid, state)
                             }
+                            (Core::Ym2203(core), State::Ym2203(state)) => {
+                                core.cancel_invalid(&valid, state)
+                            }
                             _ => unreachable!("Matching additional chip state"),
                         }
                     }
@@ -309,12 +361,27 @@ impl Renderer {
         }
     }
 
+    pub fn apply_ym2203(
+        &mut self,
+        instance: &Instance,
+        command: &Arc<ym2203::Prepared>,
+        owner: Option<Owner>,
+    ) {
+        unsafe {
+            match (instance.callback_core(), &instance.state) {
+                (Core::Ym2203(core), State::Ym2203(state)) => core.apply(command, owner, state),
+                _ => unreachable!("Additional YM2203 action requires YM2203 instance"),
+            }
+        }
+    }
     pub fn mix(&mut self, pcm: &mut [f32; 2]) {
         for instance in self.slots.iter().flatten() {
             unsafe {
-                match instance.callback_core() {
-                    Core::Psg(core) => core.mix(pcm),
-                    Core::Ym2612(core) => core.mix(pcm),
+                match (instance.callback_core(), &instance.state) {
+                    (Core::Psg(core), _) => core.mix(pcm),
+                    (Core::Ym2612(core), _) => core.mix(pcm),
+                    (Core::Ym2203(core), State::Ym2203(state)) => core.mix_additional(pcm, state),
+                    _ => unreachable!("Matching additional chip state"),
                 }
             }
         }
