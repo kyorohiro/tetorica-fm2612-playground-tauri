@@ -40,6 +40,11 @@ mod extra_psg;
 #[cfg(test)]
 #[path = "native_genesis_extra_psg_tests.rs"]
 mod extra_psg_tests;
+#[path = "native_genesis_extra_rf5c164.rs"]
+mod extra_rf5c164;
+#[cfg(test)]
+#[path = "native_genesis_extra_rf5c164_tests.rs"]
+mod extra_rf5c164_tests;
 #[path = "native_genesis_extra_ym2151.rs"]
 mod extra_ym2151;
 #[cfg(test)]
@@ -240,6 +245,7 @@ enum Action {
     ExtraAy8910(Arc<extra_psg::Instance>, Arc<extra_msx::Prepared>),
     ExtraY8950(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
     ExtraYmf262(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
+    ExtraRf5c164(Arc<extra_psg::Instance>, Arc<extra_rf5c164::Prepared>),
     ExtraYm3812(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
     ExtraYm3526(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
     ExtraYm2413(Arc<extra_psg::Instance>, Arc<extra_msx::Prepared>),
@@ -370,6 +376,10 @@ enum CommandAction {
     ExtraYmf262 {
         instance: u64,
         message: extra_opl::Message,
+    },
+    ExtraRf5c164 {
+        instance: u64,
+        message: extra_rf5c164::Message,
     },
     ExtraYm3812 {
         instance: u64,
@@ -523,6 +533,7 @@ impl Command {
             | CommandAction::ExtraAy8910 { .. }
             | CommandAction::ExtraY8950 { .. }
             | CommandAction::ExtraYmf262 { .. }
+            | CommandAction::ExtraRf5c164 { .. }
             | CommandAction::ExtraYm3812 { .. }
             | CommandAction::ExtraYm3526 { .. }
             | CommandAction::ExtraYm2413 { .. } => {
@@ -991,11 +1002,26 @@ impl Shared {
                 CommandAction::ExtraAy8910 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraY8950 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYmf262 { message, .. } => Some(message.prepared_bytes()),
+                CommandAction::ExtraRf5c164 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm3812 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm3526 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm2413 { message, .. } => Some(message.prepared_bytes()),
                 _ => None,
             }))?;
+        let extra_rf_upload_bytes: usize = commands
+            .iter()
+            .filter_map(|command| match &command.action {
+                CommandAction::ExtraRf5c164 { message, .. } => match &message.method {
+                    extra_rf5c164::Method::LoadMemory { data, .. } => Some(data.len()),
+                    extra_rf5c164::Method::WriteMemory { .. } => Some(1),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .sum();
+        if extra_rf_upload_bytes > extra_rf5c164::RAM {
+            return Err("Native additional RF5C164 upload batch exceeds64KiB".into());
+        }
         let ym2610_upload_bytes: usize = commands
             .iter()
             .map(|command| {
@@ -1154,6 +1180,21 @@ impl Shared {
                         .get(*instance, self.epoch.load(Ordering::Acquire))?;
                     let prepared = target.ymf262()?.prepare_message(message)?;
                     Action::ExtraYmf262(target, prepared)
+                } else if let CommandAction::ExtraRf5c164 { instance, message } = &command.action {
+                    if command.frame > MAX_SAFE_INTEGER {
+                        return Err("Invalid native command frame".into());
+                    }
+                    let target = self
+                        .extra_psg
+                        .get(*instance, self.epoch.load(Ordering::Acquire))?;
+                    let prepared = target.rf5c164()?.prepare_message(message)?;
+                    if prepared.is_owner_cancel() && command.frame != 0 {
+                        return Err(
+                            "Native RF5C164 owner cancellation requires immediate frame zero"
+                                .into(),
+                        );
+                    }
+                    Action::ExtraRf5c164(target, prepared)
                 } else if let CommandAction::Noise { message } = &command.action {
                     Action::Noise(noise_plan.prepare(message, self.rate)?)
                 } else {
@@ -1547,6 +1588,20 @@ impl Shared {
                     .commit_pages(command)
             }
         }
+        // Scoped RF cleanup invalidates already admitted lookahead only after
+        // every family has retained successfully. Before this commit point a
+        // later family's rejection must leave all older RF events unchanged.
+        for (action, _) in &actions {
+            if let Action::ExtraRf5c164(instance, command) = action {
+                if instance
+                    .rf5c164()
+                    .expect("RF5C164 action target")
+                    .commit_cancel(command)
+                {
+                    self.invalidation.fetch_add(1, Ordering::Release);
+                }
+            }
+        }
         *noise_control = noise_plan;
         self.dac_streams.fetch_add(streams, Ordering::AcqRel);
         let epoch = self.epoch.load(Ordering::Acquire);
@@ -1644,6 +1699,7 @@ impl Shared {
                     Action::ExtraAy8910(_, c) => Some(extra_psg::Payload::Ay8910(c.clone())),
                     Action::ExtraY8950(_, c) => Some(extra_psg::Payload::Y8950(c.clone())),
                     Action::ExtraYmf262(_, c) => Some(extra_psg::Payload::Ymf262(c.clone())),
+                    Action::ExtraRf5c164(_, c) => Some(extra_psg::Payload::Rf5c164(c.clone())),
                     Action::ExtraYm3812(_, c) => Some(extra_psg::Payload::Ym3812(c.clone())),
                     Action::ExtraYm3526(_, c) => Some(extra_psg::Payload::Ym3526(c.clone())),
                     Action::ExtraYm2413(_, c) => Some(extra_psg::Payload::Ym2413(c.clone())),
@@ -1666,6 +1722,7 @@ impl Shared {
                 | Action::ExtraAy8910(instance, _)
                 | Action::ExtraY8950(instance, _)
                 | Action::ExtraYmf262(instance, _)
+                | Action::ExtraRf5c164(instance, _)
                 | Action::ExtraYm3812(instance, _)
                 | Action::ExtraYm3526(instance, _)
                 | Action::ExtraYm2413(instance, _) => instance,
@@ -1792,6 +1849,19 @@ impl Shared {
                         .collect();
                     instance.ymf262()?.retain(&prepared)
                 }
+                Action::ExtraRf5c164(_, _) => {
+                    let prepared: Vec<_> = actions
+                        .iter()
+                        .filter_map(|(action, owner)| {
+                            if let Action::ExtraRf5c164(target, command) = action {
+                                (target.id == instance.id).then(|| (command.clone(), *owner))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    instance.rf5c164()?.retain(&prepared)
+                }
                 Action::ExtraY8950(_, _) => {
                     let prepared: Vec<_> = actions
                         .iter()
@@ -1850,6 +1920,7 @@ impl Shared {
                         | Action::ExtraAy8910(target, _)
                         | Action::ExtraY8950(target, _)
                         | Action::ExtraYmf262(target, _)
+                        | Action::ExtraRf5c164(target, _)
                         | Action::ExtraYm3812(target, _)
                         | Action::ExtraYm3526(target, _)
                         | Action::ExtraYm2413(target, _) => target.id == instance.id,
@@ -1905,6 +1976,11 @@ impl Shared {
                 }
                 Action::ExtraYmf262(instance, command) => {
                     let state = instance.ymf262().expect("YMF262 action target");
+                    state.rollback(command.clone());
+                    let _ = state.status(self.frame.load(Ordering::Acquire));
+                }
+                Action::ExtraRf5c164(instance, command) => {
+                    let state = instance.rf5c164().expect("RF5C164 action target");
                     state.rollback(command.clone());
                     let _ = state.status(self.frame.load(Ordering::Acquire));
                 }
@@ -2303,6 +2379,47 @@ impl Shared {
         *sequence = next_sequence;
         status
     }
+    fn create_extra_rf5c164(
+        &self,
+        instance: u64,
+        clock: Option<u32>,
+    ) -> Result<extra_rf5c164::Status, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self
+            .extra_psg
+            .create_rf5c164(instance, epoch, self.rate, clock)
+        {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target.rf5c164()?.status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional RF5C164 install capacity"));
+        *sequence = next_sequence;
+        status
+    }
     fn create_extra_y8950(
         &self,
         instance: u64,
@@ -2547,6 +2664,15 @@ impl Shared {
         self.invalidation.fetch_add(1, Ordering::Release);
         Ok(())
     }
+    fn dispose_extra_rf5c164(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose_rf5c164(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
     fn dispose_extra_y8950(&self, instance: u64) -> Result<(), String> {
         let _producer = self
             .producer
@@ -2712,6 +2838,23 @@ impl Shared {
             return Err("Additional YMF262 instance has expired".into());
         }
         target.ymf262()?.status(self.frame.load(Ordering::Acquire))
+    }
+    fn extra_rf5c164_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+    ) -> Result<extra_rf5c164::Status, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        if let Some(id) = after {
+            target.rf5c164()?.wait_applied(id)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional RF5C164 instance has expired".into());
+        }
+        target.rf5c164()?.status(self.frame.load(Ordering::Acquire))
     }
     fn extra_y8950_status(
         &self,
@@ -2982,6 +3125,13 @@ impl Shared {
                             .expect("YMF262 action target")
                             .valid_event(command, event.sequence, event.owner)
                 }
+                Action::ExtraRf5c164(instance, command) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
+                        && instance
+                            .rf5c164()
+                            .expect("RF5C164 action target")
+                            .valid_event(command, event.sequence, event.owner)
+                }
                 Action::ExtraY8950(instance, command) => {
                     instance.valid(self.epoch.load(Ordering::Acquire))
                         && instance.y8950().expect("Y8950 action target").valid_event(
@@ -3113,6 +3263,10 @@ impl Shared {
             Action::ExtraYmf262(instance, command) => instance
                 .ymf262()
                 .expect("YMF262 action target")
+                .retire(command),
+            Action::ExtraRf5c164(instance, command) => instance
+                .rf5c164()
+                .expect("RF5C164 action target")
                 .retire(command),
             Action::ExtraY8950(instance, command) => instance
                 .y8950()
@@ -3979,6 +4133,15 @@ impl Renderer {
                 self.extra_psg.apply_ymf262(&instance, &command, owner);
                 state.retire(command);
             }
+            Action::ExtraRf5c164(instance, command) => {
+                let state = instance.rf5c164().expect("RF5C164 action target");
+                if command.stops() {
+                    state.cancel_before(&command, sequence.saturating_add(1), owner);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.extra_psg.apply_rf5c164(&instance, &command, owner);
+                state.retire(command);
+            }
             Action::ExtraY8950(instance, command) => {
                 let state = instance.y8950().expect("Y8950 action target");
                 if command.stops() {
@@ -4463,6 +4626,7 @@ impl Renderer {
                     Action::ExtraAy8910(_, command) => command.starts(),
                     Action::ExtraY8950(_, command) => command.starts(),
                     Action::ExtraYmf262(_, command) => command.starts(),
+                    Action::ExtraRf5c164(_, command) => command.starts(),
                     Action::ExtraYm3812(_, command) => command.starts(),
                     Action::ExtraYm3526(_, command) => command.starts(),
                     Action::ExtraYm2413(_, command) => command.starts(),
@@ -7254,6 +7418,20 @@ pub fn native_genesis_extra_ymf262_create(
         shared.create_extra_ymf262(instance, clock)
     })
 }
+
+#[tauri::command]
+pub fn native_genesis_extra_rf5c164_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    clock: Option<u32>,
+) -> Result<extra_rf5c164::Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| {
+        shared.create_extra_rf5c164(instance, clock)
+    })
+}
 #[tauri::command]
 pub fn native_genesis_extra_ymf262_dispose(
     window: tauri::WebviewWindow,
@@ -7263,6 +7441,17 @@ pub fn native_genesis_extra_ymf262_dispose(
 ) -> Result<(), String> {
     crate::allowed(&window)?;
     state.with_session(session, |shared| shared.dispose_extra_ymf262(instance))
+}
+
+#[tauri::command]
+pub fn native_genesis_extra_rf5c164_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_rf5c164(instance))
 }
 #[tauri::command]
 pub async fn native_genesis_extra_ymf262_status(
@@ -7280,6 +7469,24 @@ pub async fn native_genesis_extra_ymf262_status(
     })
     .await
     .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+
+#[tauri::command]
+pub async fn native_genesis_extra_rf5c164_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+) -> Result<extra_rf5c164::Status, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status =
+        tauri::async_runtime::spawn_blocking(move || shared.extra_rf5c164_status(instance, after))
+            .await
+            .map_err(|error| error.to_string())??;
     state.with_session(session, |_| Ok(()))?;
     Ok(status)
 }

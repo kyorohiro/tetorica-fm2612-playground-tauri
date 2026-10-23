@@ -50,6 +50,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_msx.h");
     println!("cargo:rerun-if-changed=native-opl");
     println!("cargo:rerun-if-changed=src/native_genesis_opl.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_extra_rf5c164.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_extra_rf5c164.h");
     println!("cargo:rerun-if-changed=src/native_genesis_extra_opl.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_extra_opl.h");
     println!("cargo:rerun-if-changed=src/native_genesis_opl.h");
@@ -84,6 +86,7 @@ fn main() {
         .include("native-genesis")
         .file("src/native_genesis_opl.cpp")
         .file("src/native_genesis_extra_opl.cpp")
+        .file("src/native_genesis_extra_rf5c164.cpp")
         .warnings(false)
         .compile("tetorica_native_opl");
     // MSX references the same OPLL provider as Master System. GNU ld requires
