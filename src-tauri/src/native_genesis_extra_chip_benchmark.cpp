@@ -11,6 +11,7 @@
 #include "native_genesis_extra_okim6258.h"
 #include "native_genesis_game_gear.h"
 #include "native_genesis_gameboy.h"
+#include "native_genesis_nes.h"
 #include <cassert>
 #include <chrono>
 #include <cstddef>
@@ -199,8 +200,19 @@ static void program_gameboy(void *chip, uint32_t transpose) {
     const uint16_t period=1940+transpose;native_gameboy_write(chip,10,128);native_gameboy_write(chip,12,32);native_gameboy_write(chip,13,period&255);native_gameboy_write(chip,14,128|(period>>8));
     native_gameboy_write(chip,17,0xa0);native_gameboy_write(chip,18,0x39);native_gameboy_write(chip,19,128);
 }
+static void program_nes(void *chip, uint32_t transpose) {
+    uint8_t ram[4096];for(uint32_t i=0;i<sizeof ram;++i)ram[i]=uint8_t(i*37+transpose*13);assert(native_nes_load(chip,ram,0xc000,sizeof ram));
+    native_nes_write(chip,0x4015,15);
+    for(uint8_t ch=0;ch<2;++ch){native_nes_write(chip,0x4000+ch*4,0xbf);const uint16_t period=270+ch*77+transpose;native_nes_write(chip,0x4002+ch*4,period&255);native_nes_write(chip,0x4003+ch*4,0xf8|(period>>8));}
+    native_nes_write(chip,0x4008,0xff);native_nes_write(chip,0x400a,254);native_nes_write(chip,0x400b,0xf8);
+    native_nes_write(chip,0x400c,0x3a);native_nes_write(chip,0x400e,0x89);native_nes_write(chip,0x400f,0xf8);
+    native_nes_write(chip,0x4010,79);native_nes_write(chip,0x4011,64);native_nes_write(chip,0x4012,0);native_nes_write(chip,0x4013,255);native_nes_enable(chip,4,true);
+    native_nes_write(chip,0x4023,2);native_nes_write(chip,0x4089,128);for(uint8_t i=0;i<64;++i)native_nes_write(chip,0x4040+i,i);native_nes_write(chip,0x4089,0);
+    native_nes_write(chip,0x4087,128);for(uint8_t i=0;i<32;++i)native_nes_write(chip,0x4088,i&7);native_nes_write(chip,0x4084,139);native_nes_write(chip,0x4086,123);native_nes_write(chip,0x4087,1);
+    native_nes_write(chip,0x4080,152);native_nes_write(chip,0x4082,234+transpose);native_nes_write(chip,0x4083,2);
+}
 int main(int argc, char **argv) {
-    if (argc < 4 || argc > 17) return 2;
+    if (argc < 4 || argc > 18) return 2;
     const uint32_t fm_count = std::strtoul(argv[1], nullptr, 10), psg_count = std::strtoul(argv[2], nullptr, 10);
     const uint32_t frames = std::strtoul(argv[3], nullptr, 10), rate = 48000;
     const uint32_t opn_count = argc >= 5 ? std::strtoul(argv[4], nullptr, 10) : 0;
@@ -216,8 +228,9 @@ int main(int argc, char **argv) {
     const uint32_t rf_count = argc >= 15 ? std::strtoul(argv[14], nullptr, 10) : 0;
     const uint32_t oki_count = argc >= 16 ? std::strtoul(argv[15], nullptr, 10) : 0;
     const uint32_t gb_count = argc >= 17 ? std::strtoul(argv[16], nullptr, 10) : 0;
-    if (fm_count + psg_count + opn_count + opna_count + opnb_count + opm_count + opll_count + ay_count + opl1_count + opl2_count + y8950_count + opl3_count + rf_count + oki_count + gb_count == 0 || fm_count + psg_count + opn_count + opna_count + opnb_count + opm_count + opll_count + ay_count + opl1_count + opl2_count + y8950_count + opl3_count + rf_count + oki_count + gb_count > 16 || !frames || frames > rate * 60) return 2;
-    std::vector<void *> fm, psg, opn, opna, opnb, opm, opll, ay, opl1, opl2, y8950, opl3, rf, oki, gb, pages; fm.reserve(fm_count); psg.reserve(psg_count); opn.reserve(opn_count); opna.reserve(opna_count); opnb.reserve(opnb_count); pages.reserve(opnb_count * 2); opm.reserve(opm_count); opll.reserve(opll_count); ay.reserve(ay_count); opl1.reserve(opl1_count); opl2.reserve(opl2_count); y8950.reserve(y8950_count); opl3.reserve(opl3_count); rf.reserve(rf_count); oki.reserve(oki_count); gb.reserve(gb_count);
+    const uint32_t nes_count = argc >= 18 ? std::strtoul(argv[17], nullptr, 10) : 0;
+    if (fm_count + psg_count + opn_count + opna_count + opnb_count + opm_count + opll_count + ay_count + opl1_count + opl2_count + y8950_count + opl3_count + rf_count + oki_count + gb_count + nes_count == 0 || fm_count + psg_count + opn_count + opna_count + opnb_count + opm_count + opll_count + ay_count + opl1_count + opl2_count + y8950_count + opl3_count + rf_count + oki_count + gb_count + nes_count > 16 || !frames || frames > rate * 60) return 2;
+    std::vector<void *> fm, psg, opn, opna, opnb, opm, opll, ay, opl1, opl2, y8950, opl3, rf, oki, gb, nes, pages; fm.reserve(fm_count); psg.reserve(psg_count); opn.reserve(opn_count); opna.reserve(opna_count); opnb.reserve(opnb_count); pages.reserve(opnb_count * 2); opm.reserve(opm_count); opll.reserve(opll_count); ay.reserve(ay_count); opl1.reserve(opl1_count); opl2.reserve(opl2_count); y8950.reserve(y8950_count); opl3.reserve(opl3_count); rf.reserve(rf_count); oki.reserve(oki_count); gb.reserve(gb_count); nes.reserve(nes_count);
     std::vector<std::vector<uint8_t>> oki_samples; oki_samples.reserve(oki_count);
     const auto baseline_heap = live_bytes;
     const auto baseline_rss = peak_rss();
@@ -234,6 +247,7 @@ int main(int argc, char **argv) {
     for(uint32_t i=0;i<rf_count;++i){void *chip=native_extra_rf5c164_create(rate);assert(chip);rf.push_back(chip);program_extra_rf(chip,i);}
     for(uint32_t i=0;i<oki_count;++i){void *chip=native_extra_okim6258_create(rate);assert(chip);oki.push_back(chip);oki_samples.emplace_back(65536);auto &bytes=oki_samples.back();for(uint32_t j=0;j<bytes.size();++j)bytes[j]=uint8_t(j*37+i*13);assert(native_extra_okim6258_load_sample(chip,bytes.data(),bytes.size()));assert(native_extra_okim6258_play(chip,1));}
     for(uint32_t i=0;i<gb_count;++i){void *chip=native_gameboy_create(rate);assert(chip);gb.push_back(chip);program_gameboy(chip,i);}
+    for(uint32_t i=0;i<nes_count;++i){void *chip=native_nes_create(rate,1789773,true);assert(chip);nes.push_back(chip);program_nes(chip,i);}
     const auto core_heap_bytes = live_bytes - baseline_heap;
     volatile double checksum = 0;
     auto render = [&](uint32_t n) {
@@ -251,6 +265,7 @@ int main(int argc, char **argv) {
             for(void *chip:rf){native_extra_rf5c164_sample(chip,&l,&r);mixed_left+=l;mixed_right+=r;}
             for(void *chip:oki){native_extra_okim6258_sample(chip,&l,&r);mixed_left+=l;mixed_right+=r;}
             for(void *chip:gb){native_gameboy_sample(chip,&l,&r);mixed_left+=l;mixed_right+=r;}
+            for(void *chip:nes){native_nes_sample(chip,&l,&r);mixed_left+=l;mixed_right+=r;}
             checksum += mixed_left + mixed_right;
         }
     };
@@ -274,12 +289,13 @@ int main(int argc, char **argv) {
     for(void *chip:rf)native_extra_rf5c164_destroy(chip);
     for(void *chip:oki)native_extra_okim6258_destroy(chip);
     for(void *chip:gb)native_gameboy_destroy(chip);
+    for(void *chip:nes)native_nes_destroy(chip);
     for(auto &bytes:oki_samples)std::vector<uint8_t>().swap(bytes);
     for (void *page : pages) native_ym2610b_free_rom_page(page);
     assert(live_bytes == baseline_heap && callback_allocations == 0 && callback_frees == 0);
-    std::printf("{\"ym2612\":%u,\"segapsg\":%u,\"ym2203\":%u,\"ym2608\":%u,\"ym2610\":%u,\"ym2151\":%u,\"ym2413\":%u,\"ay8910\":%u,\"ym3526\":%u,\"ym3812\":%u,\"y8950\":%u,\"ymf262\":%u,\"rf5c164\":%u,\"okim6258\":%u,\"gameboy\":%u,\"sampleRate\":%u,\"frames\":%u,\"cpuSeconds\":%.9f,\"wallSeconds\":%.9f,\"coreHeapBytes\":%zu,\"romBytes\":%u,\"ramBytes\":%u,\"ym2610RomPageBytes\":%u,\"sampleBytes\":%u,\"coreHeapExcludingMemoryBytes\":%zu,\"peakRssBytes\":%llu,\"peakRssGrowthBytes\":%llu,\"renderAllocations\":%llu,\"renderFrees\":%llu,\"checksum\":%.9f}\n",
-        fm_count, psg_count, opn_count, opna_count, opnb_count, opm_count, opll_count, ay_count, opl1_count, opl2_count, y8950_count, opl3_count, rf_count, oki_count, gb_count, rate, frames, cpu_seconds, wall_seconds, core_heap_bytes,
-        opna_count * 8192, opna_count * 2097152 + rf_count * 65536, opnb_count * 2 * 65536, oki_count * 65536, core_heap_bytes - opna_count * (8192 + 2097152) - opnb_count * 2 * 65536 - rf_count * 65536 - oki_count * 65536,
+    std::printf("{\"ym2612\":%u,\"segapsg\":%u,\"ym2203\":%u,\"ym2608\":%u,\"ym2610\":%u,\"ym2151\":%u,\"ym2413\":%u,\"ay8910\":%u,\"ym3526\":%u,\"ym3812\":%u,\"y8950\":%u,\"ymf262\":%u,\"rf5c164\":%u,\"okim6258\":%u,\"gameboy\":%u,\"nes\":%u,\"sampleRate\":%u,\"frames\":%u,\"cpuSeconds\":%.9f,\"wallSeconds\":%.9f,\"coreHeapBytes\":%zu,\"romBytes\":%u,\"ramBytes\":%u,\"ym2610RomPageBytes\":%u,\"sampleBytes\":%u,\"coreHeapExcludingMemoryBytes\":%zu,\"peakRssBytes\":%llu,\"peakRssGrowthBytes\":%llu,\"renderAllocations\":%llu,\"renderFrees\":%llu,\"checksum\":%.9f}\n",
+        fm_count, psg_count, opn_count, opna_count, opnb_count, opm_count, opll_count, ay_count, opl1_count, opl2_count, y8950_count, opl3_count, rf_count, oki_count, gb_count, nes_count, rate, frames, cpu_seconds, wall_seconds, core_heap_bytes,
+        opna_count * 8192, opna_count * 2097152 + rf_count * 65536 + nes_count * 65536, opnb_count * 2 * 65536, oki_count * 65536, core_heap_bytes - opna_count * (8192 + 2097152) - opnb_count * 2 * 65536 - rf_count * 65536 - oki_count * 65536 - nes_count * 65536,
         static_cast<unsigned long long>(peak), static_cast<unsigned long long>(peak > baseline_rss ? peak - baseline_rss : 0),
         static_cast<unsigned long long>(callback_allocations), static_cast<unsigned long long>(callback_frees), double(checksum));
     return 0;

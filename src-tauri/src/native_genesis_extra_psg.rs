@@ -1,8 +1,9 @@
 //! Independent sound-chip instances (PSG, YM2612 and YM2203). Cores are allocated and finally destroyed on the
 //! control thread; the device callback owns their exclusive mutable access.
 use super::{
-    extra_budget, extra_gameboy, extra_msx, extra_okim6258, extra_opl, extra_rf5c164, extra_ym2151,
-    extra_ym2608, extra_ym2610, master_system, ym2203, ym2612, Owner, MAX_SAFE_INTEGER,
+    extra_budget, extra_gameboy, extra_msx, extra_nes, extra_okim6258, extra_opl, extra_rf5c164,
+    extra_ym2151, extra_ym2608, extra_ym2610, master_system, ym2203, ym2612, Owner,
+    MAX_SAFE_INTEGER,
 };
 use std::{
     cell::UnsafeCell,
@@ -38,6 +39,7 @@ pub enum State {
     Rf5c164(extra_rf5c164::Shared),
     Okim6258(extra_okim6258::Shared),
     Gameboy(extra_gameboy::Shared),
+    Nes(extra_nes::Shared),
     Ym3812(extra_opl::Shared),
     Ym3526(extra_opl::Shared),
     Ym2413(extra_msx::Shared),
@@ -56,6 +58,7 @@ enum Kind {
     Rf5c164,
     Okim6258,
     Gameboy,
+    Nes,
     Ym3812,
     Ym3526,
     Ym2413,
@@ -73,6 +76,7 @@ enum Core {
     Rf5c164(extra_rf5c164::Renderer),
     Okim6258(extra_okim6258::Renderer),
     Gameboy(extra_gameboy::Renderer),
+    Nes(extra_nes::Renderer),
     Ym3812(extra_opl::Renderer),
     Ym3526(extra_opl::Renderer),
     Ym2413(extra_msx::Renderer),
@@ -217,6 +221,13 @@ impl Instance {
             Err("Additional instance is not a Game Boy".into())
         }
     }
+    pub fn nes(&self) -> Result<&extra_nes::Shared, String> {
+        if let State::Nes(state) = &self.state {
+            Ok(state)
+        } else {
+            Err("Additional instance is not a NES".into())
+        }
+    }
     fn kind(&self) -> Kind {
         match self.state {
             State::Psg(_) => Kind::Psg,
@@ -231,6 +242,7 @@ impl Instance {
             State::Rf5c164(_) => Kind::Rf5c164,
             State::Okim6258(_) => Kind::Okim6258,
             State::Gameboy(_) => Kind::Gameboy,
+            State::Nes(_) => Kind::Nes,
             State::Ym3812(_) => Kind::Ym3812,
             State::Ym3526(_) => Kind::Ym3526,
             State::Ym2413(_) => Kind::Ym2413,
@@ -256,6 +268,7 @@ pub enum Payload {
     Rf5c164(Arc<extra_rf5c164::Prepared>),
     Okim6258(Arc<extra_okim6258::Prepared>),
     Gameboy(Arc<extra_gameboy::Prepared>),
+    Nes(Arc<extra_nes::Prepared>),
     Ym3812(Arc<extra_opl::Prepared>),
     Ym3526(Arc<extra_opl::Prepared>),
     Ym2413(Arc<extra_msx::Prepared>),
@@ -275,6 +288,7 @@ impl Payload {
             Self::Rf5c164(v) => v.retained_bytes(),
             Self::Okim6258(v) => v.retained_bytes(),
             Self::Gameboy(v) => v.retained_bytes(),
+            Self::Nes(v) => v.retained_bytes(),
             Self::Ym3812(v) => v.retained_bytes(),
             Self::Ym3526(v) => v.retained_bytes(),
             Self::Ym2413(v) => v.retained_bytes(),
@@ -294,6 +308,7 @@ impl Payload {
             Self::Rf5c164(v) => Arc::strong_count(v) == 1,
             Self::Okim6258(v) => Arc::strong_count(v) == 1,
             Self::Gameboy(v) => Arc::strong_count(v) == 1,
+            Self::Nes(v) => Arc::strong_count(v) == 1,
             Self::Ym3812(v) => Arc::strong_count(v) == 1,
             Self::Ym3526(v) => Arc::strong_count(v) == 1,
             Self::Ym2413(v) => Arc::strong_count(v) == 1,
@@ -316,6 +331,33 @@ pub struct Shared {
     budget: Arc<extra_budget::Budget>,
 }
 impl Shared {
+    pub fn check_nes_uploads(&self, incoming: usize) -> Result<(), String> {
+        if incoming > extra_nes::RAM {
+            return Err("Native additional NES upload batch exceeds 64 KiB".into());
+        }
+        let mut control = self
+            .control
+            .lock()
+            .map_err(|_| "Additional sound-chip control unavailable")?;
+        Self::collect(&mut control);
+        let retained: usize = control
+            .payloads
+            .iter()
+            .map(|v| {
+                if let Payload::Nes(c) = &v.payload {
+                    c.upload_bytes()
+                } else {
+                    0
+                }
+            })
+            .sum();
+        if retained + incoming > 1024 * 1024 {
+            return Err(
+                "Native additional NES pending uploads exceed 1 MiB across the shared rack".into(),
+            );
+        }
+        Ok(())
+    }
     fn collect(control: &mut Control) {
         for instance in &control.instances {
             match &instance.state {
@@ -331,6 +373,7 @@ impl Shared {
                 State::Rf5c164(s) => s.collect_retired(),
                 State::Okim6258(s) => s.collect_retired(),
                 State::Gameboy(s) => s.collect_retired(),
+                State::Nes(s) => s.collect_retired(),
                 State::Ym3812(s) => s.collect_retired(),
                 State::Ym3526(s) => s.collect_retired(),
                 State::Ym2413(s) => s.collect_retired(),
@@ -460,6 +503,17 @@ impl Shared {
     ) -> Result<Arc<Instance>, String> {
         self.create_kind(id, epoch, rate, clock, Kind::Gameboy)
     }
+    pub fn create_nes(
+        &self,
+        id: u64,
+        epoch: u64,
+        rate: u32,
+        clock: Option<f64>,
+        fds: bool,
+    ) -> Result<Arc<Instance>, String> {
+        self.create_kind_with_nes(id, epoch, rate, None, Kind::Nes, clock, fds)
+    }
+
     pub fn create_y8950(
         &self,
         id: u64,
@@ -549,6 +603,18 @@ impl Shared {
         clock: Option<u32>,
         kind: Kind,
     ) -> Result<Arc<Instance>, String> {
+        self.create_kind_with_nes(id, epoch, rate, clock, kind, None, false)
+    }
+    fn create_kind_with_nes(
+        &self,
+        id: u64,
+        epoch: u64,
+        rate: u32,
+        clock: Option<u32>,
+        kind: Kind,
+        nes_clock: Option<f64>,
+        fds: bool,
+    ) -> Result<Arc<Instance>, String> {
         let mut control = self
             .control
             .lock()
@@ -568,6 +634,8 @@ impl Shared {
                     extra_budget::YM2608_MEMORY_BYTES
                 } else if kind == Kind::Rf5c164 {
                     extra_rf5c164::RAM
+                } else if kind == Kind::Nes {
+                    extra_nes::RAM
                 } else {
                     0
                 },
@@ -602,6 +670,12 @@ impl Shared {
             }
             core.publish(&state);
             (State::Gameboy(state), Core::Gameboy(core))
+        } else if kind == Kind::Nes {
+            let state = extra_nes::Shared::default();
+            let core =
+                extra_nes::Renderer::new(rate, nes_clock.unwrap_or(extra_nes::CLOCK as f64), fds)?;
+            core.publish(&state);
+            (State::Nes(state), Core::Nes(core))
         } else if kind == Kind::Okim6258 {
             if let Some(hz) = clock {
                 extra_okim6258::validate_clock(hz, rate)?;
@@ -859,6 +933,9 @@ impl Shared {
     pub fn dispose_gameboy(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Gameboy)
     }
+    pub fn dispose_nes(&self, id: u64) -> Result<(), String> {
+        self.dispose_kind(id, Kind::Nes)
+    }
     pub fn dispose_y8950(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Y8950)
     }
@@ -979,6 +1056,9 @@ impl Renderer {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Gameboy(core), State::Gameboy(state)) => {
+                                core.cancel_invalid(&valid, state)
+                            }
+                            (Core::Nes(core), State::Nes(state)) => {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Ym3812(core), State::Ym3812(state)) => {
@@ -1177,6 +1257,19 @@ impl Renderer {
             }
         }
     }
+    pub fn apply_nes(
+        &mut self,
+        instance: &Instance,
+        command: &Arc<extra_nes::Prepared>,
+        owner: Option<Owner>,
+    ) {
+        unsafe {
+            match (instance.callback_core(), &instance.state) {
+                (Core::Nes(core), State::Nes(state)) => core.apply(command, owner, state),
+                _ => unreachable!("Additional NES target"),
+            }
+        }
+    }
     pub fn apply_y8950(
         &mut self,
         instance: &Instance,
@@ -1204,6 +1297,7 @@ impl Renderer {
                     (Core::Rf5c164(core), _) => core.mix(pcm),
                     (Core::Okim6258(core), _) => core.mix(pcm),
                     (Core::Gameboy(core), _) => core.mix(pcm),
+                    (Core::Nes(core), _) => core.mix(pcm),
                     (Core::Ym3812(core), _) => core.mix(pcm),
                     (Core::Ym3526(core), _) => core.mix(pcm),
                     (Core::Ym2413(core), _) => core.mix(pcm),

@@ -4,13 +4,13 @@
   "files": {
     "third_party/tetorica-nes/nes_core.cpp": {
       "mirror": "src-tauri/src/native_genesis_nes.cpp",
-      "canonicalSha256": "e34cc1bba1d9141575883603797dacfd20aadee5956a1f20697c3629fcaef47e",
-      "sha256": "0e8c43179de99ff787ded5774659a71de5adb2d0181fb3fb5e987bd60563838f"
+      "canonicalSha256": "6658f4012eeac783ea72693b2284dd150dcb2e22a1f29859b83e1ae3d333f959",
+      "sha256": "ff04f01c5b6fde9e139921fb2300d7d907ec8bd56c072453daa81f6c60b1db52"
     },
     "third_party/tetorica-nes/nes_core.h": {
       "mirror": "src-tauri/src/native_genesis_nes.h",
-      "canonicalSha256": "01310f11b3b8fedf42e6c7e0dc3e6be04b16796c8bec78f6e0b01987c3a66ad1",
-      "sha256": "01310f11b3b8fedf42e6c7e0dc3e6be04b16796c8bec78f6e0b01987c3a66ad1"
+      "canonicalSha256": "7834ca83834271574d58ba754061ca8eea619776a7acea6f702cfe3b811b3b31",
+      "sha256": "7834ca83834271574d58ba754061ca8eea619776a7acea6f702cfe3b811b3b31"
     }
   }
 }

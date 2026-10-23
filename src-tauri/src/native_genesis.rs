@@ -35,6 +35,11 @@ mod extra_msx;
 #[cfg(test)]
 #[path = "native_genesis_extra_msx_tests.rs"]
 mod extra_msx_tests;
+#[path = "native_genesis_extra_nes.rs"]
+mod extra_nes;
+#[cfg(test)]
+#[path = "native_genesis_extra_nes_tests.rs"]
+mod extra_nes_tests;
 #[path = "native_genesis_extra_okim6258.rs"]
 mod extra_okim6258;
 #[cfg(test)]
@@ -258,6 +263,7 @@ enum Action {
     ExtraRf5c164(Arc<extra_psg::Instance>, Arc<extra_rf5c164::Prepared>),
     ExtraOkim6258(Arc<extra_psg::Instance>, Arc<extra_okim6258::Prepared>),
     ExtraGameboy(Arc<extra_psg::Instance>, Arc<extra_gameboy::Prepared>),
+    ExtraNes(Arc<extra_psg::Instance>, Arc<extra_nes::Prepared>),
     ExtraYm3812(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
     ExtraYm3526(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
     ExtraYm2413(Arc<extra_psg::Instance>, Arc<extra_msx::Prepared>),
@@ -400,6 +406,10 @@ enum CommandAction {
     ExtraGameboy {
         instance: u64,
         message: extra_gameboy::Message,
+    },
+    ExtraNes {
+        instance: u64,
+        message: extra_nes::Message,
     },
     ExtraYm3812 {
         instance: u64,
@@ -556,6 +566,7 @@ impl Command {
             | CommandAction::ExtraRf5c164 { .. }
             | CommandAction::ExtraOkim6258 { .. }
             | CommandAction::ExtraGameboy { .. }
+            | CommandAction::ExtraNes { .. }
             | CommandAction::ExtraYm3812 { .. }
             | CommandAction::ExtraYm3526 { .. }
             | CommandAction::ExtraYm2413 { .. } => {
@@ -1012,6 +1023,18 @@ impl Shared {
         if x68000_upload_bytes > x68000::MAX_BATCH_UPLOAD_BYTES {
             return Err("Native OKIM6258 upload batch exceeds 16 MiB".into());
         }
+        let extra_nes_upload_bytes: usize = commands
+            .iter()
+            .filter_map(|c| match &c.action {
+                CommandAction::ExtraNes { message, .. } => match &message.method {
+                    extra_nes::Method::Memory { data, .. }
+                    | extra_nes::Method::LoadMemory { data, .. } => Some(data.len()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .sum();
+        self.extra_psg.check_nes_uploads(extra_nes_upload_bytes)?;
         let extra_permits = self
             .extra_psg
             .reserve_payloads(commands.iter().filter_map(|cmd| match &cmd.action {
@@ -1027,6 +1050,7 @@ impl Shared {
                 CommandAction::ExtraRf5c164 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraOkim6258 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraGameboy { message, .. } => Some(message.prepared_bytes()),
+                CommandAction::ExtraNes { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm3812 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm3526 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm2413 { message, .. } => Some(message.prepared_bytes()),
@@ -1249,6 +1273,20 @@ impl Shared {
                         );
                     }
                     Action::ExtraGameboy(target, prepared)
+                } else if let CommandAction::ExtraNes { instance, message } = &command.action {
+                    if command.frame > MAX_SAFE_INTEGER {
+                        return Err("Invalid native command frame".into());
+                    }
+                    let target = self
+                        .extra_psg
+                        .get(*instance, self.epoch.load(Ordering::Acquire))?;
+                    let prepared = target.nes()?.prepare_message(message)?;
+                    if prepared.is_owner_cancel() && command.frame != 0 {
+                        return Err(
+                            "Native NES owner cancellation requires immediate frame zero".into(),
+                        );
+                    }
+                    Action::ExtraNes(target, prepared)
                 } else if let CommandAction::Noise { message } = &command.action {
                     Action::Noise(noise_plan.prepare(message, self.rate)?)
                 } else {
@@ -1677,6 +1715,15 @@ impl Shared {
                     self.invalidation.fetch_add(1, Ordering::Release);
                 }
             }
+            if let Action::ExtraNes(instance, command) = action {
+                if instance
+                    .nes()
+                    .expect("NES action target")
+                    .commit_cancel(command)
+                {
+                    self.invalidation.fetch_add(1, Ordering::Release);
+                }
+            }
         }
         *noise_control = noise_plan;
         self.dac_streams.fetch_add(streams, Ordering::AcqRel);
@@ -1778,6 +1825,7 @@ impl Shared {
                     Action::ExtraRf5c164(_, c) => Some(extra_psg::Payload::Rf5c164(c.clone())),
                     Action::ExtraOkim6258(_, c) => Some(extra_psg::Payload::Okim6258(c.clone())),
                     Action::ExtraGameboy(_, c) => Some(extra_psg::Payload::Gameboy(c.clone())),
+                    Action::ExtraNes(_, c) => Some(extra_psg::Payload::Nes(c.clone())),
                     Action::ExtraYm3812(_, c) => Some(extra_psg::Payload::Ym3812(c.clone())),
                     Action::ExtraYm3526(_, c) => Some(extra_psg::Payload::Ym3526(c.clone())),
                     Action::ExtraYm2413(_, c) => Some(extra_psg::Payload::Ym2413(c.clone())),
@@ -1803,6 +1851,7 @@ impl Shared {
                 | Action::ExtraRf5c164(instance, _)
                 | Action::ExtraOkim6258(instance, _)
                 | Action::ExtraGameboy(instance, _)
+                | Action::ExtraNes(instance, _)
                 | Action::ExtraYm3812(instance, _)
                 | Action::ExtraYm3526(instance, _)
                 | Action::ExtraYm2413(instance, _) => instance,
@@ -1968,6 +2017,19 @@ impl Shared {
                         .collect();
                     instance.gameboy()?.retain(&prepared)
                 }
+                Action::ExtraNes(_, _) => {
+                    let prepared: Vec<_> = actions
+                        .iter()
+                        .filter_map(|(action, owner)| {
+                            if let Action::ExtraNes(target, command) = action {
+                                (target.id == instance.id).then(|| (command.clone(), *owner))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    instance.nes()?.retain(&prepared)
+                }
                 Action::ExtraY8950(_, _) => {
                     let prepared: Vec<_> = actions
                         .iter()
@@ -2029,6 +2091,7 @@ impl Shared {
                         | Action::ExtraRf5c164(target, _)
                         | Action::ExtraOkim6258(target, _)
                         | Action::ExtraGameboy(target, _)
+                        | Action::ExtraNes(target, _)
                         | Action::ExtraYm3812(target, _)
                         | Action::ExtraYm3526(target, _)
                         | Action::ExtraYm2413(target, _) => target.id == instance.id,
@@ -2099,6 +2162,11 @@ impl Shared {
                 }
                 Action::ExtraGameboy(instance, command) => {
                     let state = instance.gameboy().expect("Game Boy action target");
+                    state.rollback(command.clone());
+                    let _ = state.status(self.frame.load(Ordering::Acquire));
+                }
+                Action::ExtraNes(instance, command) => {
+                    let state = instance.nes().expect("NES action target");
                     state.rollback(command.clone());
                     let _ = state.status(self.frame.load(Ordering::Acquire));
                 }
@@ -2622,6 +2690,48 @@ impl Shared {
         *sequence = next_sequence;
         status
     }
+    fn create_extra_nes(
+        &self,
+        instance: u64,
+        clock: Option<f64>,
+        fds: bool,
+    ) -> Result<extra_nes::Status, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self
+            .extra_psg
+            .create_nes(instance, epoch, self.rate, clock, fds)
+        {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target.nes()?.status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional NES install capacity"));
+        *sequence = next_sequence;
+        status
+    }
     fn create_extra_y8950(
         &self,
         instance: u64,
@@ -2893,6 +3003,15 @@ impl Shared {
         self.invalidation.fetch_add(1, Ordering::Release);
         Ok(())
     }
+    fn dispose_extra_nes(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose_nes(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
     fn dispose_extra_y8950(&self, instance: u64) -> Result<(), String> {
         let _producer = self
             .producer
@@ -3111,6 +3230,23 @@ impl Shared {
             return Err("Additional Game Boy instance has expired".into());
         }
         target.gameboy()?.status(self.frame.load(Ordering::Acquire))
+    }
+    fn extra_nes_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+    ) -> Result<extra_nes::Status, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        if let Some(id) = after {
+            target.nes()?.wait_applied(id)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional NES instance has expired".into());
+        }
+        target.nes()?.status(self.frame.load(Ordering::Acquire))
     }
     fn extra_y8950_status(
         &self,
@@ -3402,6 +3538,14 @@ impl Shared {
                             .expect("Game Boy action target")
                             .valid_event(command, event.sequence, event.owner)
                 }
+                Action::ExtraNes(instance, command) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
+                        && instance.nes().expect("NES action target").valid_event(
+                            command,
+                            event.sequence,
+                            event.owner,
+                        )
+                }
                 Action::ExtraY8950(instance, command) => {
                     instance.valid(self.epoch.load(Ordering::Acquire))
                         && instance.y8950().expect("Y8950 action target").valid_event(
@@ -3546,6 +3690,9 @@ impl Shared {
                 .gameboy()
                 .expect("Game Boy action target")
                 .retire(command),
+            Action::ExtraNes(instance, command) => {
+                instance.nes().expect("NES action target").retire(command)
+            }
             Action::ExtraY8950(instance, command) => instance
                 .y8950()
                 .expect("Y8950 action target")
@@ -4438,6 +4585,15 @@ impl Renderer {
                 self.extra_psg.apply_gameboy(&instance, &command, owner);
                 state.retire(command);
             }
+            Action::ExtraNes(instance, command) => {
+                let state = instance.nes().expect("NES action target");
+                if command.stops() {
+                    state.cancel_before(&command, sequence.saturating_add(1), owner);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.extra_psg.apply_nes(&instance, &command, owner);
+                state.retire(command);
+            }
             Action::ExtraY8950(instance, command) => {
                 let state = instance.y8950().expect("Y8950 action target");
                 if command.stops() {
@@ -4925,6 +5081,7 @@ impl Renderer {
                     Action::ExtraRf5c164(_, command) => command.starts(),
                     Action::ExtraOkim6258(_, command) => command.starts(),
                     Action::ExtraGameboy(_, command) => command.starts(),
+                    Action::ExtraNes(_, command) => command.starts(),
                     Action::ExtraYm3812(_, command) => command.starts(),
                     Action::ExtraYm3526(_, command) => command.starts(),
                     Action::ExtraYm2413(_, command) => command.starts(),
@@ -7757,6 +7914,20 @@ pub fn native_genesis_extra_gameboy_create(
     })
 }
 #[tauri::command]
+pub fn native_genesis_extra_nes_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    clock: Option<f64>,
+    fds: Option<bool>,
+) -> Result<extra_nes::Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| {
+        shared.create_extra_nes(instance, clock, fds.unwrap_or(false))
+    })
+}
+#[tauri::command]
 pub fn native_genesis_extra_ymf262_dispose(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, NativeGenesis>,
@@ -7796,6 +7967,16 @@ pub fn native_genesis_extra_gameboy_dispose(
 ) -> Result<(), String> {
     crate::allowed(&window)?;
     state.with_session(session, |shared| shared.dispose_extra_gameboy(instance))
+}
+#[tauri::command]
+pub fn native_genesis_extra_nes_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_nes(instance))
 }
 #[tauri::command]
 pub async fn native_genesis_extra_ymf262_status(
@@ -7863,6 +8044,23 @@ pub async fn native_genesis_extra_gameboy_status(
     let shared = state.session_shared(session)?;
     let status =
         tauri::async_runtime::spawn_blocking(move || shared.extra_gameboy_status(instance, after))
+            .await
+            .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+#[tauri::command]
+pub async fn native_genesis_extra_nes_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+) -> Result<extra_nes::Status, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status =
+        tauri::async_runtime::spawn_blocking(move || shared.extra_nes_status(instance, after))
             .await
             .map_err(|error| error.to_string())??;
     state.with_session(session, |_| Ok(()))?;
