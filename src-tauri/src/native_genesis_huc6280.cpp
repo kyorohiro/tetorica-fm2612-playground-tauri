@@ -78,6 +78,7 @@ extern "C" {
 void *native_huc6280_create(uint32_t rate) {
     return rate >= 8000 && rate <= 384000 ? new (std::nothrow) NativeHuc6280(rate) : nullptr;
 }
+size_t native_huc6280_core_size() { return sizeof(NativeHuc6280); }
 void native_huc6280_destroy(void *ptr) { delete static_cast<NativeHuc6280 *>(ptr); }
 void native_huc6280_reset(void *ptr) { static_cast<NativeHuc6280 *>(ptr)->reset(); }
 void native_huc6280_stop(void *ptr) {
@@ -91,6 +92,10 @@ void native_huc6280_waveform(void *ptr, uint32_t channel, const uint8_t *samples
     static_cast<NativeHuc6280 *>(ptr)->waveform(channel, samples);
 }
 void native_huc6280_key_off(void *ptr, uint32_t channel) { static_cast<NativeHuc6280 *>(ptr)->off(channel); }
+void native_huc6280_set_mute_mask(void *ptr, uint32_t mask) {
+    auto &core = static_cast<NativeHuc6280 *>(ptr)->core;
+    for (uint32_t channel = 0; channel < 6; ++channel) core.mute(channel, (mask & (1U << channel)) != 0);
+}
 int32_t native_huc6280_set_clock(void *ptr, uint32_t hz) {
     if (hz < 100000 || hz > 100000000) return 0;
     auto &p = *static_cast<NativeHuc6280 *>(ptr);

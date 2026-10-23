@@ -30,6 +30,11 @@ mod extra_gameboy;
 #[cfg(test)]
 #[path = "native_genesis_extra_gameboy_tests.rs"]
 mod extra_gameboy_tests;
+#[path = "native_genesis_extra_huc6280.rs"]
+mod extra_huc6280;
+#[cfg(test)]
+#[path = "native_genesis_extra_huc6280_tests.rs"]
+mod extra_huc6280_tests;
 #[path = "native_genesis_extra_msx.rs"]
 mod extra_msx;
 #[cfg(test)]
@@ -263,6 +268,7 @@ enum Action {
     ExtraRf5c164(Arc<extra_psg::Instance>, Arc<extra_rf5c164::Prepared>),
     ExtraOkim6258(Arc<extra_psg::Instance>, Arc<extra_okim6258::Prepared>),
     ExtraGameboy(Arc<extra_psg::Instance>, Arc<extra_gameboy::Prepared>),
+    ExtraHuc6280(Arc<extra_psg::Instance>, Arc<extra_huc6280::Prepared>),
     ExtraNes(Arc<extra_psg::Instance>, Arc<extra_nes::Prepared>),
     ExtraYm3812(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
     ExtraYm3526(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
@@ -402,6 +408,10 @@ enum CommandAction {
     ExtraOkim6258 {
         instance: u64,
         message: extra_okim6258::Message,
+    },
+    ExtraHuc6280 {
+        instance: u64,
+        message: extra_huc6280::Message,
     },
     ExtraGameboy {
         instance: u64,
@@ -566,6 +576,7 @@ impl Command {
             | CommandAction::ExtraRf5c164 { .. }
             | CommandAction::ExtraOkim6258 { .. }
             | CommandAction::ExtraGameboy { .. }
+            | CommandAction::ExtraHuc6280 { .. }
             | CommandAction::ExtraNes { .. }
             | CommandAction::ExtraYm3812 { .. }
             | CommandAction::ExtraYm3526 { .. }
@@ -1050,6 +1061,7 @@ impl Shared {
                 CommandAction::ExtraRf5c164 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraOkim6258 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraGameboy { message, .. } => Some(message.prepared_bytes()),
+                CommandAction::ExtraHuc6280 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraNes { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm3812 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm3526 { message, .. } => Some(message.prepared_bytes()),
@@ -1258,6 +1270,21 @@ impl Shared {
                         );
                     }
                     Action::ExtraOkim6258(target, prepared)
+                } else if let CommandAction::ExtraHuc6280 { instance, message } = &command.action {
+                    if command.frame > MAX_SAFE_INTEGER {
+                        return Err("Invalid native command frame".into());
+                    }
+                    let target = self
+                        .extra_psg
+                        .get(*instance, self.epoch.load(Ordering::Acquire))?;
+                    let prepared = target.huc6280()?.prepare_message(message)?;
+                    if prepared.is_owner_cancel() && command.frame != 0 {
+                        return Err(
+                            "Native HuC6280 owner cancellation requires immediate frame zero"
+                                .into(),
+                        );
+                    }
+                    Action::ExtraHuc6280(target, prepared)
                 } else if let CommandAction::ExtraGameboy { instance, message } = &command.action {
                     if command.frame > MAX_SAFE_INTEGER {
                         return Err("Invalid native command frame".into());
@@ -1706,6 +1733,15 @@ impl Shared {
             }
         }
         for (action, _) in &actions {
+            if let Action::ExtraHuc6280(instance, command) = action {
+                if instance
+                    .huc6280()
+                    .expect("HuC6280 action target")
+                    .commit_cancel(command)
+                {
+                    self.invalidation.fetch_add(1, Ordering::Release);
+                }
+            }
             if let Action::ExtraGameboy(instance, command) = action {
                 if instance
                     .gameboy()
@@ -1825,6 +1861,7 @@ impl Shared {
                     Action::ExtraRf5c164(_, c) => Some(extra_psg::Payload::Rf5c164(c.clone())),
                     Action::ExtraOkim6258(_, c) => Some(extra_psg::Payload::Okim6258(c.clone())),
                     Action::ExtraGameboy(_, c) => Some(extra_psg::Payload::Gameboy(c.clone())),
+                    Action::ExtraHuc6280(_, c) => Some(extra_psg::Payload::Huc6280(c.clone())),
                     Action::ExtraNes(_, c) => Some(extra_psg::Payload::Nes(c.clone())),
                     Action::ExtraYm3812(_, c) => Some(extra_psg::Payload::Ym3812(c.clone())),
                     Action::ExtraYm3526(_, c) => Some(extra_psg::Payload::Ym3526(c.clone())),
@@ -1851,6 +1888,7 @@ impl Shared {
                 | Action::ExtraRf5c164(instance, _)
                 | Action::ExtraOkim6258(instance, _)
                 | Action::ExtraGameboy(instance, _)
+                | Action::ExtraHuc6280(instance, _)
                 | Action::ExtraNes(instance, _)
                 | Action::ExtraYm3812(instance, _)
                 | Action::ExtraYm3526(instance, _)
@@ -2004,6 +2042,19 @@ impl Shared {
                         .collect();
                     instance.okim6258()?.retain(&prepared)
                 }
+                Action::ExtraHuc6280(_, _) => {
+                    let prepared: Vec<_> = actions
+                        .iter()
+                        .filter_map(|(action, owner)| {
+                            if let Action::ExtraHuc6280(target, command) = action {
+                                (target.id == instance.id).then(|| (command.clone(), *owner))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    instance.huc6280()?.retain(&prepared)
+                }
                 Action::ExtraGameboy(_, _) => {
                     let prepared: Vec<_> = actions
                         .iter()
@@ -2091,6 +2142,7 @@ impl Shared {
                         | Action::ExtraRf5c164(target, _)
                         | Action::ExtraOkim6258(target, _)
                         | Action::ExtraGameboy(target, _)
+                        | Action::ExtraHuc6280(target, _)
                         | Action::ExtraNes(target, _)
                         | Action::ExtraYm3812(target, _)
                         | Action::ExtraYm3526(target, _)
@@ -2157,6 +2209,11 @@ impl Shared {
                 }
                 Action::ExtraOkim6258(instance, command) => {
                     let state = instance.okim6258().expect("OKIM6258 action target");
+                    state.rollback(command.clone());
+                    let _ = state.status(self.frame.load(Ordering::Acquire));
+                }
+                Action::ExtraHuc6280(instance, command) => {
+                    let state = instance.huc6280().expect("HuC6280 action target");
                     state.rollback(command.clone());
                     let _ = state.status(self.frame.load(Ordering::Acquire));
                 }
@@ -2649,6 +2706,47 @@ impl Shared {
         *sequence = next_sequence;
         status
     }
+    fn create_extra_huc6280(
+        &self,
+        instance: u64,
+        clock: Option<u32>,
+    ) -> Result<extra_huc6280::Status, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self
+            .extra_psg
+            .create_huc6280(instance, epoch, self.rate, clock)
+        {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target.huc6280()?.status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional HuC6280 install capacity"));
+        *sequence = next_sequence;
+        status
+    }
     fn create_extra_gameboy(
         &self,
         instance: u64,
@@ -2994,6 +3092,15 @@ impl Shared {
         self.invalidation.fetch_add(1, Ordering::Release);
         Ok(())
     }
+    fn dispose_extra_huc6280(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose_huc6280(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
     fn dispose_extra_gameboy(&self, instance: u64) -> Result<(), String> {
         let _producer = self
             .producer
@@ -3213,6 +3320,23 @@ impl Shared {
         target
             .okim6258()?
             .status(self.frame.load(Ordering::Acquire))
+    }
+    fn extra_huc6280_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+    ) -> Result<extra_huc6280::Status, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        if let Some(id) = after {
+            target.huc6280()?.wait_applied(id)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional HuC6280 instance has expired".into());
+        }
+        target.huc6280()?.status(self.frame.load(Ordering::Acquire))
     }
     fn extra_gameboy_status(
         &self,
@@ -3531,6 +3655,13 @@ impl Shared {
                             .expect("OKIM6258 action target")
                             .valid_event(command, event.sequence, event.owner)
                 }
+                Action::ExtraHuc6280(instance, command) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
+                        && instance
+                            .huc6280()
+                            .expect("HuC6280 action target")
+                            .valid_event(command, event.sequence, event.owner)
+                }
                 Action::ExtraGameboy(instance, command) => {
                     instance.valid(self.epoch.load(Ordering::Acquire))
                         && instance
@@ -3685,6 +3816,10 @@ impl Shared {
             Action::ExtraOkim6258(instance, command) => instance
                 .okim6258()
                 .expect("OKIM6258 action target")
+                .retire(command),
+            Action::ExtraHuc6280(instance, command) => instance
+                .huc6280()
+                .expect("HuC6280 action target")
                 .retire(command),
             Action::ExtraGameboy(instance, command) => instance
                 .gameboy()
@@ -4576,6 +4711,15 @@ impl Renderer {
                 self.extra_psg.apply_okim6258(&instance, &command, owner);
                 state.retire(command);
             }
+            Action::ExtraHuc6280(instance, command) => {
+                let state = instance.huc6280().expect("HuC6280 action target");
+                if command.stops() {
+                    state.cancel_before(&command, sequence.saturating_add(1), owner);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.extra_psg.apply_huc6280(&instance, &command, owner);
+                state.retire(command);
+            }
             Action::ExtraGameboy(instance, command) => {
                 let state = instance.gameboy().expect("Game Boy action target");
                 if command.stops() {
@@ -5081,6 +5225,7 @@ impl Renderer {
                     Action::ExtraRf5c164(_, command) => command.starts(),
                     Action::ExtraOkim6258(_, command) => command.starts(),
                     Action::ExtraGameboy(_, command) => command.starts(),
+                    Action::ExtraHuc6280(_, command) => command.starts(),
                     Action::ExtraNes(_, command) => command.starts(),
                     Action::ExtraYm3812(_, command) => command.starts(),
                     Action::ExtraYm3526(_, command) => command.starts(),
@@ -7901,6 +8046,19 @@ pub fn native_genesis_extra_okim6258_create(
     })
 }
 #[tauri::command]
+pub fn native_genesis_extra_huc6280_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    clock: Option<u32>,
+) -> Result<extra_huc6280::Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| {
+        shared.create_extra_huc6280(instance, clock)
+    })
+}
+#[tauri::command]
 pub fn native_genesis_extra_gameboy_create(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, NativeGenesis>,
@@ -7957,6 +8115,16 @@ pub fn native_genesis_extra_okim6258_dispose(
 ) -> Result<(), String> {
     crate::allowed(&window)?;
     state.with_session(session, |shared| shared.dispose_extra_okim6258(instance))
+}
+#[tauri::command]
+pub fn native_genesis_extra_huc6280_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_huc6280(instance))
 }
 #[tauri::command]
 pub fn native_genesis_extra_gameboy_dispose(
@@ -8027,6 +8195,23 @@ pub async fn native_genesis_extra_okim6258_status(
     let shared = state.session_shared(session)?;
     let status =
         tauri::async_runtime::spawn_blocking(move || shared.extra_okim6258_status(instance, after))
+            .await
+            .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+#[tauri::command]
+pub async fn native_genesis_extra_huc6280_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+) -> Result<extra_huc6280::Status, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status =
+        tauri::async_runtime::spawn_blocking(move || shared.extra_huc6280_status(instance, after))
             .await
             .map_err(|error| error.to_string())??;
     state.with_session(session, |_| Ok(()))?;

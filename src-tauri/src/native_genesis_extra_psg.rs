@@ -1,8 +1,8 @@
 //! Independent sound-chip instances (PSG, YM2612 and YM2203). Cores are allocated and finally destroyed on the
 //! control thread; the device callback owns their exclusive mutable access.
 use super::{
-    extra_budget, extra_gameboy, extra_msx, extra_nes, extra_okim6258, extra_opl, extra_rf5c164,
-    extra_ym2151, extra_ym2608, extra_ym2610, master_system, ym2203, ym2612, Owner,
+    extra_budget, extra_gameboy, extra_huc6280, extra_msx, extra_nes, extra_okim6258, extra_opl,
+    extra_rf5c164, extra_ym2151, extra_ym2608, extra_ym2610, master_system, ym2203, ym2612, Owner,
     MAX_SAFE_INTEGER,
 };
 use std::{
@@ -39,6 +39,7 @@ pub enum State {
     Rf5c164(extra_rf5c164::Shared),
     Okim6258(extra_okim6258::Shared),
     Gameboy(extra_gameboy::Shared),
+    Huc6280(extra_huc6280::Shared),
     Nes(extra_nes::Shared),
     Ym3812(extra_opl::Shared),
     Ym3526(extra_opl::Shared),
@@ -58,6 +59,7 @@ enum Kind {
     Rf5c164,
     Okim6258,
     Gameboy,
+    Huc6280,
     Nes,
     Ym3812,
     Ym3526,
@@ -76,6 +78,7 @@ enum Core {
     Rf5c164(extra_rf5c164::Renderer),
     Okim6258(extra_okim6258::Renderer),
     Gameboy(extra_gameboy::Renderer),
+    Huc6280(extra_huc6280::Renderer),
     Nes(extra_nes::Renderer),
     Ym3812(extra_opl::Renderer),
     Ym3526(extra_opl::Renderer),
@@ -214,6 +217,13 @@ impl Instance {
             Err("Additional instance is not a OKIM6258".into())
         }
     }
+    pub fn huc6280(&self) -> Result<&extra_huc6280::Shared, String> {
+        if let State::Huc6280(state) = &self.state {
+            Ok(state)
+        } else {
+            Err("Additional instance is not a HuC6280".into())
+        }
+    }
     pub fn gameboy(&self) -> Result<&extra_gameboy::Shared, String> {
         if let State::Gameboy(state) = &self.state {
             Ok(state)
@@ -242,6 +252,7 @@ impl Instance {
             State::Rf5c164(_) => Kind::Rf5c164,
             State::Okim6258(_) => Kind::Okim6258,
             State::Gameboy(_) => Kind::Gameboy,
+            State::Huc6280(_) => Kind::Huc6280,
             State::Nes(_) => Kind::Nes,
             State::Ym3812(_) => Kind::Ym3812,
             State::Ym3526(_) => Kind::Ym3526,
@@ -268,6 +279,7 @@ pub enum Payload {
     Rf5c164(Arc<extra_rf5c164::Prepared>),
     Okim6258(Arc<extra_okim6258::Prepared>),
     Gameboy(Arc<extra_gameboy::Prepared>),
+    Huc6280(Arc<extra_huc6280::Prepared>),
     Nes(Arc<extra_nes::Prepared>),
     Ym3812(Arc<extra_opl::Prepared>),
     Ym3526(Arc<extra_opl::Prepared>),
@@ -288,6 +300,7 @@ impl Payload {
             Self::Rf5c164(v) => v.retained_bytes(),
             Self::Okim6258(v) => v.retained_bytes(),
             Self::Gameboy(v) => v.retained_bytes(),
+            Self::Huc6280(v) => v.retained_bytes(),
             Self::Nes(v) => v.retained_bytes(),
             Self::Ym3812(v) => v.retained_bytes(),
             Self::Ym3526(v) => v.retained_bytes(),
@@ -308,6 +321,7 @@ impl Payload {
             Self::Rf5c164(v) => Arc::strong_count(v) == 1,
             Self::Okim6258(v) => Arc::strong_count(v) == 1,
             Self::Gameboy(v) => Arc::strong_count(v) == 1,
+            Self::Huc6280(v) => Arc::strong_count(v) == 1,
             Self::Nes(v) => Arc::strong_count(v) == 1,
             Self::Ym3812(v) => Arc::strong_count(v) == 1,
             Self::Ym3526(v) => Arc::strong_count(v) == 1,
@@ -373,6 +387,7 @@ impl Shared {
                 State::Rf5c164(s) => s.collect_retired(),
                 State::Okim6258(s) => s.collect_retired(),
                 State::Gameboy(s) => s.collect_retired(),
+                State::Huc6280(s) => s.collect_retired(),
                 State::Nes(s) => s.collect_retired(),
                 State::Ym3812(s) => s.collect_retired(),
                 State::Ym3526(s) => s.collect_retired(),
@@ -493,6 +508,15 @@ impl Shared {
         clock: Option<u32>,
     ) -> Result<Arc<Instance>, String> {
         self.create_kind(id, epoch, rate, clock, Kind::Okim6258)
+    }
+    pub fn create_huc6280(
+        &self,
+        id: u64,
+        epoch: u64,
+        rate: u32,
+        clock: Option<u32>,
+    ) -> Result<Arc<Instance>, String> {
+        self.create_kind(id, epoch, rate, clock, Kind::Huc6280)
     }
     pub fn create_gameboy(
         &self,
@@ -655,6 +679,21 @@ impl Shared {
             }
             core.publish(&state);
             (State::Rf5c164(state), Core::Rf5c164(core))
+        } else if kind == Kind::Huc6280 {
+            let state = extra_huc6280::Shared::default();
+            let mut core = extra_huc6280::Renderer::new(rate)?;
+            if let Some(hz) = clock {
+                let cmd = extra_huc6280::Message {
+                    id: None,
+                    audition: false,
+                    group: None,
+                    method: extra_huc6280::Method::Clock { hz },
+                }
+                .prepare()?;
+                core.apply(&cmd, None, &state);
+            }
+            core.publish(&state);
+            (State::Huc6280(state), Core::Huc6280(core))
         } else if kind == Kind::Gameboy {
             let state = extra_gameboy::Shared::default();
             let mut core = extra_gameboy::Renderer::new(rate)?;
@@ -930,6 +969,9 @@ impl Shared {
     pub fn dispose_okim6258(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Okim6258)
     }
+    pub fn dispose_huc6280(&self, id: u64) -> Result<(), String> {
+        self.dispose_kind(id, Kind::Huc6280)
+    }
     pub fn dispose_gameboy(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Gameboy)
     }
@@ -1053,6 +1095,9 @@ impl Renderer {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Okim6258(core), State::Okim6258(state)) => {
+                                core.cancel_invalid(&valid, state)
+                            }
+                            (Core::Huc6280(core), State::Huc6280(state)) => {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Gameboy(core), State::Gameboy(state)) => {
@@ -1244,6 +1289,19 @@ impl Renderer {
             }
         }
     }
+    pub fn apply_huc6280(
+        &mut self,
+        instance: &Instance,
+        command: &Arc<extra_huc6280::Prepared>,
+        owner: Option<Owner>,
+    ) {
+        unsafe {
+            match (instance.callback_core(), &instance.state) {
+                (Core::Huc6280(core), State::Huc6280(state)) => core.apply(command, owner, state),
+                _ => unreachable!("Additional HuC6280 target"),
+            }
+        }
+    }
     pub fn apply_gameboy(
         &mut self,
         instance: &Instance,
@@ -1297,6 +1355,7 @@ impl Renderer {
                     (Core::Rf5c164(core), _) => core.mix(pcm),
                     (Core::Okim6258(core), _) => core.mix(pcm),
                     (Core::Gameboy(core), _) => core.mix(pcm),
+                    (Core::Huc6280(core), _) => core.mix(pcm),
                     (Core::Nes(core), _) => core.mix(pcm),
                     (Core::Ym3812(core), _) => core.mix(pcm),
                     (Core::Ym3526(core), _) => core.mix(pcm),
