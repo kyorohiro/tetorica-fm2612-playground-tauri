@@ -22,9 +22,53 @@ void operator delete(void *p, std::size_t) noexcept { ::operator delete(p); }
 void operator delete[](void *p, std::size_t) noexcept { ::operator delete(p); }
 
 static void write(void *chip, uint8_t port, uint8_t reg, uint8_t value) { native_ym2608_write(chip, port, reg, value); }
-static int self_test() {
+static void foreign_voice_continuity() {
+    void *first = native_ym2608_create_extra(48000), *reference = native_ym2608_create_extra(48000);
+    assert(first && reference);
+    uint8_t waveform[8192]; for (uint32_t i = 0; i < sizeof waveform; ++i) waveform[i] = uint8_t(i * 7 + 3);
+    audit = true;
+    for (void *p : {first, reference}) {
+        assert(native_ym2608_load_rom(p, waveform, 0, sizeof waveform));
+        assert(native_ym2608_load_memory(p, waveform, 0, sizeof waveform));
+        for (uint8_t op = 0; op < 4; ++op) {
+            const uint8_t n = 1 + op * 4;
+            write(p, 0, 0x30 + n, 1 + op); write(p, 0, 0x40 + n, 20 + op);
+            write(p, 0, 0x50 + n, 31); write(p, 0, 0x60 + n, 0); write(p, 0, 0x80 + n, 15);
+        }
+        write(p, 0, 0xb1, 7); write(p, 0, 0xb5, 0xc0); write(p, 0, 0xa5, 0x22); write(p, 0, 0xa1, 0x69); write(p, 0, 0x28, 0xf1);
+        write(p, 0, 0, 0x34); write(p, 0, 1, 2); write(p, 0, 7, 0x3e); write(p, 0, 8, 12);
+        write(p, 0, 0x11, 63); write(p, 0, 0x18, 0xdf); write(p, 0, 0x10, 1);
+        write(p, 1, 1, 0xc2); write(p, 1, 2, 0); write(p, 1, 3, 0); write(p, 1, 4, 0xff); write(p, 1, 5, 0);
+        write(p, 1, 9, 0); write(p, 1, 10, 0x40); write(p, 1, 11, 180); write(p, 1, 0, 0xb0);
+    }
+    for (uint32_t clock : {8000000u, 100000u, 8000000u}) {
+        for (uint8_t op = 0; op < 4; ++op) {
+            const uint8_t n = op * 4;
+            write(first, 0, 0x30 + n, 1 + op); write(first, 0, 0x40 + n, 20 + op);
+            write(first, 0, 0x50 + n, 31); write(first, 0, 0x60 + n, 0); write(first, 0, 0x80 + n, 15);
+        }
+        write(first, 0, 0xb0, 7); write(first, 0, 0xb4, 0xc0); write(first, 0, 0xa4, 0x22); write(first, 0, 0xa0, 0x85); write(first, 0, 0x28, 0xf0);
+        assert(native_ym2608_set_clock(first, clock)); assert(native_ym2608_set_clock(reference, clock));
+        for (uint32_t frame = 0; frame < 4096; ++frame) {
+            // Cancelling sounding CH1 (and later unused FM slots) must leave
+            // the independently held FM/SSG/rhythm/ADPCM-B exactly equal to a
+            // second core where CH1 was never started, even during upsample holds.
+            if (frame == 701) native_ym2608_key_off(first, 0);
+            if (frame == 1703) native_ym2608_key_off(first, 5);
+            if (frame == 2801) native_ym2608_key_off(first, 2);
+            float l, r, expected_l, expected_r;
+            native_ym2608_sample(first, &l, &r); native_ym2608_sample(reference, &expected_l, &expected_r);
+            if (frame >= 701) assert(l == expected_l && r == expected_r);
+        }
+    }
+    audit = false; assert(allocations == 0 && frees == 0);
+    native_ym2608_destroy(first); native_ym2608_destroy(reference);
+}
+static int self_test(bool extra) {
     assert(!native_ym2608_create(0));
-    void *chip = native_ym2608_create(48000); assert(chip);
+    void *chip = extra ? native_ym2608_create_extra(48000) : native_ym2608_create(48000); assert(chip);
+    static_assert(sizeof(NativeYm2608State) == 524, "primary ABI");
+    static_assert(sizeof(NativeYm2608ExtraState) == 536, "extra ABI");
     uint8_t bytes[32]; for (uint8_t i = 0; i < 32; ++i) bytes[i] = i * 7;
     uint8_t readback[32] = {};
     NativeYm2608State state{};
@@ -106,16 +150,62 @@ static int self_test() {
     native_ym2608_clear_memory(chip);
     assert(native_ym2608_copy_memory(chip, readback, 0x1fffe0, 32));
     for (auto value : readback) assert(value == 0);
+    if (extra) {
+        NativeYm2608ExtraState metadata{};
+        write(chip, 0, 0x28, 0xa2); write(chip, 0, 8, 16); write(chip, 0, 0x27, 0x8f);
+        native_ym2608_cancel_csm(chip); native_ym2608_get_extra_state(chip, &metadata);
+        assert(metadata.keys[2] == 10 && !(metadata.registers[0x27] & 0x81) && (metadata.registers[0x27] & 2));
+        write(chip, 0, 0x27, 0x8f); native_ym2608_key_off_fm(chip, 2); native_ym2608_get_extra_state(chip, &metadata);
+        assert(!metadata.keys[2] && (metadata.registers[0x27] & 0x81) == 0x81);
+        native_ym2608_cancel_csm(chip); native_ym2608_get_extra_state(chip, &metadata);
+        assert(!(metadata.registers[0x27] & 0x81) && metadata.ssg_levels[0] == 16);
+        native_ym2608_key_off(chip, 6); native_ym2608_get_extra_state(chip, &metadata);
+        assert(metadata.ssg_levels[0] == 16 && metadata.registers[8] == 0);
+        native_ym2608_set_retained_ssg_level(chip, 0, 0); native_ym2608_get_extra_state(chip, &metadata);
+        assert(metadata.ssg_levels[0] == 0);
+        native_ym2608_audition_fm_key_on(chip, 0, 5); native_ym2608_stop(chip);
+        for (int i = 0; i < 200; ++i) { native_ym2608_sample(chip, &left, &right); assert(left == 0 && right == 0); }
+        native_ym2608_get_extra_state(chip, &metadata); assert(!metadata.keys[0]);
+        native_ym2608_audition_fm_key_on(chip, 0, 5); native_ym2608_reset(chip);
+        for (int i = 0; i < 200; ++i) native_ym2608_sample(chip, &left, &right);
+        native_ym2608_get_extra_state(chip, &metadata); assert(!metadata.keys[0]);
+    }
     audit = false;
     assert(allocations == 0 && frees == 0);
+    // Independently allocated ROM/RAM and clock/state must never alias.
+    if (extra) {
+        void *other = native_ym2608_create_extra(48000); assert(other);
+        assert(native_ym2608_load_memory(chip, bytes, 0x123, 32));
+        assert(native_ym2608_copy_memory(other, readback, 0x123, 32));
+        for (auto value : readback) assert(value == 0);
+        native_ym2608_reset(other);
+        assert(native_ym2608_copy_memory(chip, readback, 0x123, 32)); assert(std::memcmp(bytes, readback, 32) == 0);
+        uint8_t alternate_rom[8192]; std::memset(alternate_rom, 0xff, sizeof alternate_rom);
+        audit = true;
+        native_ym2608_reset(chip); native_ym2608_reset(other);
+        native_ym2608_set_clock(chip, 8000000); native_ym2608_set_source_mute_mask(chip, 0);
+        assert(native_ym2608_load_rom(other, alternate_rom, 0, sizeof alternate_rom));
+        for (void *p : {chip, other}) { write(p, 0, 0x11, 63); write(p, 0, 0x18, 0xdf); write(p, 0, 0x10, 1); }
+        double difference = 0; float other_left = 0, other_right = 0;
+        for (int i = 0; i < 512; ++i) {
+            native_ym2608_sample(chip, &left, &right); native_ym2608_sample(other, &other_left, &other_right);
+            difference += std::abs(left - other_left) + std::abs(right - other_right);
+        }
+        assert(difference > 1); // Loading a different ROM changed only its owner.
+        audit = false; assert(allocations == 0 && frees == 0);
+        native_ym2608_destroy(other);
+    }
     native_ym2608_destroy(chip);
+    if (extra) foreign_voice_continuity();
     std::puts("YM2608 state/Stop/reset/memory/clock self-test passed; callback allocations 0, frees 0");
     return 0;
 }
 struct Event { uint32_t frame = 0, a = 0, b = 0, c = 0; std::string op; std::vector<uint8_t> bytes; };
 int main(int argc, char **argv) {
     try {
-        if (argc == 2 && std::string(argv[1]) == "--self-test") return self_test();
+        const bool extra = argc > 1 && std::string(argv[1]) == "--extra";
+        if (extra) { --argc; ++argv; }
+        if (argc == 2 && std::string(argv[1]) == "--self-test") return self_test(extra);
         if (argc != 3) return 2;
         const uint32_t rate = std::stoul(argv[1]), frames = std::stoul(argv[2]);
         if (frames > 10000000) return 2;
@@ -125,17 +215,19 @@ int main(int argc, char **argv) {
             std::istringstream in(line); Event event;
             if (!(in >> event.frame >> event.op)) continue;
             if (event.op == "write") in >> event.a >> event.b >> event.c;
-            else if (event.op == "clock" || event.op == "mute" || event.op == "off") in >> event.a;
+            else if (event.op == "clock" || event.op == "mute" || event.op == "off" || event.op == "off-fm") in >> event.a;
+            else if (event.op == "audition" || event.op == "level") in >> event.a >> event.b;
             else if (event.op == "rom" || event.op == "memory") {
                 std::string hex; in >> event.a >> hex; assert(hex.size() % 2 == 0);
                 for (size_t i = 0; i < hex.size(); i += 2) event.bytes.push_back(std::stoul(hex.substr(i, 2), nullptr, 16));
             }
-            else if (event.op != "clear" && event.op != "reset" && event.op != "stop") return 2;
+            else if (event.op != "clear" && event.op != "reset" && event.op != "stop" && event.op != "cancel-csm") return 2;
             events.push_back(std::move(event));
         }
         std::stable_sort(events.begin(), events.end(), [](const Event &a, const Event &b) { return a.frame < b.frame; });
-        void *chip = native_ym2608_create(rate); if (!chip) return 3;
-        std::vector<float> pcm(frames * 2);
+        void *chip = extra ? native_ym2608_create_extra(rate) : native_ym2608_create(rate); if (!chip) return 3;
+        const uint32_t planes = extra ? 9 : 2;
+        std::vector<float> pcm(frames * planes);
         size_t next = 0;
         audit = true;
         for (uint32_t frame = 0; frame < frames; ++frame) {
@@ -145,13 +237,23 @@ int main(int argc, char **argv) {
                 else if (e.op == "clock") assert(native_ym2608_set_clock(chip, e.a));
                 else if (e.op == "mute") native_ym2608_set_source_mute_mask(chip, e.a);
                 else if (e.op == "off") native_ym2608_key_off(chip, e.a);
+                else if (e.op == "off-fm") native_ym2608_key_off_fm(chip, e.a);
+                else if (e.op == "cancel-csm") native_ym2608_cancel_csm(chip);
+                else if (e.op == "audition") native_ym2608_audition_fm_key_on(chip, e.a, e.b);
+                else if (e.op == "level") native_ym2608_set_retained_ssg_level(chip, e.a, e.b);
                 else if (e.op == "rom") assert(native_ym2608_load_rom(chip, e.bytes.data(), e.a, e.bytes.size()));
                 else if (e.op == "memory") assert(native_ym2608_load_memory(chip, e.bytes.data(), e.a, e.bytes.size()));
                 else if (e.op == "clear") native_ym2608_clear_memory(chip);
                 else if (e.op == "reset") native_ym2608_reset(chip);
                 else if (e.op == "stop") native_ym2608_stop(chip);
             }
-            native_ym2608_sample(chip, &pcm[frame * 2], &pcm[frame * 2 + 1]);
+            native_ym2608_sample(chip, &pcm[frame * planes], &pcm[frame * planes + 1]);
+            if (extra) {
+                pcm[frame * planes + 2] = native_ym2608_read_status(chip);
+                pcm[frame * planes + 3] = native_ym2608_read_status_hi(chip);
+                pcm[frame * planes + 4] = native_ym2608_get_irq(chip);
+                for (uint8_t port = 0; port < 4; ++port) pcm[frame * planes + 5 + port] = native_ym2608_read(chip, port);
+            }
         }
         audit = false;
         assert(allocations == 0 && frees == 0);

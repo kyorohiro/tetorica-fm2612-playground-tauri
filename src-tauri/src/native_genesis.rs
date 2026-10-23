@@ -23,6 +23,8 @@ mod dx7;
 #[cfg(test)]
 #[path = "native_genesis_dx7_tests.rs"]
 mod dx7_tests;
+#[path = "native_genesis_extra_budget.rs"]
+mod extra_budget;
 #[path = "native_genesis_extra_psg.rs"]
 mod extra_psg;
 #[cfg(test)]
@@ -31,6 +33,11 @@ mod extra_psg_tests;
 #[cfg(test)]
 #[path = "native_genesis_extra_ym2203_tests.rs"]
 mod extra_ym2203_tests;
+#[path = "native_genesis_extra_ym2608.rs"]
+mod extra_ym2608;
+#[cfg(test)]
+#[path = "native_genesis_extra_ym2608_tests.rs"]
+mod extra_ym2608_tests;
 #[cfg(test)]
 #[path = "native_genesis_extra_ym2612_tests.rs"]
 mod extra_ym2612_tests;
@@ -204,6 +211,7 @@ enum Action {
     ExtraPsg(Arc<extra_psg::Instance>, Arc<master_system::Prepared>),
     ExtraYm2612(Arc<extra_psg::Instance>, Arc<ym2612::Prepared>),
     ExtraYm2203(Arc<extra_psg::Instance>, Arc<ym2203::Prepared>),
+    ExtraYm2608(Arc<extra_psg::Instance>, Arc<extra_ym2608::Prepared>),
     Dx7(Arc<dx7::Prepared>),
     Nes(Arc<nes::Prepared>),
     Gameboy(Arc<gameboy::Prepared>),
@@ -307,6 +315,10 @@ enum CommandAction {
     ExtraYm2203 {
         instance: u64,
         message: ym2203::Message,
+    },
+    ExtraYm2608 {
+        instance: u64,
+        message: extra_ym2608::Message,
     },
     Dx7 {
         message: dx7::Message,
@@ -441,7 +453,8 @@ impl Command {
         Ok(match self.action {
             CommandAction::ExtraPsg { .. }
             | CommandAction::ExtraYm2612 { .. }
-            | CommandAction::ExtraYm2203 { .. } => {
+            | CommandAction::ExtraYm2203 { .. }
+            | CommandAction::ExtraYm2608 { .. } => {
                 return Err("Additional sound-chip commands require instance resolution".into())
             }
             CommandAction::Dx7 { ref message } => Action::Dx7(message.prepare()?),
@@ -895,6 +908,15 @@ impl Shared {
         if x68000_upload_bytes > x68000::MAX_BATCH_UPLOAD_BYTES {
             return Err("Native OKIM6258 upload batch exceeds 16 MiB".into());
         }
+        let extra_permits = self
+            .extra_psg
+            .reserve_payloads(commands.iter().filter_map(|cmd| match &cmd.action {
+                CommandAction::ExtraPsg { message, .. } => Some(message.prepared_bytes()),
+                CommandAction::ExtraYm2612 { message, .. } => Some(message.prepared_bytes()),
+                CommandAction::ExtraYm2203 { message, .. } => Some(message.prepared_bytes()),
+                CommandAction::ExtraYm2608 { message, .. } => Some(message.prepared_bytes()),
+                _ => None,
+            }))?;
         // Resolve every bank, tag and range before admission or state mutation.
         let mut voices = HashSet::new();
         let mut streams = 0;
@@ -945,6 +967,17 @@ impl Shared {
                         }
                     }
                     Action::ExtraYm2203(target, message.prepare()?)
+                } else if let CommandAction::ExtraYm2608 { instance, message } = &command.action {
+                    if command.frame > MAX_SAFE_INTEGER {
+                        return Err("Invalid native command frame".into());
+                    }
+                    let target = self
+                        .extra_psg
+                        .get(*instance, self.epoch.load(Ordering::Acquire))?;
+                    target.ym2608()?;
+                    let prepared = message.prepare()?;
+                    prepared.set_start_frame(command.frame.max(self.frame.load(Ordering::Acquire)));
+                    Action::ExtraYm2608(target, prepared)
                 } else if let CommandAction::Noise { message } = &command.action {
                     Action::Noise(noise_plan.prepare(message, self.rate)?)
                 } else {
@@ -1086,7 +1119,7 @@ impl Shared {
             self.overflows.fetch_add(1, Ordering::Relaxed);
             return Err("Native command queue is full; playback was not silently truncated".into());
         }
-        if let Err(error) = self.retain_extra_psg(&actions) {
+        if let Err(error) = self.retain_extra_psg(&actions, extra_permits) {
             self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
             return Err(error);
         }
@@ -1373,14 +1406,46 @@ impl Shared {
         }
         Ok(())
     }
-    fn retain_extra_psg(&self, actions: &[(Action, Option<Owner>)]) -> Result<(), String> {
+    fn retain_extra_psg(
+        &self,
+        actions: &[(Action, Option<Owner>)],
+        extra_permits: Vec<extra_budget::Permit>,
+    ) -> Result<(), String> {
+        let upload_bytes: usize = actions
+            .iter()
+            .map(|(a, _)| {
+                if let Action::ExtraYm2608(_, c) = a {
+                    c.upload_bytes()
+                } else {
+                    0
+                }
+            })
+            .sum();
+        if upload_bytes > extra_ym2608::MAX_BATCH_UPLOAD_BYTES {
+            return Err("Native additional YM2608 batch upload exceeds 4 MiB".into());
+        }
+        self.extra_psg.retain_payloads(
+            actions
+                .iter()
+                .filter_map(|(a, _)| match a {
+                    Action::ExtraPsg(_, c) => Some(extra_psg::Payload::Psg(c.clone())),
+                    Action::ExtraYm2612(_, c) => Some(extra_psg::Payload::Ym2612(c.clone())),
+                    Action::ExtraYm2203(_, c) => Some(extra_psg::Payload::Ym2203(c.clone())),
+                    Action::ExtraYm2608(_, c) => Some(extra_psg::Payload::Ym2608(c.clone())),
+                    _ => None,
+                })
+                .collect(),
+            extra_permits,
+        )?;
+
         let mut retained = Vec::new();
         let mut seen = HashSet::new();
         for (action, _) in actions {
             let instance = match action {
                 Action::ExtraPsg(instance, _)
                 | Action::ExtraYm2612(instance, _)
-                | Action::ExtraYm2203(instance, _) => instance,
+                | Action::ExtraYm2203(instance, _)
+                | Action::ExtraYm2608(instance, _) => instance,
                 _ => continue,
             };
             if !seen.insert(instance.id) {
@@ -1426,6 +1491,19 @@ impl Shared {
                         .collect();
                     instance.ym2203()?.retain(&prepared)
                 }
+                Action::ExtraYm2608(_, _) => {
+                    let prepared: Vec<_> = actions
+                        .iter()
+                        .filter_map(|(action, owner)| {
+                            if let Action::ExtraYm2608(target, command) = action {
+                                (target.id == instance.id).then(|| (command.clone(), *owner))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    instance.ym2608()?.retain(&prepared)
+                }
                 _ => unreachable!(),
             };
             if let Err(error) = result {
@@ -1438,7 +1516,8 @@ impl Shared {
                     .filter(|(action, _)| match action {
                         Action::ExtraPsg(target, _)
                         | Action::ExtraYm2612(target, _)
-                        | Action::ExtraYm2203(target, _) => target.id == instance.id,
+                        | Action::ExtraYm2203(target, _)
+                        | Action::ExtraYm2608(target, _) => target.id == instance.id,
                         _ => false,
                     })
                     .cloned(),
@@ -1461,6 +1540,11 @@ impl Shared {
                 }
                 Action::ExtraYm2203(instance, command) => {
                     let state = instance.ym2203().expect("YM2203 action target");
+                    state.rollback(command.clone());
+                    let _ = state.status(self.frame.load(Ordering::Acquire));
+                }
+                Action::ExtraYm2608(instance, command) => {
+                    let state = instance.ym2608().expect("YM2608 action target");
                     state.rollback(command.clone());
                     let _ = state.status(self.frame.load(Ordering::Acquire));
                 }
@@ -1592,6 +1676,49 @@ impl Shared {
         *sequence = next_sequence;
         status
     }
+    fn create_extra_ym2608(
+        &self,
+        instance: u64,
+        clock: Option<u32>,
+    ) -> Result<extra_ym2608::AdditionalStatus, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self
+            .extra_psg
+            .create_ym2608(instance, epoch, self.rate, clock)
+        {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target
+            .ym2608()?
+            .additional_status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional YM2608 install capacity"));
+        *sequence = next_sequence;
+        status
+    }
     fn dispose_extra_psg(&self, instance: u64) -> Result<(), String> {
         let _producer = self
             .producer
@@ -1655,6 +1782,15 @@ impl Shared {
         self.invalidation.fetch_add(1, Ordering::Release);
         Ok(())
     }
+    fn dispose_extra_ym2608(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose_ym2608(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
     fn extra_ym2203_status(
         &self,
         instance: u64,
@@ -1672,6 +1808,25 @@ impl Shared {
         }
         target
             .ym2203()?
+            .additional_status(self.frame.load(Ordering::Acquire))
+    }
+    fn extra_ym2608_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+    ) -> Result<extra_ym2608::AdditionalStatus, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        if let Some(id) = after {
+            target.ym2608()?.wait_applied(id)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional YM2608 instance has expired".into());
+        }
+        target
+            .ym2608()?
             .additional_status(self.frame.load(Ordering::Acquire))
     }
     fn enqueue_special(&self, action: Action) -> Result<(), String> {
@@ -1830,6 +1985,13 @@ impl Shared {
                             .expect("YM2203 action target")
                             .valid_event(command, event.sequence, event.owner)
                 }
+                Action::ExtraYm2608(instance, command) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
+                        && instance
+                            .ym2608()
+                            .expect("YM2608 action target")
+                            .valid_event(command, event.sequence, event.owner)
+                }
                 _ => true,
             }
             && event.epoch == self.epoch.load(Ordering::Acquire)
@@ -1908,6 +2070,12 @@ impl Shared {
                 instance
                     .ym2203()
                     .expect("YM2203 action target")
+                    .retire(command);
+            }
+            Action::ExtraYm2608(instance, command) => {
+                instance
+                    .ym2608()
+                    .expect("YM2608 action target")
                     .retire(command);
             }
             Action::Nes(command) => {
@@ -2700,6 +2868,20 @@ impl Renderer {
                     state.retire(command);
                 }
             }
+            Action::ExtraYm2608(instance, command) => {
+                let state = instance.ym2608().expect("YM2608 action target");
+                if command.stops() {
+                    state.cancel_before(&command, sequence.saturating_add(1), owner);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                if command.invalidates_schedule() {
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.extra_psg.apply_ym2608(&instance, &command, owner);
+                if !command.deferred_retirement() {
+                    state.retire(command);
+                }
+            }
             Action::Nes(command) => {
                 if command.stops() {
                     shared.cancel_nes_before(owner, sequence.saturating_add(1));
@@ -3151,6 +3333,7 @@ impl Renderer {
                     Action::ExtraPsg(_, command) => command.starts(),
                     Action::ExtraYm2612(_, command) => command.starts(),
                     Action::ExtraYm2203(_, command) => command.starts(),
+                    Action::ExtraYm2608(_, command) => command.starts(),
                     Action::Noise(command) => command.is_some_and(|command| command.starts()),
                     Action::Dx7(command) => command.starts(),
                     Action::Nes(command) => command.starts(),
@@ -4030,6 +4213,19 @@ pub fn native_genesis_extra_ym2203_create(
     })
 }
 #[tauri::command]
+pub fn native_genesis_extra_ym2608_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    clock: Option<u32>,
+) -> Result<extra_ym2608::AdditionalStatus, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| {
+        shared.create_extra_ym2608(instance, clock)
+    })
+}
+#[tauri::command]
 pub fn native_genesis_extra_ym2203_dispose(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, NativeGenesis>,
@@ -4038,6 +4234,16 @@ pub fn native_genesis_extra_ym2203_dispose(
 ) -> Result<(), String> {
     crate::allowed(&window)?;
     state.with_session(session, |shared| shared.dispose_extra_ym2203(instance))
+}
+#[tauri::command]
+pub fn native_genesis_extra_ym2608_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_ym2608(instance))
 }
 #[tauri::command]
 pub async fn native_genesis_extra_ym2203_status(
@@ -4051,6 +4257,23 @@ pub async fn native_genesis_extra_ym2203_status(
     let shared = state.session_shared(session)?;
     let status =
         tauri::async_runtime::spawn_blocking(move || shared.extra_ym2203_status(instance, after))
+            .await
+            .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+#[tauri::command]
+pub async fn native_genesis_extra_ym2608_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+) -> Result<extra_ym2608::AdditionalStatus, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status =
+        tauri::async_runtime::spawn_blocking(move || shared.extra_ym2608_status(instance, after))
             .await
             .map_err(|error| error.to_string())??;
     state.with_session(session, |_| Ok(()))?;

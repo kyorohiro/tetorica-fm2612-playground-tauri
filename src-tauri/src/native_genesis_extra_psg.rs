@@ -1,6 +1,6 @@
 //! Independent sound-chip instances (PSG, YM2612 and YM2203). Cores are allocated and finally destroyed on the
 //! control thread; the device callback owns their exclusive mutable access.
-use super::{master_system, ym2203, ym2612, Owner, MAX_SAFE_INTEGER};
+use super::{extra_budget, extra_ym2608, master_system, ym2203, ym2612, Owner, MAX_SAFE_INTEGER};
 use std::{
     cell::UnsafeCell,
     fmt,
@@ -26,17 +26,20 @@ pub enum State {
     Psg(master_system::Shared),
     Ym2612(ym2612::Shared),
     Ym2203(ym2203::Shared),
+    Ym2608(extra_ym2608::Shared),
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
     Psg,
     Ym2612,
     Ym2203,
+    Ym2608,
 }
 enum Core {
     Psg(master_system::Renderer),
     Ym2612(ym2612::Renderer),
     Ym2203(ym2203::Renderer),
+    Ym2608(extra_ym2608::Renderer),
 }
 pub struct Instance {
     pub id: u64,
@@ -44,6 +47,7 @@ pub struct Instance {
     active: AtomicBool,
     pub state: State,
     core: UnsafeCell<Core>,
+    _memory: extra_budget::Permit,
 }
 impl fmt::Debug for Instance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -93,11 +97,19 @@ impl Instance {
             Err("Additional instance is not a YM2203".into())
         }
     }
+    pub fn ym2608(&self) -> Result<&extra_ym2608::Shared, String> {
+        if let State::Ym2608(state) = &self.state {
+            Ok(state)
+        } else {
+            Err("Additional instance is not a YM2608".into())
+        }
+    }
     fn kind(&self) -> Kind {
         match self.state {
             State::Psg(_) => Kind::Psg,
             State::Ym2612(_) => Kind::Ym2612,
             State::Ym2203(_) => Kind::Ym2203,
+            State::Ym2608(_) => Kind::Ym2608,
         }
     }
     // This method is private to the callback rack. No control function may use
@@ -107,17 +119,56 @@ impl Instance {
     }
 }
 
+pub enum Payload {
+    Psg(Arc<master_system::Prepared>),
+    Ym2612(Arc<ym2612::Prepared>),
+    Ym2203(Arc<ym2203::Prepared>),
+    Ym2608(Arc<extra_ym2608::Prepared>),
+}
+impl Payload {
+    fn bytes(&self) -> usize {
+        match self {
+            Self::Psg(v) => v.retained_bytes(),
+            Self::Ym2612(v) => v.retained_bytes(),
+            Self::Ym2203(v) => v.retained_bytes(),
+            Self::Ym2608(v) => v.retained_bytes(),
+        }
+    }
+    fn unique(&self) -> bool {
+        match self {
+            Self::Psg(v) => Arc::strong_count(v) == 1,
+            Self::Ym2612(v) => Arc::strong_count(v) == 1,
+            Self::Ym2203(v) => Arc::strong_count(v) == 1,
+            Self::Ym2608(v) => Arc::strong_count(v) == 1,
+        }
+    }
+}
+struct PayloadGuard {
+    payload: Payload,
+    _memory: extra_budget::Permit,
+}
 #[derive(Default)]
 struct Control {
     instances: Vec<Arc<Instance>>,
     highest: u64,
+    payloads: Vec<PayloadGuard>,
 }
 #[derive(Default)]
 pub struct Shared {
     control: Mutex<Control>,
+    budget: Arc<extra_budget::Budget>,
 }
 impl Shared {
     fn collect(control: &mut Control) {
+        for instance in &control.instances {
+            match &instance.state {
+                State::Psg(s) => s.collect_retired(),
+                State::Ym2612(s) => s.collect_retired(),
+                State::Ym2203(s) => s.collect_retired(),
+                State::Ym2608(s) => s.collect_retired(),
+            }
+        }
+
         // With no external Arc, callback/event access has ended. A callback
         // never clones from this registry, and producer serialization prevents
         // new control references while its final lifetime guard is removed.
@@ -125,6 +176,68 @@ impl Shared {
         control.instances.retain(|instance| {
             instance.active.load(Ordering::Acquire) || Arc::strong_count(instance) != 1
         });
+        control.payloads.retain(|v| !v.payload.unique());
+        if control.payloads.capacity() > 64.max(control.payloads.len().saturating_mul(2)) {
+            control.payloads.shrink_to_fit();
+        }
+    }
+    pub fn reserve_payloads(
+        &self,
+        sizes: impl Iterator<Item = usize>,
+    ) -> Result<Vec<extra_budget::Permit>, String> {
+        let mut c = self
+            .control
+            .lock()
+            .map_err(|_| "Additional sound-chip control state is unavailable")?;
+        Self::collect(&mut c);
+        sizes
+            .map(|bytes| {
+                self.budget.reserve(
+                    bytes
+                        .checked_add(extra_budget::PAYLOAD_OVERHEAD)
+                        .ok_or("Additional Native sound-chip payload size overflow")?,
+                )
+            })
+            .collect()
+    }
+    pub fn retain_payloads(
+        &self,
+        payloads: Vec<Payload>,
+        permits: Vec<extra_budget::Permit>,
+    ) -> Result<(), String> {
+        let mut c = self
+            .control
+            .lock()
+            .map_err(|_| "Additional sound-chip control state is unavailable")?;
+        Self::collect(&mut c);
+        if payloads.len() != permits.len() {
+            return Err("Additional Native sound-chip payload reservation mismatch".into());
+        }
+        let guards: Vec<_> = payloads
+            .into_iter()
+            .zip(permits)
+            .map(|(payload, memory)| PayloadGuard {
+                payload,
+                _memory: memory,
+            })
+            .collect();
+        if guards
+            .iter()
+            .any(|g| g.payload.bytes() + extra_budget::PAYLOAD_OVERHEAD > g._memory.bytes())
+        {
+            return Err("Additional Native sound-chip payload capacity exceeds reservation".into());
+        }
+        c.payloads.extend(guards);
+        Ok(())
+    }
+    pub fn create_ym2608(
+        &self,
+        id: u64,
+        epoch: u64,
+        rate: u32,
+        clock: Option<u32>,
+    ) -> Result<Arc<Instance>, String> {
+        self.create_kind(id, epoch, rate, clock, Kind::Ym2608)
     }
     pub fn create(
         &self,
@@ -174,7 +287,30 @@ impl Shared {
         if control.instances.len() >= LIMIT {
             return Err(format!("Additional sound-chip instance limit ({LIMIT}) reached; wait for retired instances to drain"));
         }
-        let (state, core) = if kind == Kind::Ym2612 {
+        let memory = self.budget.reserve(
+            extra_budget::INSTANCE_BYTES
+                + if kind == Kind::Ym2608 {
+                    extra_budget::YM2608_MEMORY_BYTES
+                } else {
+                    0
+                },
+        )?;
+        let (state, core) = if kind == Kind::Ym2608 {
+            let state = extra_ym2608::Shared::default();
+            let mut core = extra_ym2608::Renderer::new_additional(rate)?;
+            if let Some(hz) = clock {
+                let cmd = extra_ym2608::Message {
+                    id: None,
+                    audition: false,
+                    group: None,
+                    method: extra_ym2608::Method::Clock { hz },
+                }
+                .prepare()?;
+                core.apply(&cmd, None, &state);
+            }
+            core.publish(&state);
+            (State::Ym2608(state), Core::Ym2608(core))
+        } else if kind == Kind::Ym2612 {
             let state = ym2612::Shared::default();
             let mut core = ym2612::Renderer::new(rate)?;
             if let Some(hz) = clock {
@@ -226,6 +362,7 @@ impl Shared {
             active: AtomicBool::new(true),
             state,
             core: UnsafeCell::new(core),
+            _memory: memory,
         });
         control.highest = id;
         control.instances.push(instance.clone());
@@ -252,6 +389,9 @@ impl Shared {
     }
     pub fn dispose_ym2203(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Ym2203)
+    }
+    pub fn dispose_ym2608(&self, id: u64) -> Result<(), String> {
+        self.dispose_kind(id, Kind::Ym2608)
     }
     fn dispose_kind(&self, id: u64, kind: Kind) -> Result<(), String> {
         let mut control = self
@@ -327,6 +467,9 @@ impl Renderer {
                             (Core::Ym2203(core), State::Ym2203(state)) => {
                                 core.cancel_invalid(&valid, state)
                             }
+                            (Core::Ym2608(core), State::Ym2608(state)) => {
+                                core.cancel_invalid(&valid, state)
+                            }
                             _ => unreachable!("Matching additional chip state"),
                         }
                     }
@@ -374,6 +517,19 @@ impl Renderer {
             }
         }
     }
+    pub fn apply_ym2608(
+        &mut self,
+        instance: &Instance,
+        command: &Arc<extra_ym2608::Prepared>,
+        owner: Option<Owner>,
+    ) {
+        unsafe {
+            match (instance.callback_core(), &instance.state) {
+                (Core::Ym2608(core), State::Ym2608(state)) => core.apply(command, owner, state),
+                _ => unreachable!("Additional YM2608 action requires YM2608 instance"),
+            }
+        }
+    }
     pub fn mix(&mut self, pcm: &mut [f32; 2]) {
         for instance in self.slots.iter().flatten() {
             unsafe {
@@ -381,6 +537,7 @@ impl Renderer {
                     (Core::Psg(core), _) => core.mix(pcm),
                     (Core::Ym2612(core), _) => core.mix(pcm),
                     (Core::Ym2203(core), State::Ym2203(state)) => core.mix_additional(pcm, state),
+                    (Core::Ym2608(core), State::Ym2608(state)) => core.mix_additional(pcm, state),
                     _ => unreachable!("Matching additional chip state"),
                 }
             }
@@ -393,6 +550,15 @@ impl Renderer {
 
 #[cfg(test)]
 impl Shared {
+    pub fn with_memory_limit(limit: usize) -> Self {
+        Self {
+            control: Mutex::new(Control::default()),
+            budget: Arc::new(extra_budget::Budget::new(limit)),
+        }
+    }
+    pub fn memory_used(&self) -> usize {
+        self.budget.used()
+    }
     pub fn counts(&self) -> (usize, usize) {
         let control = self.control.lock().unwrap();
         (

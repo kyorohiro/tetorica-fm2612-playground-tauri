@@ -264,6 +264,14 @@ fn validate_op(op: &Op, chip: Chip) -> Result<(), String> {
     }
 }
 impl Message {
+    pub fn prepared_bytes(&self) -> usize {
+        std::mem::size_of::<Prepared>()
+            + match &self.method {
+                Method::Batch { commands, .. } => commands.len() * std::mem::size_of::<Op>(),
+                _ => 0,
+            }
+    }
+
     pub fn prepare(&self) -> Result<Arc<Prepared>, String> {
         if !valid_id(self.id) {
             return Err("Invalid Native Master System command ID".into());
@@ -388,6 +396,14 @@ impl Prepared {
         std::mem::size_of::<Self>()
             + if let Method::Batch { commands, .. } = &self.method {
                 commands.len() * std::mem::size_of::<Op>()
+            } else {
+                0
+            }
+    }
+    pub fn retained_bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            + if let Method::Batch { commands, .. } = &self.method {
+                commands.capacity() * std::mem::size_of::<Op>()
             } else {
                 0
             }
@@ -553,20 +569,25 @@ impl Shared {
             self.cancel_before[chip].fetch_max(sequence, Ordering::AcqRel);
         }
     }
+    pub fn collect_retired(&self) {
+        if let Ok(mut c) = self.control.lock() {
+            self.collect(&mut c)
+        }
+    }
     fn collect(&self, c: &mut Control) {
         let mut retired = HashSet::new();
         while let Some(cmd) = self.retired.pop() {
-            if cmd.clock_rejected.load(Ordering::Acquire)
-                && !cmd.outcome_observed.load(Ordering::Acquire)
-            {
-                if let Some(id) = cmd.id {
-                    c.rejected_clocks.insert(id);
-                }
-            }
             retired.insert(Arc::as_ptr(&cmd) as usize);
         }
-        c.prepared
-            .retain(|cmd| !retired.contains(&(Arc::as_ptr(cmd) as usize)));
+        c.prepared.retain(|cmd| {
+            let rejected = cmd.id.is_some() && cmd.clock_rejected.load(Ordering::Acquire);
+            let observed = cmd.outcome_observed.load(Ordering::Acquire);
+            rejected && !observed
+                || !retired.contains(&(Arc::as_ptr(cmd) as usize)) && !(rejected && observed)
+        });
+        if c.prepared.capacity() > 64.max(c.prepared.len().saturating_mul(2)) {
+            c.prepared.shrink_to_fit();
+        }
     }
     pub fn retain(&self, commands: &[(Arc<Prepared>, Option<Owner>)]) -> Result<(), String> {
         let mut c = self
