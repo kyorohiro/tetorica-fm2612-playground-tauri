@@ -1,8 +1,8 @@
 //! Independent sound-chip instances (PSG, YM2612 and YM2203). Cores are allocated and finally destroyed on the
 //! control thread; the device callback owns their exclusive mutable access.
 use super::{
-    extra_budget, extra_ym2151, extra_ym2608, extra_ym2610, master_system, ym2203, ym2612, Owner,
-    MAX_SAFE_INTEGER,
+    extra_budget, extra_msx, extra_ym2151, extra_ym2608, extra_ym2610, master_system, ym2203,
+    ym2612, Owner, MAX_SAFE_INTEGER,
 };
 use std::{
     cell::UnsafeCell,
@@ -32,6 +32,8 @@ pub enum State {
     Ym2608(extra_ym2608::Shared),
     Ym2610(extra_ym2610::Shared),
     Ym2151(extra_ym2151::Shared),
+    Ay8910(extra_msx::Shared),
+    Ym2413(extra_msx::Shared),
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -41,6 +43,8 @@ enum Kind {
     Ym2608,
     Ym2610,
     Ym2151,
+    Ay8910,
+    Ym2413,
 }
 enum Core {
     Psg(master_system::Renderer),
@@ -49,6 +53,8 @@ enum Core {
     Ym2608(extra_ym2608::Renderer),
     Ym2610(extra_ym2610::Renderer),
     Ym2151(extra_ym2151::Renderer),
+    Ay8910(extra_msx::Renderer),
+    Ym2413(extra_msx::Renderer),
 }
 pub struct Instance {
     pub id: u64,
@@ -127,6 +133,20 @@ impl Instance {
             Err("Additional instance is not a YM2151".into())
         }
     }
+    pub fn ym2413(&self) -> Result<&extra_msx::Shared, String> {
+        if let State::Ym2413(state) = &self.state {
+            Ok(state)
+        } else {
+            Err("Additional instance is not a YM2413".into())
+        }
+    }
+    pub fn ay8910(&self) -> Result<&extra_msx::Shared, String> {
+        if let State::Ay8910(state) = &self.state {
+            Ok(state)
+        } else {
+            Err("Additional instance is not an AY8910".into())
+        }
+    }
     fn kind(&self) -> Kind {
         match self.state {
             State::Psg(_) => Kind::Psg,
@@ -135,6 +155,8 @@ impl Instance {
             State::Ym2608(_) => Kind::Ym2608,
             State::Ym2610(_) => Kind::Ym2610,
             State::Ym2151(_) => Kind::Ym2151,
+            State::Ay8910(_) => Kind::Ay8910,
+            State::Ym2413(_) => Kind::Ym2413,
         }
     }
     // This method is private to the callback rack. No control function may use
@@ -151,6 +173,8 @@ pub enum Payload {
     Ym2608(Arc<extra_ym2608::Prepared>),
     Ym2610(Arc<extra_ym2610::Prepared>),
     Ym2151(Arc<extra_ym2151::Prepared>),
+    Ay8910(Arc<extra_msx::Prepared>),
+    Ym2413(Arc<extra_msx::Prepared>),
 }
 impl Payload {
     fn bytes(&self) -> usize {
@@ -161,6 +185,8 @@ impl Payload {
             Self::Ym2608(v) => v.retained_bytes(),
             Self::Ym2610(v) => v.retained_bytes(),
             Self::Ym2151(v) => v.retained_bytes(),
+            Self::Ay8910(v) => v.retained_bytes(),
+            Self::Ym2413(v) => v.retained_bytes(),
         }
     }
     fn unique(&self) -> bool {
@@ -171,6 +197,8 @@ impl Payload {
             Self::Ym2608(v) => Arc::strong_count(v) == 1,
             Self::Ym2610(v) => Arc::strong_count(v) == 1,
             Self::Ym2151(v) => Arc::strong_count(v) == 1,
+            Self::Ay8910(v) => Arc::strong_count(v) == 1,
+            Self::Ym2413(v) => Arc::strong_count(v) == 1,
         }
     }
 }
@@ -199,6 +227,8 @@ impl Shared {
                 State::Ym2608(s) => s.collect_retired(),
                 State::Ym2610(s) => s.collect_retired(),
                 State::Ym2151(s) => s.collect_retired(),
+                State::Ay8910(s) => s.collect_retired(),
+                State::Ym2413(s) => s.collect_retired(),
             }
         }
 
@@ -270,6 +300,24 @@ impl Shared {
         }
         c.payloads.extend(guards);
         Ok(())
+    }
+    pub fn create_ym2413(
+        &self,
+        id: u64,
+        epoch: u64,
+        rate: u32,
+        clock: Option<u32>,
+    ) -> Result<Arc<Instance>, String> {
+        self.create_kind(id, epoch, rate, clock, Kind::Ym2413)
+    }
+    pub fn create_ay8910(
+        &self,
+        id: u64,
+        epoch: u64,
+        rate: u32,
+        clock: Option<u32>,
+    ) -> Result<Arc<Instance>, String> {
+        self.create_kind(id, epoch, rate, clock, Kind::Ay8910)
     }
     pub fn create_ym2151(
         &self,
@@ -354,7 +402,39 @@ impl Shared {
                     0
                 },
         )?;
-        let (state, core) = if kind == Kind::Ym2151 {
+        let (state, core) = if kind == Kind::Ay8910 {
+            let chip = extra_msx::Chip::Ay8910;
+            let state = extra_msx::Shared::new(chip);
+            let mut core = extra_msx::Renderer::new(rate, chip)?;
+            if let Some(hz) = clock {
+                let cmd = extra_msx::Message {
+                    id: None,
+                    audition: false,
+                    group: None,
+                    method: extra_msx::Method::Clock { hz },
+                }
+                .prepare(chip)?;
+                core.apply(&cmd, None, &state);
+            }
+            core.publish(&state);
+            (State::Ay8910(state), Core::Ay8910(core))
+        } else if kind == Kind::Ym2413 {
+            let chip = extra_msx::Chip::Ym2413;
+            let state = extra_msx::Shared::new(chip);
+            let mut core = extra_msx::Renderer::new(rate, chip)?;
+            if let Some(hz) = clock {
+                let cmd = extra_msx::Message {
+                    id: None,
+                    audition: false,
+                    group: None,
+                    method: extra_msx::Method::Clock { hz },
+                }
+                .prepare(chip)?;
+                core.apply(&cmd, None, &state);
+            }
+            core.publish(&state);
+            (State::Ym2413(state), Core::Ym2413(core))
+        } else if kind == Kind::Ym2151 {
             let state = extra_ym2151::Shared::default();
             let mut core = extra_ym2151::Renderer::new_additional(rate)?;
             if let Some(hz) = clock {
@@ -479,6 +559,12 @@ impl Shared {
     pub fn dispose_ym2203(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Ym2203)
     }
+    pub fn dispose_ym2413(&self, id: u64) -> Result<(), String> {
+        self.dispose_kind(id, Kind::Ym2413)
+    }
+    pub fn dispose_ay8910(&self, id: u64) -> Result<(), String> {
+        self.dispose_kind(id, Kind::Ay8910)
+    }
     pub fn dispose_ym2151(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Ym2151)
     }
@@ -571,6 +657,12 @@ impl Renderer {
                             (Core::Ym2151(core), State::Ym2151(state)) => {
                                 core.cancel_invalid(&valid, state)
                             }
+                            (Core::Ym2413(core), State::Ym2413(state)) => {
+                                core.cancel_invalid(&valid, state)
+                            }
+                            (Core::Ay8910(core), State::Ay8910(state)) => {
+                                core.cancel_invalid(&valid, state)
+                            }
                             _ => unreachable!("Matching additional chip state"),
                         }
                     }
@@ -657,6 +749,32 @@ impl Renderer {
             }
         }
     }
+    pub fn apply_ym2413(
+        &mut self,
+        instance: &Instance,
+        command: &Arc<extra_msx::Prepared>,
+        owner: Option<Owner>,
+    ) {
+        unsafe {
+            match (instance.callback_core(), &instance.state) {
+                (Core::Ym2413(core), State::Ym2413(state)) => core.apply(command, owner, state),
+                _ => unreachable!("Additional YM2413 action requires matching instance"),
+            }
+        }
+    }
+    pub fn apply_ay8910(
+        &mut self,
+        instance: &Instance,
+        command: &Arc<extra_msx::Prepared>,
+        owner: Option<Owner>,
+    ) {
+        unsafe {
+            match (instance.callback_core(), &instance.state) {
+                (Core::Ay8910(core), State::Ay8910(state)) => core.apply(command, owner, state),
+                _ => unreachable!("Additional AY8910 action requires matching instance"),
+            }
+        }
+    }
     pub fn mix(&mut self, pcm: &mut [f32; 2]) {
         for instance in self.slots.iter().flatten() {
             unsafe {
@@ -665,6 +783,8 @@ impl Renderer {
                     (Core::Ym2612(core), _) => core.mix(pcm),
                     (Core::Ym2610(core), _) => core.mix(pcm),
                     (Core::Ym2151(core), _) => core.mix(pcm),
+                    (Core::Ay8910(core), _) => core.mix(pcm),
+                    (Core::Ym2413(core), _) => core.mix(pcm),
                     (Core::Ym2203(core), State::Ym2203(state)) => core.mix_additional(pcm, state),
                     (Core::Ym2608(core), State::Ym2608(state)) => core.mix_additional(pcm, state),
                     _ => unreachable!("Matching additional chip state"),

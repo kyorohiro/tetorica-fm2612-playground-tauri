@@ -4,6 +4,8 @@
 #include "native_genesis_ym2608.h"
 #include "native_genesis_ym2610b.h"
 #include "native_genesis_ym2151.h"
+#include "native_genesis_ym2413.h"
+#include "native_genesis_ay8910.h"
 #include "native_genesis_game_gear.h"
 #include <cassert>
 #include <chrono>
@@ -155,16 +157,34 @@ static void program_ym2151(void *chip, uint32_t transpose) {
     }
     native_ym2151_write(chip, 0x0f, 0x91); native_ym2151_write(chip, 0x18, 237); native_ym2151_write(chip, 0x19, 67); native_ym2151_write(chip, 0x19, 221); native_ym2151_write(chip, 0x1b, 3);
 }
+static void program_ym2413(void *chip, uint32_t transpose) {
+    for (uint8_t ch = 0; ch < 9; ++ch) {
+        native_ym2413_write(chip, 0x30 + ch, ((ch % 15 + 1) << 4) | 3);
+        native_ym2413_write(chip, 0x10 + ch, 127 + ch * 13 + transpose);
+        native_ym2413_write(chip, 0x20 + ch, 0x18);
+    }
+    native_ym2413_write(chip, 0x36, 2); native_ym2413_write(chip, 0x37, 0x43); native_ym2413_write(chip, 0x38, 0x65); native_ym2413_write(chip, 0x0e, 63);
+}
+static void program_ay8910(void *chip, uint32_t transpose) {
+    for (uint8_t ch = 0; ch < 3; ++ch) {
+        const uint16_t period = 127 + ch * 103 + transpose;
+        native_ay8910_write(chip, ch * 2, period & 255); native_ay8910_write(chip, ch * 2 + 1, period >> 8);
+        native_ay8910_write(chip, 8 + ch, ch == 0 ? 16 : 14 - ch * 3);
+    }
+    native_ay8910_write(chip, 6, 7); native_ay8910_write(chip, 7, 0); native_ay8910_write(chip, 11, 31); native_ay8910_write(chip, 13, 10);
+}
 int main(int argc, char **argv) {
-    if (argc != 4 && argc != 5 && argc != 6 && argc != 7 && argc != 8) return 2;
+    if (argc < 4 || argc > 10) return 2;
     const uint32_t fm_count = std::strtoul(argv[1], nullptr, 10), psg_count = std::strtoul(argv[2], nullptr, 10);
     const uint32_t frames = std::strtoul(argv[3], nullptr, 10), rate = 48000;
     const uint32_t opn_count = argc >= 5 ? std::strtoul(argv[4], nullptr, 10) : 0;
     const uint32_t opna_count = argc >= 6 ? std::strtoul(argv[5], nullptr, 10) : 0;
     const uint32_t opnb_count = argc >= 7 ? std::strtoul(argv[6], nullptr, 10) : 0;
-    const uint32_t opm_count = argc == 8 ? std::strtoul(argv[7], nullptr, 10) : 0;
-    if (fm_count + psg_count + opn_count + opna_count + opnb_count + opm_count == 0 || fm_count + psg_count + opn_count + opna_count + opnb_count + opm_count > 16 || !frames || frames > rate * 60) return 2;
-    std::vector<void *> fm, psg, opn, opna, opnb, opm, pages; fm.reserve(fm_count); psg.reserve(psg_count); opn.reserve(opn_count); opna.reserve(opna_count); opnb.reserve(opnb_count); pages.reserve(opnb_count * 2); opm.reserve(opm_count);
+    const uint32_t opm_count = argc >= 8 ? std::strtoul(argv[7], nullptr, 10) : 0;
+    const uint32_t opll_count = argc >= 9 ? std::strtoul(argv[8], nullptr, 10) : 0;
+    const uint32_t ay_count = argc >= 10 ? std::strtoul(argv[9], nullptr, 10) : 0;
+    if (fm_count + psg_count + opn_count + opna_count + opnb_count + opm_count + opll_count + ay_count == 0 || fm_count + psg_count + opn_count + opna_count + opnb_count + opm_count + opll_count + ay_count > 16 || !frames || frames > rate * 60) return 2;
+    std::vector<void *> fm, psg, opn, opna, opnb, opm, opll, ay, pages; fm.reserve(fm_count); psg.reserve(psg_count); opn.reserve(opn_count); opna.reserve(opna_count); opnb.reserve(opnb_count); pages.reserve(opnb_count * 2); opm.reserve(opm_count); opll.reserve(opll_count); ay.reserve(ay_count);
     const auto baseline_heap = live_bytes;
     const auto baseline_rss = peak_rss();
     for (uint32_t i = 0; i < fm_count; ++i) { auto *chip = native_ym2612_create(rate); assert(chip); fm.push_back(chip); program_fm(chip, i); }
@@ -173,6 +193,8 @@ int main(int argc, char **argv) {
     for (uint32_t i = 0; i < opna_count; ++i) { auto *chip = native_ym2608_create_extra(rate); assert(chip); opna.push_back(chip); program_ym2608(chip, i); }
     for (uint32_t i = 0; i < opnb_count; ++i) { auto *chip = native_ym2610b_create_extra(rate); assert(chip); opnb.push_back(chip); program_ym2610(chip, i, pages); }
     for (uint32_t i = 0; i < opm_count; ++i) { auto *chip = native_ym2151_create(rate); assert(chip); opm.push_back(chip); program_ym2151(chip, i); }
+    for (uint32_t i = 0; i < opll_count; ++i) { auto *chip = native_ym2413_create(rate); assert(chip); opll.push_back(chip); program_ym2413(chip, i); }
+    for (uint32_t i = 0; i < ay_count; ++i) { auto *chip = native_ay8910_create(rate); assert(chip); ay.push_back(chip); program_ay8910(chip, i); }
     const auto core_heap_bytes = live_bytes - baseline_heap;
     volatile double checksum = 0;
     auto render = [&](uint32_t n) {
@@ -184,6 +206,8 @@ int main(int argc, char **argv) {
             for (void *chip : opna) { native_ym2608_sample(chip, &l, &r); mixed_left += l; mixed_right += r; }
             for (void *chip : opnb) { native_ym2610b_sample(chip, &l, &r); mixed_left += l; mixed_right += r; }
             for (void *chip : opm) { native_ym2151_sample(chip, &l, &r); mixed_left += l; mixed_right += r; }
+            for (void *chip : opll) { native_ym2413_sample(chip, &l, &r); mixed_left += l; mixed_right += r; }
+            for (void *chip : ay) { native_ay8910_sample(chip, &l, &r); mixed_left += l; mixed_right += r; }
             checksum += mixed_left + mixed_right;
         }
     };
@@ -201,10 +225,12 @@ int main(int argc, char **argv) {
     for (void *chip : opna) native_ym2608_destroy(chip);
     for (void *chip : opnb) native_ym2610b_destroy(chip);
     for (void *chip : opm) native_ym2151_destroy(chip);
+    for (void *chip : opll) native_ym2413_destroy(chip);
+    for (void *chip : ay) native_ay8910_destroy(chip);
     for (void *page : pages) native_ym2610b_free_rom_page(page);
     assert(live_bytes == baseline_heap && callback_allocations == 0 && callback_frees == 0);
-    std::printf("{\"ym2612\":%u,\"segapsg\":%u,\"ym2203\":%u,\"ym2608\":%u,\"ym2610\":%u,\"ym2151\":%u,\"sampleRate\":%u,\"frames\":%u,\"cpuSeconds\":%.9f,\"wallSeconds\":%.9f,\"coreHeapBytes\":%zu,\"romBytes\":%u,\"ramBytes\":%u,\"ym2610RomPageBytes\":%u,\"coreHeapExcludingMemoryBytes\":%zu,\"peakRssBytes\":%llu,\"peakRssGrowthBytes\":%llu,\"renderAllocations\":%llu,\"renderFrees\":%llu,\"checksum\":%.9f}\n",
-        fm_count, psg_count, opn_count, opna_count, opnb_count, opm_count, rate, frames, cpu_seconds, wall_seconds, core_heap_bytes,
+    std::printf("{\"ym2612\":%u,\"segapsg\":%u,\"ym2203\":%u,\"ym2608\":%u,\"ym2610\":%u,\"ym2151\":%u,\"ym2413\":%u,\"ay8910\":%u,\"sampleRate\":%u,\"frames\":%u,\"cpuSeconds\":%.9f,\"wallSeconds\":%.9f,\"coreHeapBytes\":%zu,\"romBytes\":%u,\"ramBytes\":%u,\"ym2610RomPageBytes\":%u,\"coreHeapExcludingMemoryBytes\":%zu,\"peakRssBytes\":%llu,\"peakRssGrowthBytes\":%llu,\"renderAllocations\":%llu,\"renderFrees\":%llu,\"checksum\":%.9f}\n",
+        fm_count, psg_count, opn_count, opna_count, opnb_count, opm_count, opll_count, ay_count, rate, frames, cpu_seconds, wall_seconds, core_heap_bytes,
         opna_count * 8192, opna_count * 2097152, opnb_count * 2 * 65536, core_heap_bytes - opna_count * (8192 + 2097152) - opnb_count * 2 * 65536,
         static_cast<unsigned long long>(peak), static_cast<unsigned long long>(peak > baseline_rss ? peak - baseline_rss : 0),
         static_cast<unsigned long long>(callback_allocations), static_cast<unsigned long long>(callback_frees), double(checksum));

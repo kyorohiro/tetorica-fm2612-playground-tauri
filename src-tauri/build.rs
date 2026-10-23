@@ -43,6 +43,10 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_opll.h");
     println!("cargo:rerun-if-changed=native-msx");
     println!("cargo:rerun-if-changed=src/native_genesis_msx.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_ym2413.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_ym2413.h");
+    println!("cargo:rerun-if-changed=src/native_genesis_ay8910.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_ay8910.h");
     println!("cargo:rerun-if-changed=src/native_genesis_msx.h");
     println!("cargo:rerun-if-changed=native-opl");
     println!("cargo:rerun-if-changed=src/native_genesis_opl.cpp");
@@ -90,6 +94,7 @@ fn main() {
         .include("native-master-system/snapshot/src")
         .include("native-genesis")
         .file("src/native_genesis_msx.cpp")
+        .file("src/native_genesis_ay8910.cpp")
         .file("native-msx/snapshot/third_party/mame-ay8910/ay8910.cpp")
         .warnings(false)
         .compile("tetorica_native_msx");
@@ -103,6 +108,7 @@ fn main() {
         .include("native-master-system/snapshot/src")
         .include("native-genesis")
         .file("src/native_genesis_master_system.cpp")
+        .file("src/native_genesis_ym2413.cpp")
         .file("native-master-system/snapshot/src/ymfm_opl.cpp")
         .file("native-master-system/snapshot/src/ymfm_pcm.cpp")
         .warnings(false)
