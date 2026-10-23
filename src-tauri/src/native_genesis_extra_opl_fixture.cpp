@@ -17,8 +17,81 @@ constexpr uint8_t SLOTS[9]={0,1,2,8,9,10,16,17,18};
 static void voice(void*p,uint8_t ch){for(uint8_t slot:{SLOTS[ch],uint8_t(SLOTS[ch]+3)}){native_extra_opl_write(p,0x20+slot,0x21);native_extra_opl_write(p,0x40+slot,12);native_extra_opl_write(p,0x60+slot,0xf0);native_extra_opl_write(p,0x80+slot,15);}native_extra_opl_write(p,0xc0+ch,1);native_extra_opl_write(p,0xa0+ch,127+ch*11);native_extra_opl_write(p,0xb0+ch,0x31);}
 static float sample(void*p){float l,r;native_extra_opl_sample(p,&l,&r);assert(l==r&&std::isfinite(l));return l;}
 static double render(void*p,uint32_t n){double e=0;while(n--)e+=std::abs(sample(p));return e;}
+static void voice3(void*p,uint8_t ch,uint8_t pan=0x30,bool on=true){
+    const uint16_t bank=ch>=9?256:0;const uint8_t local=ch%9;
+    for(uint8_t slot:{SLOTS[local],uint8_t(SLOTS[local]+3)}){native_extra_opl_write(p,bank+0x20+slot,0x21);native_extra_opl_write(p,bank+0x40+slot,12);native_extra_opl_write(p,bank+0x60+slot,0xf0);native_extra_opl_write(p,bank+0x80+slot,15);}
+    native_extra_opl_write(p,bank+0xc0+local,pan|1);native_extra_opl_write(p,bank+0xa0+local,127+local*11);native_extra_opl_write(p,bank+0xb0+local,on?0x31:0x11);
+}
+static void stereo(void*p,float&l,float&r){native_extra_opl_sample(p,&l,&r);assert(std::isfinite(l)&&std::isfinite(r));}
+static void advance3(void*p,uint32_t frames){float l,r;while(frames--)stereo(p,l,r);}
+static void self_test_opl3(){
+    void*a=native_extra_opl_create(96000,2),*b=native_extra_opl_create(96000,2);assert(a&&b);audit=true;NativeExtraOplState state{};
+    native_extra_opl_get_state(a,&state);assert(state.channels==18&&state.clock==14318180&&state.kind==2);
+    for(void*p:{a,b}){native_extra_opl_write(p,0x105,1);native_extra_opl_write(p,0x104,9);voice3(p,12,0x20);voice3(p,9,0x20);voice3(p,3,0x10,false);}
+    voice3(a,0,0x10);advance3(a,1703);advance3(b,1703);for(void*p:{a,b})native_extra_opl_set_clock(p,100000);advance3(a,37);advance3(b,37);
+    native_extra_opl_audition_key_on(a,0);native_extra_opl_key_off_fm(a,0);
+    double foreign_energy=0;
+    for(uint32_t i=0;i<1000;++i){float al,ar,bl,br;stereo(a,al,ar);stereo(b,bl,br);assert(al==bl&&ar==br);foreign_energy+=std::abs(ar);}assert(foreign_energy>.01);
+    // Secondary gate-off never mutes the connected primary, including its
+    // held stereo PCM at the lowest edited clock.
+    native_extra_opl_key_off_fm(a,12);
+    for(uint32_t i=0;i<1000;++i){float al,ar,bl,br;stereo(a,al,ar);stereo(b,bl,br);assert(al==bl&&ar==br);}
+    audit=false;assert(!allocations&&!frees);native_extra_opl_destroy(a);native_extra_opl_destroy(b);
+    a=native_extra_opl_create(96000,2);audit=true;
+    native_extra_opl_write(a,0x105,1);native_extra_opl_write(a,0x104,1);voice3(a,3);voice3(a,0);
+    const auto secondary_gate=native_extra_opl_effective_register(a,0xb3),secondary_tl=native_extra_opl_effective_register(a,0x48);
+    native_extra_opl_key_off_fm(a,0);assert(native_extra_opl_effective_register(a,0xb3)==secondary_gate&&native_extra_opl_effective_register(a,0x48)==secondary_tl);
+    uint8_t effective[512]{};native_extra_opl_get_effective_registers(a,effective);assert(!(effective[0xb0]&32)&&effective[0x40]==12&&native_extra_opl_effective_register(a,0x40)==63);
+    // Effective mode configuration survives compatibility mode, while a new
+    // upper register104 write actually goes to lower register04.
+    native_extra_opl_write(a,0x105,0);native_extra_opl_write(a,0x104,0);native_extra_opl_write(a,0x1a0,0x89);native_extra_opl_write(a,0x140,17);
+    native_extra_opl_get_state(a,&state);native_extra_opl_get_effective_registers(a,effective);
+    assert(state.registers[0x104]==0&&native_extra_opl_four_op_mask(a)==1&&effective[0x104]==1);
+    assert(state.registers[0x1a0]==0x89&&effective[0xa0]==0x89&&effective[0x1a0]==0&&native_extra_opl_effective_register(a,0xa0)==0x89);
+    assert(effective[0x40]==17&&effective[0x140]==0);
+    native_extra_opl_preview_key_off(a,0);native_extra_opl_get_effective_registers(a,effective);assert(effective[0x40]==17&&native_extra_opl_effective_register(a,0x40)==63);
+    native_extra_opl_write(a,0xb0,0x31);native_extra_opl_get_effective_registers(a,effective);assert(effective[0x40]==state.registers[0x40]);
+    // OPL3 ignores the CSM enable bit. CancelCsm must not edit timer/mode
+    // registers or silence any of its eighteen ordinary voices.
+    native_extra_opl_write(a,8,128);native_extra_opl_write(a,2,255);native_extra_opl_write(a,4,1);assert(!native_extra_opl_csm_active(a));
+    native_extra_opl_cancel_csm(a);native_extra_opl_get_state(a,&state);assert(state.registers[8]==128&&state.registers[4]==1);
+    audit=false;assert(!allocations&&!frees);native_extra_opl_destroy(a);
+    // An already sounding upper physical voice remains alive after NEW=0.
+    // Private cancellation addresses it directly, preserving lower-bank audio.
+    a=native_extra_opl_create(96000,2);b=native_extra_opl_create(96000,2);audit=true;
+    for(void*p:{a,b}){native_extra_opl_write(p,0x105,1);voice3(p,0);}
+    voice3(a,9);for(void*p:{a,b})native_extra_opl_write(p,0x105,0);advance3(a,1703);advance3(b,1703);
+    for(void*p:{a,b})native_extra_opl_set_clock(p,100000);advance3(a,37);advance3(b,37);native_extra_opl_key_off_fm(a,9);
+    for(uint32_t i=0;i<1000;++i){float al,ar,bl,br;stereo(a,al,ar);stereo(b,bl,br);assert(al==bl&&ar==br);}
+    assert(native_extra_opl_effective_register(a,0xb0)&32);assert(!(native_extra_opl_effective_register(a,0x1b0)&32));
+    audit=false;assert(!allocations&&!frees);native_extra_opl_destroy(a);native_extra_opl_destroy(b);
+}
+
+static void self_test_opl3_sources(){
+    void*a=native_extra_opl_create(96000,2),*b=native_extra_opl_create(96000,2);audit=true;
+    for(void*p:{a,b}){native_extra_opl_write(p,0x105,1);native_extra_opl_write(p,0x104,9);voice3(p,12,0x20);voice3(p,9,0x20);voice3(p,3,0x10);}
+    voice3(a,0,0x10);advance3(a,1703);advance3(b,1703);for(void*p:{a,b})native_extra_opl_set_clock(p,100000);advance3(a,37);advance3(b,37);
+    const uint8_t gate=native_extra_opl_effective_register(a,0xb3),tl=native_extra_opl_effective_register(a,0x48);
+    native_extra_opl_source_preview_key_off(a,0);assert(native_extra_opl_effective_register(a,0xb3)==gate&&native_extra_opl_effective_register(a,0x48)==tl);
+    native_extra_opl_source_audition_key_on(a,0);assert(native_extra_opl_effective_register(a,0xb3)==gate);native_extra_opl_key_off_fm(a,0);
+    for(uint32_t i=0;i<1000;++i){float al,ar,bl,br;stereo(a,al,ar);stereo(b,bl,br);assert(al==bl&&ar==br);uint8_t s[512];native_extra_opl_get_effective_registers(a,s);}
+    audit=false;assert(!allocations&&!frees);native_extra_opl_destroy(a);native_extra_opl_destroy(b);
+    // Folded rhythm writes leave the public low shadow unchanged. Strong
+    // releases and owned previews must preserve actual sibling/LFO bits.
+    a=native_extra_opl_create(96000,2);b=native_extra_opl_create(96000,2);audit=true;
+    for(void*p:{a,b}){native_extra_opl_write(p,0x105,1);voice3(p,4);for(uint8_t ch=6;ch<9;++ch)voice3(p,ch,0x30,false);native_extra_opl_write(p,0x105,0);}
+    native_extra_opl_write(a,0x1bd,0xff);native_extra_opl_write(b,0x1bd,0xe3);advance3(a,1703);advance3(b,1703);
+    for(void*p:{a,b})native_extra_opl_set_clock(p,100000);advance3(a,37);advance3(b,37);native_extra_opl_key_off_fm(a,7);for(uint8_t v:{18,19,20})native_extra_opl_key_off_fm(a,v);
+    assert(native_extra_opl_effective_register(a,0xbd)==0xe3);
+    for(uint32_t i=0;i<1000;++i){float al,ar,bl,br;stereo(a,al,ar);stereo(b,bl,br);assert(al==bl&&ar==br);}
+    native_extra_opl_source_audition_key_on(a,19);native_extra_opl_source_audition_key_on(a,20);native_extra_opl_key_off_fm(a,19);advance3(a,400);
+    assert(native_extra_opl_effective_register(a,0xbd)==0xe7);uint8_t effective[512];native_extra_opl_get_effective_registers(a,effective);assert(effective[0xbd]==0xe7);
+    native_extra_opl_source_audition_key_on(a,19);native_extra_opl_all_notes_off(a);advance3(a,400);assert(!(native_extra_opl_effective_register(a,0xbd)&8));
+    audit=false;assert(!allocations&&!frees);native_extra_opl_destroy(a);native_extra_opl_destroy(b);
+}
+
 static int self_test(){
-    static_assert(sizeof(NativeExtraOplState)==264,"RustABI");assert(!native_extra_opl_create(0,0)&&!native_extra_opl_create(48000,2));
+    static_assert(sizeof(NativeExtraOplState)==520,"RustABI");assert(!native_extra_opl_create(0,0)&&!native_extra_opl_create(48000,4));
     for(uint8_t kind:{0,1,3}){
         void*a=native_extra_opl_create(96000,kind),*b=native_extra_opl_create(96000,kind);assert(a&&b);audit=true;
         NativeExtraOplState s{};native_extra_opl_get_state(a,&s);assert(s.clock==3579545&&s.channels==9&&s.kind==kind&&render(a,37)==0);render(b,37);
@@ -75,16 +148,17 @@ static int self_test(){
             audit=false;assert(!allocations&&!frees);native_extra_opl_destroy(a);native_extra_opl_destroy(b);
         }
     }
-    std::puts("Additional OPL264ABI, selected core only, source clocks, independent resets/preview/cancel, CSM normal ownership, aliased drums, readonly state; callback allocations0/frees0");return 0;
+    self_test_opl3();self_test_opl3_sources();
+    std::puts("Additional OPL520ABI, selected core only, source clocks, independent resets/preview/cancel, CSM normal ownership, aliased drums, readonly state; callback allocations0/frees0");return 0;
 }
 struct Event{uint32_t frame=0,a=0,b=0;std::string op;};
 int main(int argc,char**argv){try{
     if(argc==2&&std::string(argv[1])=="--self-test")return self_test();if(argc!=4)return 2;
-    const uint8_t kind=std::stoul(argv[1]);const uint32_t rate=std::stoul(argv[2]),frames=std::stoul(argv[3]),planes=263;if(frames>10000000)return 2;
+    const uint8_t kind=std::stoul(argv[1]);const uint32_t rate=std::stoul(argv[2]),frames=std::stoul(argv[3]),regs=kind==2?512:256,planes=regs+7;if(frames>10000000)return 2;
     std::vector<Event>events;std::string line;while(std::getline(std::cin,line)){std::istringstream in(line);Event e;if(!(in>>e.frame>>e.op))continue;in>>e.a>>e.b;events.push_back(std::move(e));}std::stable_sort(events.begin(),events.end(),[](const Event&a,const Event&b){return a.frame<b.frame;});
     void*p=native_extra_opl_create(rate,kind);if(!p)return 3;std::vector<float>pcm(frames*planes);size_t next=0;audit=true;
     for(uint32_t frame=0;frame<frames;++frame){while(next<events.size()&&events[next].frame==frame){const auto&e=events[next++];
         if(e.op=="write")native_extra_opl_write(p,e.a,e.b);else if(e.op=="clock")assert(native_extra_opl_set_clock(p,e.a));else if(e.op=="off")native_extra_opl_preview_key_off(p,e.a);else if(e.op=="cancel")native_extra_opl_key_off_fm(p,e.a);else if(e.op=="audition")native_extra_opl_audition_key_on(p,e.a);else if(e.op=="reset")native_extra_opl_reset(p);else if(e.op=="public-off")native_extra_opl_all_notes_off(p);else if(e.op=="stop"||e.op=="all-off")native_extra_opl_host_all_notes_off(p);else return 2;
-    }float*out=&pcm[frame*planes];native_extra_opl_sample(p,out,out+1);NativeExtraOplState s{};native_extra_opl_get_state(p,&s);for(uint32_t reg=0;reg<256;++reg)out[2+reg]=s.registers[reg];out[258]=s.clock;out[259]=s.status;out[260]=s.irq;out[261]=native_extra_opl_read_status(p);out[262]=native_extra_opl_get_irq(p);}
+    }float*out=&pcm[frame*planes];native_extra_opl_sample(p,out,out+1);NativeExtraOplState s{};native_extra_opl_get_state(p,&s);for(uint32_t reg=0;reg<regs;++reg)out[2+reg]=s.registers[reg];out[regs+2]=s.clock;out[regs+3]=s.status;out[regs+4]=s.irq;out[regs+5]=native_extra_opl_read_status(p);out[regs+6]=native_extra_opl_get_irq(p);}
     audit=false;assert(!allocations&&!frees);native_extra_opl_destroy(p);return std::fwrite(pcm.data(),sizeof(float),pcm.size(),stdout)==pcm.size()?0:4;
 }catch(const std::exception&e){std::cerr<<e.what()<<'\n';return 1;}}

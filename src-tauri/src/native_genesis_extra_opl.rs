@@ -18,6 +18,7 @@ const PENDING_BYTES: usize = 4 * 1024 * 1024;
 pub enum Chip {
     Ym3526,
     Ym3812,
+    Ymf262,
     Y8950,
 }
 impl Chip {
@@ -25,6 +26,7 @@ impl Chip {
         match self {
             Self::Ym3526 => "ym3526",
             Self::Ym3812 => "ym3812",
+            Self::Ymf262 => "ymf262",
             Self::Y8950 => "y8950",
         }
     }
@@ -32,11 +34,33 @@ impl Chip {
         match self {
             Self::Ym3526 => 0,
             Self::Ym3812 => 1,
+            Self::Ymf262 => 2,
             Self::Y8950 => 3,
         }
     }
+    fn clock(self) -> u32 {
+        if self == Self::Ymf262 {
+            14_318_180
+        } else {
+            CLOCK
+        }
+    }
+    fn channels(self) -> usize {
+        if self == Self::Ymf262 {
+            18
+        } else {
+            9
+        }
+    }
+    fn registers(self) -> usize {
+        if self == Self::Ymf262 {
+            512
+        } else {
+            256
+        }
+    }
     fn valid_voice(self, ch: usize) -> bool {
-        ch < 9 || (18..23).contains(&ch)
+        ch < self.channels() || (18..23).contains(&ch)
     }
     fn physical(self, ch: usize) -> usize {
         if ch >= 18 {
@@ -48,7 +72,7 @@ impl Chip {
 }
 #[repr(C)]
 struct CoreState {
-    registers: [u8; 256],
+    registers: [u8; 512],
     clock: u32,
     kind: u8,
     channels: u8,
@@ -68,14 +92,17 @@ extern "C" {
     fn native_extra_opl_all_notes_off(p: *mut c_void);
     fn native_extra_opl_write(p: *mut c_void, register: u16, value: u8);
     fn native_extra_opl_key_off_fm(p: *mut c_void, ch: u8);
-    fn native_extra_opl_preview_key_off(p: *mut c_void, ch: u8);
-    fn native_extra_opl_audition_key_on(p: *mut c_void, ch: u8);
+    fn native_extra_opl_source_preview_key_off(p: *mut c_void, ch: u8);
+    fn native_extra_opl_source_audition_key_on(p: *mut c_void, ch: u8);
     fn native_extra_opl_cancel_csm(p: *mut c_void);
     fn native_extra_opl_csm_active(p: *mut c_void) -> u8;
     fn native_extra_opl_cancel_adpcm(p: *mut c_void);
     fn native_extra_opl_sample(p: *mut c_void, l: *mut f32, r: *mut f32);
     fn native_extra_opl_set_clock(p: *mut c_void, hz: u32) -> i32;
     fn native_extra_opl_get_state(p: *mut c_void, s: *mut CoreState);
+    fn native_extra_opl_four_op_mask(p: *mut c_void) -> u8;
+    fn native_extra_opl_effective_register(p: *mut c_void, reg: u16) -> u8;
+    fn native_extra_opl_get_effective_registers(p: *mut c_void, out: *mut u8);
 }
 #[derive(Clone, Debug, Deserialize)]
 pub struct Message {
@@ -165,23 +192,32 @@ pub struct Prepared {
 fn valid_id(id: Option<u64>) -> bool {
     id.is_none_or(|n| n > 0 && n <= MAX_SAFE_INTEGER)
 }
+const PAIRS: [usize; 6] = [0, 1, 2, 9, 10, 11];
+fn paired(a: usize, b: usize) -> bool {
+    a == b
+        || PAIRS
+            .into_iter()
+            .any(|p| (a == p && b == p + 3) || (b == p && a == p + 3))
+}
 fn register_channel(reg: u16) -> Option<usize> {
-    if matches!(reg,0xa0..=0xa8|0xb0..=0xb8|0xc0..=0xc8) {
-        return Some((reg & 15) as usize);
+    let bank = if reg & 256 != 0 { 9 } else { 0 };
+    let byte = reg as u8;
+    if matches!(byte,0xa0..=0xa8|0xb0..=0xb8|0xc0..=0xc8) {
+        return Some(bank + (byte & 15) as usize);
     }
-    if matches!(reg & 0xe0, 0x20 | 0x40 | 0x60 | 0x80 | 0xe0) {
-        let slot = (reg & 31) as usize;
+    if matches!(byte & 0xe0, 0x20 | 0x40 | 0x60 | 0x80 | 0xe0) {
+        let slot = (byte & 31) as usize;
         return match slot {
-            0..=5 => Some(slot % 3),
-            8..=13 => Some(3 + (slot - 8) % 3),
-            16..=21 => Some(6 + (slot - 16) % 3),
+            0..=5 => Some(bank + slot % 3),
+            8..=13 => Some(bank + 3 + (slot - 8) % 3),
+            16..=21 => Some(bank + 6 + (slot - 16) % 3),
             _ => None,
         };
     }
     None
 }
 fn operator_voice(reg: u16, rhythm: bool) -> Option<usize> {
-    if rhythm && matches!(reg & 0xe0, 0x20 | 0x40 | 0x60 | 0x80 | 0xe0) {
+    if reg < 256 && rhythm && matches!(reg & 0xe0, 0x20 | 0x40 | 0x60 | 0x80 | 0xe0) {
         match reg & 31 {
             16 | 19 => return Some(18),
             20 => return Some(19),
@@ -193,6 +229,9 @@ fn operator_voice(reg: u16, rhythm: bool) -> Option<usize> {
     }
     register_channel(reg)
 }
+fn layout_register(register: u16) -> bool {
+    matches!(register, 0xbd | 0x1bd | 0x104 | 0x105)
+}
 fn declared_channel(op: &Op) -> Option<usize> {
     match *op {
         Op::KeyOff { channel } | Op::AuditionKeyOn { channel } => Some(channel as usize),
@@ -202,8 +241,8 @@ fn declared_channel(op: &Op) -> Option<usize> {
 }
 fn validate_op(chip: Chip, op: &Op) -> Result<(), String> {
     match *op {
-        Op::Write { register, .. } if register >= 256 => {
-            Err("Native additional OPL register must be 0–255".into())
+        Op::Write { register, .. } if register as usize >= chip.registers() => {
+            Err("Native additional OPL register is out of range".into())
         }
         Op::Write {
             register,
@@ -213,7 +252,7 @@ fn validate_op(chip: Chip, op: &Op) -> Result<(), String> {
         Op::KeyOff { channel } | Op::AuditionKeyOn { channel }
             if !chip.valid_voice(channel as usize) =>
         {
-            Err("Native additional OPL voice must be FM0–8 or rhythm18–22".into())
+            Err("Native additional OPL voice is out of range".into())
         }
         Op::Clock { hz } if !(100_000..=100_000_000).contains(&hz) => {
             Err("Native OPL clock must be 100000–100000000 Hz".into())
@@ -280,7 +319,11 @@ impl Message {
                 for op in commands {
                     validate_op(chip, op)?;
                     if declared_channel(op).is_some_and(|target| {
-                        chip.physical(target) != chip.physical(*channel as usize)
+                        if chip == Chip::Ymf262 {
+                            !paired(chip.physical(target), chip.physical(*channel as usize))
+                        } else {
+                            chip.physical(target) != chip.physical(*channel as usize)
+                        }
                     }) {
                         return Err(
                             "Native additional OPL batch must target its declared physical channel"
@@ -327,10 +370,11 @@ impl Prepared {
     }
     fn affects_layout(&self) -> bool {
         match &self.method {
-            Method::Write { register: 0xbd, .. } | Method::Reset => true,
+            Method::Write { register, .. } => layout_register(*register),
+            Method::Reset => true,
             Method::Batch { commands, .. } => commands
                 .iter()
-                .any(|op| matches!(op, Op::Write { register: 0xbd, .. })),
+                .any(|op| matches!(op, Op::Write { register, .. } if layout_register(*register))),
             _ => false,
         }
     }
@@ -345,7 +389,9 @@ pub struct Shared {
     revision: AtomicU64,
     layout_revision: AtomicU64,
     layout_progress: AtomicU64,
-    registers: [AtomicU8; 256],
+    effective_four_op_mask: AtomicU8,
+    effective_registers: [AtomicU8; 512],
+    registers: [AtomicU8; 512],
     clock: AtomicU32,
     status: AtomicU8,
     irq: AtomicU8,
@@ -364,8 +410,10 @@ impl Shared {
             revision: AtomicU64::new(0),
             layout_revision: AtomicU64::new(0),
             layout_progress: AtomicU64::new(0),
+            effective_four_op_mask: AtomicU8::new(0),
+            effective_registers: std::array::from_fn(|_| AtomicU8::new(0)),
             registers: std::array::from_fn(|_| AtomicU8::new(0)),
-            clock: AtomicU32::new(CLOCK),
+            clock: AtomicU32::new(chip.clock()),
             status: AtomicU8::new(0),
             irq: AtomicU8::new(0),
             held: AtomicU32::new(0),
@@ -393,6 +441,12 @@ pub struct ChipStatus {
     pub layout_revision: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layout_pending: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effective_four_op_mask: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_mode: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effective_registers: Option<Vec<u8>>,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -403,6 +457,8 @@ pub struct Status {
     pub ym3812: Option<ChipStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub y8950: Option<ChipStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ymf262: Option<ChipStatus>,
     pub frame: u64,
     pub sample_rate: u32,
     pub revision: u64,
@@ -517,7 +573,7 @@ impl Shared {
                 // A scheduled Worker clock change awaits the same applied
                 // command barrier as the authoring client, not an early ACK.
                 let deadline = if matches!(cmd.method, Method::Clock { .. } | Method::Reset)
-                    || matches!(cmd.method, Method::Write { register: 0xbd, .. })
+                    || matches!(cmd.method, Method::Write { register, .. } if layout_register(register))
                 {
                     // Applied-layout observations share the Worker lookahead
                     // barrier: the old layout remains authoritative until the
@@ -598,8 +654,35 @@ impl Shared {
     fn publish(&self, r: &Renderer, command: Option<&Prepared>) {
         let state = r.state();
         self.revision.fetch_add(1, Ordering::AcqRel);
-        if (self.registers[0xbd].load(Ordering::Relaxed) ^ state.registers[0xbd]) & 32 != 0 {
+        let pair_mask = r.four_op_mask();
+        let mut effective = [0; 512];
+        if self.chip == Chip::Ymf262 {
+            unsafe { native_extra_opl_get_effective_registers(r.ptr, effective.as_mut_ptr()) }
+        }
+        let old_rhythm = if self.chip == Chip::Ymf262 {
+            self.effective_registers[0xbd].load(Ordering::Relaxed)
+        } else {
+            self.registers[0xbd].load(Ordering::Relaxed)
+        };
+        let new_rhythm = if self.chip == Chip::Ymf262 {
+            effective[0xbd]
+        } else {
+            state.registers[0xbd]
+        };
+        if (old_rhythm ^ new_rhythm) & 32 != 0
+            || self.chip == Chip::Ymf262
+                && (self.effective_four_op_mask.load(Ordering::Relaxed) != pair_mask
+                    || (self.registers[0x105].load(Ordering::Relaxed) ^ state.registers[0x105]) & 1
+                        != 0)
+        {
             self.layout_revision.fetch_add(1, Ordering::Relaxed);
+        }
+        self.effective_four_op_mask
+            .store(pair_mask, Ordering::Relaxed);
+        if self.chip == Chip::Ymf262 {
+            for (out, value) in self.effective_registers.iter().zip(effective) {
+                out.store(value, Ordering::Relaxed)
+            }
         }
         for (out, value) in self.registers.iter().zip(state.registers) {
             out.store(value, Ordering::Relaxed)
@@ -616,7 +699,7 @@ impl Shared {
                     if r.csm_owner.is_some_and(|l| l.audition)
                         || r.adpcm_owner.is_some_and(|l| l.audition)
                     {
-                        511
+                        (1 << self.chip.channels()) - 1
                     } else {
                         0
                     },
@@ -664,10 +747,9 @@ impl Shared {
             let held = self.held.load(Ordering::Relaxed);
             let chip = ChipStatus {
                 chip: self.chip.name(),
-                channels: 9,
+                channels: self.chip.channels() as u8,
                 clock: self.clock(),
-                registers: self
-                    .registers
+                registers: self.registers[..self.chip.registers()]
                     .iter()
                     .map(|v| v.load(Ordering::Relaxed))
                     .collect(),
@@ -684,21 +766,33 @@ impl Shared {
                     .filter_map(|v| v.id)
                     .collect(),
                 layout_revision: Some(self.layout_revision.load(Ordering::Relaxed)),
+                effective_registers: (self.chip == Chip::Ymf262).then(|| {
+                    self.effective_registers
+                        .iter()
+                        .map(|v| v.load(Ordering::Relaxed))
+                        .collect()
+                }),
+                effective_four_op_mask: (self.chip == Chip::Ymf262)
+                    .then(|| self.effective_four_op_mask.load(Ordering::Relaxed)),
+                new_mode: (self.chip == Chip::Ymf262)
+                    .then(|| self.registers[0x105].load(Ordering::Relaxed) & 1 != 0),
                 layout_pending: Some({
                     control.prepared.iter().any(|command| {
                         command.affects_layout() && !command.complete.load(Ordering::Relaxed)
                     })
                 }),
             };
-            let (ym3526, ym3812, y8950) = match self.chip {
-                Chip::Ym3526 => (Some(chip), None, None),
-                Chip::Ym3812 => (None, Some(chip), None),
-                Chip::Y8950 => (None, None, Some(chip)),
+            let (ym3526, ym3812, y8950, ymf262) = match self.chip {
+                Chip::Ym3526 => (Some(chip), None, None, None),
+                Chip::Ym3812 => (None, Some(chip), None, None),
+                Chip::Y8950 => (None, None, Some(chip), None),
+                Chip::Ymf262 => (None, None, None, Some(chip)),
             };
             let out = Status {
                 ym3526,
                 ym3812,
                 y8950,
+                ymf262,
                 frame,
                 sample_rate: self.rate.load(Ordering::Relaxed),
                 revision: before / 2,
@@ -762,6 +856,35 @@ impl Renderer {
         unsafe { native_extra_opl_get_state(self.ptr, &mut state) }
         state
     }
+    fn four_op_mask(&self) -> u8 {
+        if self.chip == Chip::Ymf262 {
+            unsafe { native_extra_opl_four_op_mask(self.ptr) }
+        } else {
+            0
+        }
+    }
+    fn effective_register(&self, register: u16, s: &CoreState) -> u16 {
+        if self.chip == Chip::Ymf262
+            && s.registers[0x105] & 1 == 0
+            && register >= 256
+            && register != 0x105
+        {
+            register & 255
+        } else {
+            register
+        }
+    }
+    fn pair_primary(&self, ch: usize) -> usize {
+        let p = self.chip.physical(ch);
+        if self.chip == Chip::Ymf262 {
+            for (bit, first) in PAIRS.into_iter().enumerate() {
+                if self.four_op_mask() & (1 << bit) != 0 && (p == first || p == first + 3) {
+                    return first;
+                }
+            }
+        }
+        p
+    }
     fn has_manual(&self) -> bool {
         self.owners.iter().flatten().any(|l| l.audition)
             || self.csm_owner.is_some_and(|l| l.audition)
@@ -776,7 +899,7 @@ impl Renderer {
     fn alias_manual(&self, ch: usize, voice: Option<u64>, audition: bool) -> bool {
         (0..VOICES).any(|other| {
             self.chip.valid_voice(other)
-                && self.chip.physical(other) == self.chip.physical(ch)
+                && self.pair_primary(other) == self.pair_primary(ch)
                 && self.protected(other, voice, audition)
         })
     }
@@ -784,10 +907,128 @@ impl Renderer {
         (0..VOICES).any(|other| {
             self.chip.valid_voice(other)
                 && other != ch
-                && (other < 9) != (ch < 9)
+                && (other < 18) != (ch < 18)
                 && self.chip.physical(other) == self.chip.physical(ch)
                 && self.owners[other].is_some_and(|l| l.audition)
         })
+    }
+    fn parameter_protected(&self, ch: usize, voice: Option<u64>, audition: bool) -> bool {
+        if ch >= 18 {
+            return self.protected(ch, voice, audition);
+        }
+        (0..self.chip.channels()).any(|other| {
+            self.pair_primary(other) == self.pair_primary(ch)
+                && self.protected(other, voice, audition)
+        })
+    }
+    fn pair_change_allowed(
+        &self,
+        primary: usize,
+        owner: Option<Owner>,
+        voice: Option<u64>,
+        audition: bool,
+    ) -> bool {
+        [primary, primary + 3].into_iter().all(|ch| {
+            !self.protected(ch, voice, audition)
+                && self.owners[ch].is_none_or(|l| !self.foreign(l, owner, voice, audition))
+        })
+    }
+    fn batch_targets_allowed(
+        &self,
+        commands: &[Op],
+        channel: usize,
+        action: LeaseAction,
+        owner: Option<Owner>,
+        voice: Option<u64>,
+        audition: bool,
+        s: &CoreState,
+    ) -> bool {
+        if self.chip != Chip::Ymf262 {
+            return true;
+        }
+        if channel >= 9 && channel < 18 && s.registers[0x105] & 1 == 0 && action != LeaseAction::Off
+        {
+            return false;
+        }
+        if action != LeaseAction::Off && channel < 18 && self.pair_primary(channel) != channel {
+            return false;
+        }
+        let mut new_mode = s.registers[0x105] & 1 != 0;
+        let mut mask = self.four_op_mask();
+        let mut transitions = 0u8;
+        for op in commands {
+            if let Op::Write {
+                register, value, ..
+            } = *op
+            {
+                let r = if !new_mode && register >= 256 && register != 0x105 {
+                    register & 255
+                } else {
+                    register
+                };
+                if r == 0x105 {
+                    new_mode = value & 1 != 0;
+                }
+                if r == 0x104 {
+                    let changed = (mask ^ value) & 63;
+                    for (bit, p) in PAIRS.into_iter().enumerate() {
+                        if changed & (1 << bit) != 0
+                            && !self.pair_change_allowed(p, owner, voice, audition)
+                        {
+                            return false;
+                        }
+                    }
+                    transitions |= changed;
+                    mask = value & 63;
+                }
+            }
+        }
+        let root = |ch: usize, m: u8| {
+            let p = self.chip.physical(ch);
+            for (bit, first) in PAIRS.into_iter().enumerate() {
+                if m & (1 << bit) != 0 && (p == first || p == first + 3) {
+                    return first;
+                }
+            }
+            p
+        };
+        let mut new_mode = s.registers[0x105] & 1 != 0;
+        let mut mask = self.four_op_mask();
+        for op in commands {
+            let target = match *op {
+                Op::Write {
+                    register, value, ..
+                } => {
+                    let r = if !new_mode && register >= 256 && register != 0x105 {
+                        register & 255
+                    } else {
+                        register
+                    };
+                    let target = register_channel(r);
+                    if r == 0x105 {
+                        new_mode = value & 1 != 0;
+                    }
+                    if r == 0x104 {
+                        mask = value & 63;
+                    }
+                    target
+                }
+                _ => declared_channel(op),
+            };
+            if let Some(target) = target {
+                if root(target, mask) != root(channel, mask) {
+                    let transition = PAIRS.into_iter().enumerate().any(|(bit, p)| {
+                        transitions & (1 << bit) != 0
+                            && channel == p
+                            && (target == p || target == p + 3)
+                    });
+                    if !transition {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
     }
     fn lease(&self, owner: Option<Owner>, voice: Option<u64>, audition: bool) -> Lease {
         Lease {
@@ -830,12 +1071,28 @@ impl Renderer {
         declared: Option<usize>,
     ) {
         let s = self.state();
-        let rhythm = s.registers[0xbd] & 32 != 0;
-        let target = match *op {
-            Op::Write { register, .. } => operator_voice(register, rhythm),
-            _ => declared_channel(op),
+        let rhythm = if self.chip == Chip::Ymf262 {
+            unsafe { native_extra_opl_effective_register(self.ptr, 0xbd) & 32 != 0 }
+        } else {
+            s.registers[0xbd] & 32 != 0
         };
-        if target.is_some_and(|ch| self.protected(ch, voice, audition)) {
+        let effective = if let Op::Write { register, .. } = *op {
+            Some(self.effective_register(register, &s))
+        } else {
+            None
+        };
+        let target = if let Some(register) = effective {
+            operator_voice(register, rhythm)
+        } else {
+            declared_channel(op)
+        };
+        if target.is_some_and(|ch| {
+            if effective.is_some_and(|r| !matches!(r as u8, 0xb0..=0xb8)) {
+                self.parameter_protected(ch, voice, audition)
+            } else {
+                self.protected(ch, voice, audition)
+            }
+        }) {
             return;
         }
         match *op {
@@ -853,7 +1110,7 @@ impl Renderer {
                     return;
                 }
                 if self.preview_release {
-                    unsafe { native_extra_opl_preview_key_off(self.ptr, channel) }
+                    unsafe { native_extra_opl_source_preview_key_off(self.ptr, channel) }
                     self.owners[ch] = None;
                 } else {
                     self.release(ch)
@@ -861,10 +1118,16 @@ impl Renderer {
             }
             Op::AuditionKeyOn { channel } => {
                 let ch = channel as usize;
+                if self.chip == Chip::Ymf262
+                    && (s.registers[0x105] & 1 == 0 && ch >= 9 && ch < 18
+                        || self.pair_primary(ch) != self.chip.physical(ch))
+                {
+                    return;
+                }
                 if self.alias_conflict(ch) {
                     return;
                 }
-                unsafe { native_extra_opl_audition_key_on(self.ptr, channel) }
+                unsafe { native_extra_opl_source_audition_key_on(self.ptr, channel) }
                 if !preserve {
                     self.owners[ch] = Some(self.lease(owner, voice, audition))
                 }
@@ -874,7 +1137,43 @@ impl Renderer {
                 mut value,
                 intent_mask,
             } => {
-                let old = s.registers[register as usize];
+                let mut post_map_cancel = 0u8;
+                let authored_register = register;
+                let register = effective.unwrap();
+                let old = if self.chip == Chip::Ymf262 {
+                    unsafe { native_extra_opl_effective_register(self.ptr, register) }
+                } else {
+                    s.registers[register as usize]
+                };
+                if self.chip == Chip::Ymf262
+                    && register == 0x105
+                    && (old ^ value) & 1 != 0
+                    && !audition
+                    && self.has_manual()
+                {
+                    value = (value & !1) | (old & 1);
+                }
+                if self.chip == Chip::Ymf262 && register == 0x104 {
+                    let changed = (old ^ value) & 63;
+                    for (bit, primary) in PAIRS.into_iter().enumerate() {
+                        if changed & (1 << bit) != 0 {
+                            if self.pair_change_allowed(primary, owner, voice, audition) {
+                                if self.owners[primary].is_some()
+                                    || self.owners[primary + 3].is_some()
+                                {
+                                    post_map_cancel |= 1 << bit;
+                                }
+                                for ch in [primary, primary + 3] {
+                                    if self.owners[ch].is_some() {
+                                        self.release(ch)
+                                    }
+                                }
+                            } else {
+                                value = (value & !(1 << bit)) | (old & (1 << bit));
+                            }
+                        }
+                    }
+                }
                 if self.chip == Chip::Y8950
                     && (7..=0x12).contains(&register)
                     && self.adpcm_owner.is_some_and(|l| l.audition && !audition)
@@ -887,10 +1186,10 @@ impl Renderer {
                 if matches!(register, 2 | 3 | 4 | 8) && !audition && self.has_manual() {
                     return;
                 }
-                if matches!(register,0xa0..=0xa8|0xb0..=0xb8|0xc0..=0xc8) {
-                    let ch = (register & 15) as usize;
+                if matches!(register as u8,0xa0..=0xa8|0xb0..=0xb8|0xc0..=0xc8) {
+                    let ch = register_channel(register).unwrap();
                     if self.alias_manual(ch, voice, audition) {
-                        if (0xb0..=0xb8).contains(&register) {
+                        if (0xb0..=0xb8).contains(&(register as u8)) {
                             value = (value & !0xdf) | (old & 0xdf)
                         } else {
                             return;
@@ -902,15 +1201,16 @@ impl Renderer {
                         if declared.is_some_and(|d| d >= 18 && ch != d) {
                             return;
                         }
-                        if self.owners[ch].is_some_and(|l| self.foreign(l, owner, voice, audition))
+                        if self.owners[self.pair_primary(ch)]
+                            .is_some_and(|l| self.foreign(l, owner, voice, audition))
                             && preserve
                         {
                             return;
                         }
                     }
                 }
-                if (0xb0..=0xb8).contains(&register) {
-                    let ch = (register & 15) as usize;
+                if (0xb0..=0xb8).contains(&(register as u8)) {
+                    let ch = register_channel(register).unwrap();
                     let mut may_claim = true;
                     if value & 32 == 0
                         && self.owners[ch].is_some_and(|l| self.foreign(l, owner, voice, audition))
@@ -970,7 +1270,7 @@ impl Renderer {
                         value = (value & !0xc0) | (old & 0xc0)
                     }
                     if (value ^ old) & 32 != 0
-                        && (6..VOICES).any(|ch| {
+                        && [6, 7, 8, 18, 19, 20, 21, 22].into_iter().any(|ch| {
                             self.chip.valid_voice(ch)
                                 && (self.protected(ch, voice, audition)
                                     || self.owners[ch]
@@ -1003,7 +1303,16 @@ impl Renderer {
                         }
                     }
                 }
-                unsafe { native_extra_opl_write(self.ptr, register, value) }
+                unsafe { native_extra_opl_write(self.ptr, authored_register, value) }
+                // Reassignment can expose an old secondary envelope after a
+                // four-op voice splits. Both physical outputs of an owned
+                // changed pair must be silenced under the new map too.
+                for (bit, primary) in PAIRS.into_iter().enumerate() {
+                    if post_map_cancel & (1 << bit) != 0 {
+                        self.release(primary);
+                        self.release(primary + 3);
+                    }
+                }
                 if !preserve && matches!(register, 4 | 8) {
                     let active = unsafe { native_extra_opl_csm_active(self.ptr) != 0 };
                     let authored_start = register == 8 && value & 128 != 0
@@ -1122,7 +1431,27 @@ impl Renderer {
                             native_extra_opl_stop(self.ptr)
                         }
                     }
-                    self.owners.fill(None);
+                    if self.chip == Chip::Ymf262 && matches!(c.method, Method::AllNotesOff) {
+                        // Public allNotesOff uses bus writes. With NEW=0 its
+                        // upper writes fold into the lower bank, so still-live
+                        // upper physical sources retain their cleanup lease.
+                        for ch in 0..18 {
+                            let reg = (if ch >= 9 { 256 } else { 0 }) + 0xb0 + (ch % 9) as u16;
+                            if unsafe { native_extra_opl_effective_register(self.ptr, reg) } & 32
+                                == 0
+                            {
+                                self.owners[ch] = None;
+                            }
+                        }
+                        let rhythm = unsafe { native_extra_opl_effective_register(self.ptr, 0xbd) };
+                        for drum in 18..23 {
+                            if rhythm & (16 >> (drum - 18)) == 0 {
+                                self.owners[drum] = None;
+                            }
+                        }
+                    } else {
+                        self.owners.fill(None);
+                    }
                     if matches!(c.method, Method::StopVoices) {
                         self.csm_owner = None;
                         self.adpcm_owner = None;
@@ -1158,6 +1487,19 @@ impl Renderer {
                 action,
             } => {
                 let ch = *channel as usize;
+                if !self.batch_targets_allowed(
+                    commands,
+                    ch,
+                    *action,
+                    owner,
+                    *voice,
+                    c.audition,
+                    &self.state(),
+                ) {
+                    shared.publish(self, Some(c));
+                    self.current_group = None;
+                    return;
+                }
                 let current = self.owners[ch];
                 let allowed = match action {
                     LeaseAction::On => {
@@ -1187,7 +1529,7 @@ impl Renderer {
                             c.audition,
                             *action == LeaseAction::Edit,
                             if *action == LeaseAction::Edit
-                                && matches!(op, Op::Write { register: 0xbd, .. })
+                                && matches!(op, Op::Write { register, .. } if layout_register(*register))
                             {
                                 None
                             } else {

@@ -61,6 +61,9 @@ mod extra_ym2610_tests;
 #[cfg(test)]
 #[path = "native_genesis_extra_ym2612_tests.rs"]
 mod extra_ym2612_tests;
+#[cfg(test)]
+#[path = "native_genesis_extra_ymf262_tests.rs"]
+mod extra_ymf262_tests;
 #[path = "native_genesis_gameboy.rs"]
 mod gameboy;
 #[path = "native_genesis_huc6280.rs"]
@@ -236,6 +239,7 @@ enum Action {
     ExtraYm2151(Arc<extra_psg::Instance>, Arc<extra_ym2151::Prepared>),
     ExtraAy8910(Arc<extra_psg::Instance>, Arc<extra_msx::Prepared>),
     ExtraY8950(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
+    ExtraYmf262(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
     ExtraYm3812(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
     ExtraYm3526(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
     ExtraYm2413(Arc<extra_psg::Instance>, Arc<extra_msx::Prepared>),
@@ -360,6 +364,10 @@ enum CommandAction {
         message: extra_msx::Message,
     },
     ExtraY8950 {
+        instance: u64,
+        message: extra_opl::Message,
+    },
+    ExtraYmf262 {
         instance: u64,
         message: extra_opl::Message,
     },
@@ -514,6 +522,7 @@ impl Command {
             | CommandAction::ExtraYm2151 { .. }
             | CommandAction::ExtraAy8910 { .. }
             | CommandAction::ExtraY8950 { .. }
+            | CommandAction::ExtraYmf262 { .. }
             | CommandAction::ExtraYm3812 { .. }
             | CommandAction::ExtraYm3526 { .. }
             | CommandAction::ExtraYm2413 { .. } => {
@@ -981,6 +990,7 @@ impl Shared {
                 CommandAction::ExtraYm2151 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraAy8910 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraY8950 { message, .. } => Some(message.prepared_bytes()),
+                CommandAction::ExtraYmf262 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm3812 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm3526 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm2413 { message, .. } => Some(message.prepared_bytes()),
@@ -1135,6 +1145,15 @@ impl Shared {
                         .get(*instance, self.epoch.load(Ordering::Acquire))?;
                     let prepared = target.y8950()?.prepare_message(message)?;
                     Action::ExtraY8950(target, prepared)
+                } else if let CommandAction::ExtraYmf262 { instance, message } = &command.action {
+                    if command.frame > MAX_SAFE_INTEGER {
+                        return Err("Invalid native command frame".into());
+                    }
+                    let target = self
+                        .extra_psg
+                        .get(*instance, self.epoch.load(Ordering::Acquire))?;
+                    let prepared = target.ymf262()?.prepare_message(message)?;
+                    Action::ExtraYmf262(target, prepared)
                 } else if let CommandAction::Noise { message } = &command.action {
                     Action::Noise(noise_plan.prepare(message, self.rate)?)
                 } else {
@@ -1624,6 +1643,7 @@ impl Shared {
                     Action::ExtraYm2151(_, c) => Some(extra_psg::Payload::Ym2151(c.clone())),
                     Action::ExtraAy8910(_, c) => Some(extra_psg::Payload::Ay8910(c.clone())),
                     Action::ExtraY8950(_, c) => Some(extra_psg::Payload::Y8950(c.clone())),
+                    Action::ExtraYmf262(_, c) => Some(extra_psg::Payload::Ymf262(c.clone())),
                     Action::ExtraYm3812(_, c) => Some(extra_psg::Payload::Ym3812(c.clone())),
                     Action::ExtraYm3526(_, c) => Some(extra_psg::Payload::Ym3526(c.clone())),
                     Action::ExtraYm2413(_, c) => Some(extra_psg::Payload::Ym2413(c.clone())),
@@ -1645,6 +1665,7 @@ impl Shared {
                 | Action::ExtraYm2151(instance, _)
                 | Action::ExtraAy8910(instance, _)
                 | Action::ExtraY8950(instance, _)
+                | Action::ExtraYmf262(instance, _)
                 | Action::ExtraYm3812(instance, _)
                 | Action::ExtraYm3526(instance, _)
                 | Action::ExtraYm2413(instance, _) => instance,
@@ -1758,6 +1779,19 @@ impl Shared {
                         .collect();
                     instance.ym3812()?.retain(&prepared)
                 }
+                Action::ExtraYmf262(_, _) => {
+                    let prepared: Vec<_> = actions
+                        .iter()
+                        .filter_map(|(action, owner)| {
+                            if let Action::ExtraYmf262(target, command) = action {
+                                (target.id == instance.id).then(|| (command.clone(), *owner))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    instance.ymf262()?.retain(&prepared)
+                }
                 Action::ExtraY8950(_, _) => {
                     let prepared: Vec<_> = actions
                         .iter()
@@ -1815,6 +1849,7 @@ impl Shared {
                         | Action::ExtraYm2151(target, _)
                         | Action::ExtraAy8910(target, _)
                         | Action::ExtraY8950(target, _)
+                        | Action::ExtraYmf262(target, _)
                         | Action::ExtraYm3812(target, _)
                         | Action::ExtraYm3526(target, _)
                         | Action::ExtraYm2413(target, _) => target.id == instance.id,
@@ -1865,6 +1900,11 @@ impl Shared {
                 }
                 Action::ExtraYm3812(instance, command) => {
                     let state = instance.ym3812().expect("YM3812 action target");
+                    state.rollback(command.clone());
+                    let _ = state.status(self.frame.load(Ordering::Acquire));
+                }
+                Action::ExtraYmf262(instance, command) => {
+                    let state = instance.ymf262().expect("YMF262 action target");
                     state.rollback(command.clone());
                     let _ = state.status(self.frame.load(Ordering::Acquire));
                 }
@@ -2222,6 +2262,47 @@ impl Shared {
         *sequence = next_sequence;
         status
     }
+    fn create_extra_ymf262(
+        &self,
+        instance: u64,
+        clock: Option<u32>,
+    ) -> Result<extra_opl::Status, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self
+            .extra_psg
+            .create_ymf262(instance, epoch, self.rate, clock)
+        {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target.ymf262()?.status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional YMF262 install capacity"));
+        *sequence = next_sequence;
+        status
+    }
     fn create_extra_y8950(
         &self,
         instance: u64,
@@ -2457,6 +2538,15 @@ impl Shared {
         self.invalidation.fetch_add(1, Ordering::Release);
         Ok(())
     }
+    fn dispose_extra_ymf262(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose_ymf262(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
     fn dispose_extra_y8950(&self, instance: u64) -> Result<(), String> {
         let _producer = self
             .producer
@@ -2601,6 +2691,27 @@ impl Shared {
             return Err("Additional YM3812 instance has expired".into());
         }
         target.ym3812()?.status(self.frame.load(Ordering::Acquire))
+    }
+    fn extra_ymf262_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+        after_layout_revision: Option<u64>,
+    ) -> Result<extra_opl::Status, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        if let Some(id) = after {
+            target.ymf262()?.wait_applied(id)?;
+        }
+        if let Some(revision) = after_layout_revision {
+            target.ymf262()?.wait_layout(revision)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional YMF262 instance has expired".into());
+        }
+        target.ymf262()?.status(self.frame.load(Ordering::Acquire))
     }
     fn extra_y8950_status(
         &self,
@@ -2864,6 +2975,13 @@ impl Shared {
                             .expect("YM3812 action target")
                             .valid_event(command, event.sequence, event.owner)
                 }
+                Action::ExtraYmf262(instance, command) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
+                        && instance
+                            .ymf262()
+                            .expect("YMF262 action target")
+                            .valid_event(command, event.sequence, event.owner)
+                }
                 Action::ExtraY8950(instance, command) => {
                     instance.valid(self.epoch.load(Ordering::Acquire))
                         && instance.y8950().expect("Y8950 action target").valid_event(
@@ -2991,6 +3109,10 @@ impl Shared {
             Action::ExtraYm3812(instance, command) => instance
                 .ym3812()
                 .expect("YM3812 action target")
+                .retire(command),
+            Action::ExtraYmf262(instance, command) => instance
+                .ymf262()
+                .expect("YMF262 action target")
                 .retire(command),
             Action::ExtraY8950(instance, command) => instance
                 .y8950()
@@ -3848,6 +3970,15 @@ impl Renderer {
                 self.extra_psg.apply_ym3812(&instance, &command, owner);
                 state.retire(command);
             }
+            Action::ExtraYmf262(instance, command) => {
+                let state = instance.ymf262().expect("YMF262 action target");
+                if command.stops() {
+                    state.cancel_before(&command, sequence.saturating_add(1), owner);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.extra_psg.apply_ymf262(&instance, &command, owner);
+                state.retire(command);
+            }
             Action::ExtraY8950(instance, command) => {
                 let state = instance.y8950().expect("Y8950 action target");
                 if command.stops() {
@@ -4331,6 +4462,7 @@ impl Renderer {
                     Action::ExtraYm2151(_, command) => command.starts(),
                     Action::ExtraAy8910(_, command) => command.starts(),
                     Action::ExtraY8950(_, command) => command.starts(),
+                    Action::ExtraYmf262(_, command) => command.starts(),
                     Action::ExtraYm3812(_, command) => command.starts(),
                     Action::ExtraYm3526(_, command) => command.starts(),
                     Action::ExtraYm2413(_, command) => command.starts(),
@@ -7102,6 +7234,49 @@ pub async fn native_genesis_extra_y8950_status(
     let shared = state.session_shared(session)?;
     let status = tauri::async_runtime::spawn_blocking(move || {
         shared.extra_y8950_status(instance, after, after_layout_revision)
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+
+#[tauri::command]
+pub fn native_genesis_extra_ymf262_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    clock: Option<u32>,
+) -> Result<extra_opl::Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| {
+        shared.create_extra_ymf262(instance, clock)
+    })
+}
+#[tauri::command]
+pub fn native_genesis_extra_ymf262_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_ymf262(instance))
+}
+#[tauri::command]
+pub async fn native_genesis_extra_ymf262_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+    after_layout_revision: Option<u64>,
+) -> Result<extra_opl::Status, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        shared.extra_ymf262_status(instance, after, after_layout_revision)
     })
     .await
     .map_err(|error| error.to_string())??;

@@ -34,6 +34,7 @@ pub enum State {
     Ym2151(extra_ym2151::Shared),
     Ay8910(extra_msx::Shared),
     Y8950(extra_opl::Shared),
+    Ymf262(extra_opl::Shared),
     Ym3812(extra_opl::Shared),
     Ym3526(extra_opl::Shared),
     Ym2413(extra_msx::Shared),
@@ -48,6 +49,7 @@ enum Kind {
     Ym2151,
     Ay8910,
     Y8950,
+    Ymf262,
     Ym3812,
     Ym3526,
     Ym2413,
@@ -61,6 +63,7 @@ enum Core {
     Ym2151(extra_ym2151::Renderer),
     Ay8910(extra_msx::Renderer),
     Y8950(extra_opl::Renderer),
+    Ymf262(extra_opl::Renderer),
     Ym3812(extra_opl::Renderer),
     Ym3526(extra_opl::Renderer),
     Ym2413(extra_msx::Renderer),
@@ -177,6 +180,13 @@ impl Instance {
             Err("Additional instance is not a Y8950".into())
         }
     }
+    pub fn ymf262(&self) -> Result<&extra_opl::Shared, String> {
+        if let State::Ymf262(state) = &self.state {
+            Ok(state)
+        } else {
+            Err("Additional instance is not a YMF262".into())
+        }
+    }
     fn kind(&self) -> Kind {
         match self.state {
             State::Psg(_) => Kind::Psg,
@@ -187,6 +197,7 @@ impl Instance {
             State::Ym2151(_) => Kind::Ym2151,
             State::Ay8910(_) => Kind::Ay8910,
             State::Y8950(_) => Kind::Y8950,
+            State::Ymf262(_) => Kind::Ymf262,
             State::Ym3812(_) => Kind::Ym3812,
             State::Ym3526(_) => Kind::Ym3526,
             State::Ym2413(_) => Kind::Ym2413,
@@ -208,6 +219,7 @@ pub enum Payload {
     Ym2151(Arc<extra_ym2151::Prepared>),
     Ay8910(Arc<extra_msx::Prepared>),
     Y8950(Arc<extra_opl::Prepared>),
+    Ymf262(Arc<extra_opl::Prepared>),
     Ym3812(Arc<extra_opl::Prepared>),
     Ym3526(Arc<extra_opl::Prepared>),
     Ym2413(Arc<extra_msx::Prepared>),
@@ -223,6 +235,7 @@ impl Payload {
             Self::Ym2151(v) => v.retained_bytes(),
             Self::Ay8910(v) => v.retained_bytes(),
             Self::Y8950(v) => v.retained_bytes(),
+            Self::Ymf262(v) => v.retained_bytes(),
             Self::Ym3812(v) => v.retained_bytes(),
             Self::Ym3526(v) => v.retained_bytes(),
             Self::Ym2413(v) => v.retained_bytes(),
@@ -238,6 +251,7 @@ impl Payload {
             Self::Ym2151(v) => Arc::strong_count(v) == 1,
             Self::Ay8910(v) => Arc::strong_count(v) == 1,
             Self::Y8950(v) => Arc::strong_count(v) == 1,
+            Self::Ymf262(v) => Arc::strong_count(v) == 1,
             Self::Ym3812(v) => Arc::strong_count(v) == 1,
             Self::Ym3526(v) => Arc::strong_count(v) == 1,
             Self::Ym2413(v) => Arc::strong_count(v) == 1,
@@ -271,6 +285,7 @@ impl Shared {
                 State::Ym2151(s) => s.collect_retired(),
                 State::Ay8910(s) => s.collect_retired(),
                 State::Y8950(s) => s.collect_retired(),
+                State::Ymf262(s) => s.collect_retired(),
                 State::Ym3812(s) => s.collect_retired(),
                 State::Ym3526(s) => s.collect_retired(),
                 State::Ym2413(s) => s.collect_retired(),
@@ -363,6 +378,15 @@ impl Shared {
         clock: Option<u32>,
     ) -> Result<Arc<Instance>, String> {
         self.create_kind(id, epoch, rate, clock, Kind::Ym3812)
+    }
+    pub fn create_ymf262(
+        &self,
+        id: u64,
+        epoch: u64,
+        rate: u32,
+        clock: Option<u32>,
+    ) -> Result<Arc<Instance>, String> {
+        self.create_kind(id, epoch, rate, clock, Kind::Ymf262)
     }
     pub fn create_y8950(
         &self,
@@ -474,7 +498,23 @@ impl Shared {
                     0
                 },
         )?;
-        let (state, core) = if kind == Kind::Y8950 {
+        let (state, core) = if kind == Kind::Ymf262 {
+            let chip = extra_opl::Chip::Ymf262;
+            let state = extra_opl::Shared::new(chip);
+            let mut core = extra_opl::Renderer::new(rate, chip)?;
+            if let Some(hz) = clock {
+                let cmd = extra_opl::Message {
+                    id: None,
+                    audition: false,
+                    group: None,
+                    method: extra_opl::Method::Clock { hz },
+                }
+                .prepare(chip)?;
+                core.apply(&cmd, None, &state);
+            }
+            core.publish(&state);
+            (State::Ymf262(state), Core::Ymf262(core))
+        } else if kind == Kind::Y8950 {
             let chip = extra_opl::Chip::Y8950;
             let state = extra_opl::Shared::new(chip);
             let mut core = extra_opl::Renderer::new(rate, chip)?;
@@ -685,6 +725,9 @@ impl Shared {
     pub fn dispose_ym3812(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Ym3812)
     }
+    pub fn dispose_ymf262(&self, id: u64) -> Result<(), String> {
+        self.dispose_kind(id, Kind::Ymf262)
+    }
     pub fn dispose_y8950(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Y8950)
     }
@@ -793,6 +836,9 @@ impl Renderer {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Y8950(core), State::Y8950(state)) => {
+                                core.cancel_invalid(&valid, state)
+                            }
+                            (Core::Ymf262(core), State::Ymf262(state)) => {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Ym3812(core), State::Ym3812(state)) => {
@@ -939,6 +985,19 @@ impl Renderer {
             }
         }
     }
+    pub fn apply_ymf262(
+        &mut self,
+        instance: &Instance,
+        command: &Arc<extra_opl::Prepared>,
+        owner: Option<Owner>,
+    ) {
+        unsafe {
+            match (instance.callback_core(), &instance.state) {
+                (Core::Ymf262(core), State::Ymf262(state)) => core.apply(command, owner, state),
+                _ => unreachable!("Additional YMF262 target"),
+            }
+        }
+    }
     pub fn apply_y8950(
         &mut self,
         instance: &Instance,
@@ -962,6 +1021,7 @@ impl Renderer {
                     (Core::Ym2151(core), _) => core.mix(pcm),
                     (Core::Ay8910(core), _) => core.mix(pcm),
                     (Core::Y8950(core), _) => core.mix(pcm),
+                    (Core::Ymf262(core), _) => core.mix(pcm),
                     (Core::Ym3812(core), _) => core.mix(pcm),
                     (Core::Ym3526(core), _) => core.mix(pcm),
                     (Core::Ym2413(core), _) => core.mix(pcm),

@@ -8,6 +8,7 @@ fn create(s: &Shared, chip: Chip, id: u64, hz: Option<u32>) {
         Chip::Ym3526 => s.create_extra_ym3526(id, hz).unwrap(),
         Chip::Ym3812 => s.create_extra_ym3812(id, hz).unwrap(),
         Chip::Y8950 => s.create_extra_y8950(id, hz).unwrap(),
+        Chip::Ymf262 => s.create_extra_ymf262(id, hz).unwrap(),
     };
 }
 fn command(chip: Chip, id: u64, frame: u64, message: Value) -> Command {
@@ -68,6 +69,7 @@ fn status(
         Chip::Ym3526 => s.extra_ym3526_status(id, after, layout),
         Chip::Ym3812 => s.extra_ym3812_status(id, after, layout),
         Chip::Y8950 => s.extra_y8950_status(id, after, layout),
+        Chip::Ymf262 => s.extra_ymf262_status(id, after, layout),
     }
 }
 fn inner(v: extra_opl::Status) -> extra_opl::ChipStatus {
@@ -881,6 +883,7 @@ fn extra_opl_status_wait_does_not_hold_running_mutex_and_dispose_wakes() {
             Chip::Ym3526 => shared.dispose_extra_ym3526(1),
             Chip::Ym3812 => shared.dispose_extra_ym3812(1),
             Chip::Y8950 => shared.dispose_extra_y8950(1),
+            Chip::Ymf262 => shared.dispose_extra_ymf262(1),
         })
         .unwrap();
         render(&mut r, &s, 1);
