@@ -309,9 +309,15 @@ fn main() {
         .flag_if_supported("-ffp-contract=off")
         .include("native-snes/snapshot/third_party/snes-spc/snes_spc")
         .file("src/native_genesis_snes.cpp")
+        .file("src/native_genesis_spc.cpp")
+        .file("native-snes/snapshot/third_party/snes-spc/snes_spc/SNES_SPC.cpp")
+        .file("native-snes/snapshot/third_party/snes-spc/snes_spc/SNES_SPC_misc.cpp")
+        .file("native-snes/snapshot/third_party/snes-spc/snes_spc/SNES_SPC_state.cpp")
         .file("native-snes/snapshot/third_party/snes-spc/snes_spc/SPC_DSP.cpp")
         .warnings(false)
         .compile("tetorica_native_snes");
+    println!("cargo:rerun-if-changed=src/native_genesis_spc.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_spc.h");
     println!("cargo:rerun-if-changed=native-pwm");
     println!("cargo:rerun-if-changed=src/native_genesis_pwm.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_pwm.h");

@@ -9,7 +9,8 @@ records their SHA-256 hashes and the frontend release archive hash.
 Nuked OPN2 and SNES-SPC are **LGPL-2.1-or-later**. Their licenses, copyright
 notices, provenance and corresponding modified sources are under
 `src-tauri/native-nuked/` and `src-tauri/native-snes/`. These components are
-statically linked. The application sources and build material are provided so
+statically linked. SNES-SPC supplies both the CPU-free S-DSP instruments and the
+full SPC700 file player. The application sources and build material are provided so
 that you can modify either library and rebuild/relink the application with it.
 Other code retains its existing license; the individual component notices apply.
 This distribution does not prohibit modification for your own use or reverse

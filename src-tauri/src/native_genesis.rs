@@ -80,6 +80,11 @@ mod extra_snes;
 #[cfg(test)]
 #[path = "native_genesis_extra_snes_tests.rs"]
 mod extra_snes_tests;
+#[path = "native_genesis_extra_spc.rs"]
+mod extra_spc;
+#[cfg(test)]
+#[path = "native_genesis_extra_spc_tests.rs"]
+mod extra_spc_tests;
 #[path = "native_genesis_extra_ym2151.rs"]
 mod extra_ym2151;
 #[cfg(test)]
@@ -287,6 +292,7 @@ enum Action {
     ExtraDx7(Arc<extra_psg::Instance>, Arc<extra_dx7::Prepared>),
     ExtraPwm(Arc<extra_psg::Instance>, Arc<extra_pwm::Prepared>),
     ExtraSnes(Arc<extra_psg::Instance>, Arc<extra_snes::Prepared>),
+    ExtraSpc(Arc<extra_psg::Instance>, Arc<extra_spc::Prepared>),
     ExtraNes(Arc<extra_psg::Instance>, Arc<extra_nes::Prepared>),
     ExtraYm3812(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
     ExtraYm3526(Arc<extra_psg::Instance>, Arc<extra_opl::Prepared>),
@@ -442,6 +448,10 @@ enum CommandAction {
     ExtraSnes {
         instance: u64,
         message: extra_snes::Message,
+    },
+    ExtraSpc {
+        instance: u64,
+        message: extra_spc::Message,
     },
     ExtraGameboy {
         instance: u64,
@@ -610,6 +620,7 @@ impl Command {
             | CommandAction::ExtraDx7 { .. }
             | CommandAction::ExtraPwm { .. }
             | CommandAction::ExtraSnes { .. }
+            | CommandAction::ExtraSpc { .. }
             | CommandAction::ExtraNes { .. }
             | CommandAction::ExtraYm3812 { .. }
             | CommandAction::ExtraYm3526 { .. }
@@ -1108,6 +1119,17 @@ impl Shared {
             .sum();
         self.extra_psg
             .check_snes_captures(extra_snes_capture_bytes)?;
+        let extra_spc_capture_bytes: usize = commands
+            .iter()
+            .filter_map(|c| {
+                if let CommandAction::ExtraSpc { message, .. } = &c.action {
+                    Some(message.capture_bytes())
+                } else {
+                    None
+                }
+            })
+            .sum();
+        self.extra_psg.check_spc_captures(extra_spc_capture_bytes)?;
         let extra_permits = self
             .extra_psg
             .reserve_payloads(commands.iter().filter_map(|cmd| match &cmd.action {
@@ -1127,6 +1149,7 @@ impl Shared {
                 CommandAction::ExtraDx7 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraPwm { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraSnes { message, .. } => Some(message.prepared_bytes()),
+                CommandAction::ExtraSpc { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraNes { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm3812 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm3526 { message, .. } => Some(message.prepared_bytes()),
@@ -1168,6 +1191,8 @@ impl Shared {
         let mut voices = HashSet::new();
         let mut streams = 0;
         let mut extra_pages = extra_ym2610::PagePlan::default();
+        let mut extra_spc_plan: std::collections::HashMap<u64, Vec<Arc<extra_spc::Prepared>>> =
+            std::collections::HashMap::new();
         let actions: Vec<_> = commands
             .iter()
             .map(|command| {
@@ -1392,6 +1417,22 @@ impl Shared {
                         );
                     }
                     Action::ExtraSnes(target, prepared)
+                } else if let CommandAction::ExtraSpc { instance, message } = &command.action {
+                    if command.frame != 0 || command.performance.is_some() || command.owner.is_some() {
+                        return Err("Native SPC commands require immediate frame zero and SPC-specific ownership".into());
+                    }
+                    let target = self
+                        .extra_psg
+                        .get(*instance, self.epoch.load(Ordering::Acquire))?;
+                    let prior = extra_spc_plan.entry(*instance).or_default();
+                    let prepared = target.spc()?.prepare_message(message, prior)?;
+                    prior.push(prepared.clone());
+                    if prepared.is_owner_cancel() && command.frame != 0 {
+                        return Err(
+                            "Native SPC owner cancellation requires immediate frame zero".into(),
+                        );
+                    }
+                    Action::ExtraSpc(target, prepared)
                 } else if let CommandAction::ExtraGameboy { instance, message } = &command.action {
                     if command.frame > MAX_SAFE_INTEGER {
                         return Err("Invalid native command frame".into());
@@ -1876,6 +1917,15 @@ impl Shared {
                     self.invalidation.fetch_add(1, Ordering::Release);
                 }
             }
+            if let Action::ExtraSpc(instance, command) = action {
+                if instance
+                    .spc()
+                    .expect("SPC action target")
+                    .commit_cancel(command)
+                {
+                    self.invalidation.fetch_add(1, Ordering::Release);
+                }
+            }
             if let Action::ExtraGameboy(instance, command) = action {
                 if instance
                     .gameboy()
@@ -1999,6 +2049,7 @@ impl Shared {
                     Action::ExtraDx7(_, c) => Some(extra_psg::Payload::Dx7(c.clone())),
                     Action::ExtraPwm(_, c) => Some(extra_psg::Payload::Pwm(c.clone())),
                     Action::ExtraSnes(_, c) => Some(extra_psg::Payload::Snes(c.clone())),
+                    Action::ExtraSpc(_, c) => Some(extra_psg::Payload::Spc(c.clone())),
                     Action::ExtraNes(_, c) => Some(extra_psg::Payload::Nes(c.clone())),
                     Action::ExtraYm3812(_, c) => Some(extra_psg::Payload::Ym3812(c.clone())),
                     Action::ExtraYm3526(_, c) => Some(extra_psg::Payload::Ym3526(c.clone())),
@@ -2029,6 +2080,7 @@ impl Shared {
                 | Action::ExtraDx7(instance, _)
                 | Action::ExtraPwm(instance, _)
                 | Action::ExtraSnes(instance, _)
+                | Action::ExtraSpc(instance, _)
                 | Action::ExtraNes(instance, _)
                 | Action::ExtraYm3812(instance, _)
                 | Action::ExtraYm3526(instance, _)
@@ -2234,6 +2286,19 @@ impl Shared {
                         .collect();
                     instance.snes()?.retain(&prepared)
                 }
+                Action::ExtraSpc(_, _) => {
+                    let prepared: Vec<_> = actions
+                        .iter()
+                        .filter_map(|(action, owner)| {
+                            if let Action::ExtraSpc(target, command) = action {
+                                (target.id == instance.id).then(|| (command.clone(), *owner))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    instance.spc()?.retain(&prepared)
+                }
                 Action::ExtraGameboy(_, _) => {
                     let prepared: Vec<_> = actions
                         .iter()
@@ -2325,6 +2390,7 @@ impl Shared {
                         | Action::ExtraDx7(target, _)
                         | Action::ExtraPwm(target, _)
                         | Action::ExtraSnes(target, _)
+                        | Action::ExtraSpc(target, _)
                         | Action::ExtraNes(target, _)
                         | Action::ExtraYm3812(target, _)
                         | Action::ExtraYm3526(target, _)
@@ -2411,6 +2477,11 @@ impl Shared {
                 }
                 Action::ExtraSnes(instance, command) => {
                     let state = instance.snes().expect("SNES action target");
+                    state.rollback(command.clone());
+                    let _ = state.status(self.frame.load(Ordering::Acquire));
+                }
+                Action::ExtraSpc(instance, command) => {
+                    let state = instance.spc().expect("SPC action target");
                     state.rollback(command.clone());
                     let _ = state.status(self.frame.load(Ordering::Acquire));
                 }
@@ -3046,6 +3117,40 @@ impl Shared {
         *sequence = next_sequence;
         status
     }
+    fn create_extra_spc(&self, instance: u64) -> Result<extra_spc::Status, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self.extra_psg.create_spc(instance, epoch, self.rate) {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target.spc()?.status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional SPC install capacity"));
+        *sequence = next_sequence;
+        status
+    }
     fn create_extra_gameboy(
         &self,
         instance: u64,
@@ -3427,6 +3532,15 @@ impl Shared {
         self.invalidation.fetch_add(1, Ordering::Release);
         Ok(())
     }
+    fn dispose_extra_spc(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose_spc(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
     fn dispose_extra_gameboy(&self, instance: u64) -> Result<(), String> {
         let _producer = self
             .producer
@@ -3719,6 +3833,52 @@ impl Shared {
         target
             .snes()?
             .status_after(self.frame.load(Ordering::Acquire), after, ram)
+    }
+    fn extra_spc_seek_step(
+        &self,
+        instance: u64,
+        seek_id: u64,
+        frames: u32,
+        source_owner: Option<extra_spc::Scope>,
+    ) -> Result<extra_spc::Status, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        let status = target.spc()?.seek_step(seek_id, frames, source_owner)?;
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional SPC instance has expired".into());
+        }
+        Ok(status)
+    }
+    fn extra_spc_events(
+        &self,
+        instance: u64,
+        epoch: u64,
+    ) -> Result<extra_spc::EventResult, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        target.spc()?.drain_events(epoch)
+    }
+    fn extra_spc_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+    ) -> Result<extra_spc::Status, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        if let Some(id) = after {
+            target.spc()?.wait_applied(id)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional SPC instance has expired".into());
+        }
+        target
+            .spc()?
+            .status_after(self.frame.load(Ordering::Acquire), after)
     }
     fn extra_gameboy_status(
         &self,
@@ -4068,6 +4228,14 @@ impl Shared {
                             event.owner,
                         )
                 }
+                Action::ExtraSpc(instance, command) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
+                        && instance.spc().expect("SPC action target").valid_event(
+                            command,
+                            event.sequence,
+                            event.owner,
+                        )
+                }
                 Action::ExtraGameboy(instance, command) => {
                     instance.valid(self.epoch.load(Ordering::Acquire))
                         && instance
@@ -4235,6 +4403,9 @@ impl Shared {
             }
             Action::ExtraSnes(instance, command) => {
                 instance.snes().expect("SNES action target").retire(command)
+            }
+            Action::ExtraSpc(instance, command) => {
+                instance.spc().expect("SPC action target").retire(command)
             }
             Action::ExtraGameboy(instance, command) => instance
                 .gameboy()
@@ -5166,6 +5337,16 @@ impl Renderer {
                     .apply_snes(&instance, &command, owner, self.frame);
                 state.retire(command);
             }
+            Action::ExtraSpc(instance, command) => {
+                let state = instance.spc().expect("SPC action target");
+                if command.stops() {
+                    state.cancel_before(&command, sequence.saturating_add(1), owner);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.extra_psg
+                    .apply_spc(&instance, &command, owner, self.frame);
+                state.retire(command);
+            }
             Action::ExtraGameboy(instance, command) => {
                 let state = instance.gameboy().expect("Game Boy action target");
                 if command.stops() {
@@ -5675,6 +5856,7 @@ impl Renderer {
                     Action::ExtraDx7(_, command) => command.starts(),
                     Action::ExtraPwm(_, command) => command.starts(),
                     Action::ExtraSnes(_, command) => command.starts(),
+                    Action::ExtraSpc(_, command) => command.starts(),
                     Action::ExtraNes(_, command) => command.starts(),
                     Action::ExtraYm3812(_, command) => command.starts(),
                     Action::ExtraYm3526(_, command) => command.starts(),
@@ -8538,6 +8720,16 @@ pub fn native_genesis_extra_snes_create(
     state.with_session(session, |shared| shared.create_extra_snes(instance))
 }
 #[tauri::command]
+pub fn native_genesis_extra_spc_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<extra_spc::Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.create_extra_spc(instance))
+}
+#[tauri::command]
 pub fn native_genesis_extra_gameboy_create(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, NativeGenesis>,
@@ -8634,6 +8826,16 @@ pub fn native_genesis_extra_snes_dispose(
 ) -> Result<(), String> {
     crate::allowed(&window)?;
     state.with_session(session, |shared| shared.dispose_extra_snes(instance))
+}
+#[tauri::command]
+pub fn native_genesis_extra_spc_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_spc(instance))
 }
 #[tauri::command]
 pub fn native_genesis_extra_gameboy_dispose(
@@ -8780,6 +8982,23 @@ pub async fn native_genesis_extra_snes_status(
     Ok(status)
 }
 #[tauri::command]
+pub async fn native_genesis_extra_spc_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+) -> Result<extra_spc::Status, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status =
+        tauri::async_runtime::spawn_blocking(move || shared.extra_spc_status(instance, after))
+            .await
+            .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+#[tauri::command]
 pub async fn native_genesis_extra_gameboy_status(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, NativeGenesis>,
@@ -8812,4 +9031,42 @@ pub async fn native_genesis_extra_nes_status(
             .map_err(|error| error.to_string())??;
     state.with_session(session, |_| Ok(()))?;
     Ok(status)
+}
+
+#[tauri::command]
+pub async fn native_genesis_extra_spc_seek_step(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    seek_id: u64,
+    frames: u32,
+    source_owner: Option<extra_spc::Scope>,
+) -> Result<extra_spc::Status, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        shared.extra_spc_seek_step(instance, seek_id, frames, source_owner)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+#[tauri::command]
+pub async fn native_genesis_extra_spc_events(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    epoch: u64,
+) -> Result<extra_spc::EventResult, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let result =
+        tauri::async_runtime::spawn_blocking(move || shared.extra_spc_events(instance, epoch))
+            .await
+            .map_err(|e| e.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(result)
 }

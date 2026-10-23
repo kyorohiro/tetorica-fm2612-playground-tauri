@@ -2,8 +2,8 @@
 //! control thread; the device callback owns their exclusive mutable access.
 use super::{
     extra_budget, extra_dx7, extra_gameboy, extra_huc6280, extra_msx, extra_nes, extra_okim6258,
-    extra_opl, extra_pwm, extra_rf5c164, extra_snes, extra_ym2151, extra_ym2608, extra_ym2610,
-    master_system, ym2203, ym2612, Owner, MAX_SAFE_INTEGER,
+    extra_opl, extra_pwm, extra_rf5c164, extra_snes, extra_spc, extra_ym2151, extra_ym2608,
+    extra_ym2610, master_system, ym2203, ym2612, Owner, MAX_SAFE_INTEGER,
 };
 use std::{
     cell::UnsafeCell,
@@ -43,6 +43,7 @@ pub enum State {
     Dx7(extra_dx7::Shared),
     Pwm(extra_pwm::Shared),
     Snes(extra_snes::Shared),
+    Spc(extra_spc::Shared),
     Nes(extra_nes::Shared),
     Ym3812(extra_opl::Shared),
     Ym3526(extra_opl::Shared),
@@ -66,6 +67,7 @@ enum Kind {
     Dx7,
     Pwm,
     Snes,
+    Spc,
     Nes,
     Ym3812,
     Ym3526,
@@ -88,6 +90,7 @@ enum Core {
     Dx7(extra_dx7::Renderer),
     Pwm(extra_pwm::Renderer),
     Snes(extra_snes::Renderer),
+    Spc(extra_spc::Renderer),
     Nes(extra_nes::Renderer),
     Ym3812(extra_opl::Renderer),
     Ym3526(extra_opl::Renderer),
@@ -254,6 +257,13 @@ impl Instance {
             Err("Additional instance is not a SNES".into())
         }
     }
+    pub fn spc(&self) -> Result<&extra_spc::Shared, String> {
+        if let State::Spc(state) = &self.state {
+            Ok(state)
+        } else {
+            Err("Additional instance is not a SPC".into())
+        }
+    }
     pub fn gameboy(&self) -> Result<&extra_gameboy::Shared, String> {
         if let State::Gameboy(state) = &self.state {
             Ok(state)
@@ -286,6 +296,7 @@ impl Instance {
             State::Dx7(_) => Kind::Dx7,
             State::Pwm(_) => Kind::Pwm,
             State::Snes(_) => Kind::Snes,
+            State::Spc(_) => Kind::Spc,
             State::Nes(_) => Kind::Nes,
             State::Ym3812(_) => Kind::Ym3812,
             State::Ym3526(_) => Kind::Ym3526,
@@ -316,6 +327,7 @@ pub enum Payload {
     Dx7(Arc<extra_dx7::Prepared>),
     Pwm(Arc<extra_pwm::Prepared>),
     Snes(Arc<extra_snes::Prepared>),
+    Spc(Arc<extra_spc::Prepared>),
     Nes(Arc<extra_nes::Prepared>),
     Ym3812(Arc<extra_opl::Prepared>),
     Ym3526(Arc<extra_opl::Prepared>),
@@ -340,6 +352,7 @@ impl Payload {
             Self::Dx7(v) => v.retained_bytes(),
             Self::Pwm(v) => v.retained_bytes(),
             Self::Snes(v) => v.retained_bytes(),
+            Self::Spc(v) => v.retained_bytes(),
             Self::Nes(v) => v.retained_bytes(),
             Self::Ym3812(v) => v.retained_bytes(),
             Self::Ym3526(v) => v.retained_bytes(),
@@ -364,6 +377,7 @@ impl Payload {
             Self::Dx7(v) => Arc::strong_count(v) == 1,
             Self::Pwm(v) => Arc::strong_count(v) == 1,
             Self::Snes(v) => Arc::strong_count(v) == 1,
+            Self::Spc(v) => Arc::strong_count(v) == 1,
             Self::Nes(v) => Arc::strong_count(v) == 1,
             Self::Ym3812(v) => Arc::strong_count(v) == 1,
             Self::Ym3526(v) => Arc::strong_count(v) == 1,
@@ -439,6 +453,30 @@ impl Shared {
         }
         Ok(())
     }
+    pub fn check_spc_captures(&self, incoming: usize) -> Result<(), String> {
+        let mut control = self
+            .control
+            .lock()
+            .map_err(|_| "Additional sound-chip control unavailable")?;
+        Self::collect(&mut control);
+        let retained: usize = control
+            .payloads
+            .iter()
+            .map(|v| {
+                if let Payload::Spc(c) = &v.payload {
+                    c.capture_bytes()
+                } else {
+                    0
+                }
+            })
+            .sum();
+        if retained + incoming > 16 * extra_spc::IMAGE {
+            return Err(
+                "Native SPC pending RAM snapshot limit reached (16 across shared rack)".into(),
+            );
+        }
+        Ok(())
+    }
     pub fn check_snes_uploads(&self, incoming: usize) -> Result<(), String> {
         if incoming > extra_snes::RAM {
             return Err("Native additional SNES upload batch exceeds 64 KiB".into());
@@ -485,6 +523,7 @@ impl Shared {
                 State::Dx7(s) => s.collect_retired(),
                 State::Pwm(s) => s.collect_retired(),
                 State::Snes(s) => s.collect_retired(),
+                State::Spc(s) => s.collect_retired(),
                 State::Nes(s) => s.collect_retired(),
                 State::Ym3812(s) => s.collect_retired(),
                 State::Ym3526(s) => s.collect_retired(),
@@ -676,6 +715,38 @@ impl Shared {
             active: AtomicBool::new(true),
             state: State::Snes(state),
             core: UnsafeCell::new(Core::Snes(core)),
+            _memory: memory,
+        });
+        control.highest = id;
+        control.instances.push(instance.clone());
+        Ok(instance)
+    }
+    pub fn create_spc(&self, id: u64, epoch: u64, rate: u32) -> Result<Arc<Instance>, String> {
+        // Keep this constructor separate from the legacy multi-core factory:
+        // debug codegen reserves its large enum temporaries for every branch.
+        let mut control = self
+            .control
+            .lock()
+            .map_err(|_| "Additional sound-chip control state is unavailable")?;
+        Self::collect(&mut control);
+        if id == 0 || id > MAX_SAFE_INTEGER || id <= control.highest {
+            return Err(
+                "Additional sound-chip instance ID must be positive, unique and increasing".into(),
+            );
+        }
+        if control.instances.len() >= LIMIT {
+            return Err(format!("Additional sound-chip instance limit ({LIMIT}) reached; wait for retired instances to drain"));
+        }
+        let memory = self.budget.reserve(extra_spc::INSTANCE_BYTES)?;
+        let state = extra_spc::Shared::new(rate, self.budget.clone());
+        let core = extra_spc::Renderer::new(rate)?;
+        core.publish(&state);
+        let instance = Arc::new(Instance {
+            id,
+            epoch,
+            active: AtomicBool::new(true),
+            state: State::Spc(state),
+            core: UnsafeCell::new(Core::Spc(core)),
             _memory: memory,
         });
         control.highest = id;
@@ -1152,6 +1223,9 @@ impl Shared {
     pub fn dispose_snes(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Snes)
     }
+    pub fn dispose_spc(&self, id: u64) -> Result<(), String> {
+        self.dispose_kind(id, Kind::Spc)
+    }
     pub fn dispose_gameboy(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Gameboy)
     }
@@ -1245,6 +1319,9 @@ impl Renderer {
             if let Core::Snes(core) = instance.callback_core() {
                 core.set_frame(frame);
             }
+            if let Core::Spc(core) = instance.callback_core() {
+                core.set_frame(frame);
+            }
         }
         self.install(instance);
     }
@@ -1313,6 +1390,9 @@ impl Renderer {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Snes(core), State::Snes(state)) => {
+                                core.cancel_invalid(&valid, state)
+                            }
+                            (Core::Spc(core), State::Spc(state)) => {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Gameboy(core), State::Gameboy(state)) => {
@@ -1564,6 +1644,23 @@ impl Renderer {
             }
         }
     }
+    pub fn apply_spc(
+        &mut self,
+        instance: &Instance,
+        command: &Arc<extra_spc::Prepared>,
+        owner: Option<Owner>,
+        frame: u64,
+    ) {
+        unsafe {
+            match (instance.callback_core(), &instance.state) {
+                (Core::Spc(core), State::Spc(state)) => {
+                    core.set_frame(frame);
+                    core.apply(command, owner, state)
+                }
+                _ => unreachable!("Additional SPC target"),
+            }
+        }
+    }
     pub fn apply_gameboy(
         &mut self,
         instance: &Instance,
@@ -1621,6 +1718,7 @@ impl Renderer {
                     (Core::Dx7(core), _) => core.mix(pcm),
                     (Core::Pwm(core), State::Pwm(state)) => core.mix_additional(pcm, state),
                     (Core::Snes(core), State::Snes(state)) => core.mix_additional(pcm, state),
+                    (Core::Spc(core), State::Spc(state)) => core.mix_additional(pcm, state),
                     (Core::Nes(core), _) => core.mix(pcm),
                     (Core::Ym3812(core), _) => core.mix(pcm),
                     (Core::Ym3526(core), _) => core.mix(pcm),

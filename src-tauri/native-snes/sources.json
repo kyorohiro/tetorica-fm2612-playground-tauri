@@ -2,7 +2,7 @@
   "source": "hello_ymfm/third_party/snes-spc",
   "revision": "ec8ee2bbe30451614c1d02a83f7af1c97d497d45",
   "license": "LGPL-2.1-or-later",
-  "adaptation": "Accurate SPC_DSP, local output mute/RAM wrap/read tracking changes retained verbatim; no SPC700 CPU or ROM.",
+  "adaptation": "Accurate SPC_DSP and full SPC700 file player, local output mute/RAM wrap/read tracking/DSP observer changes retained verbatim; no IPL ROM data.",
   "files": {
     "third_party/snes-spc/LICENSE": {
       "snapshot": "snapshot/third_party/snes-spc/LICENSE",
@@ -129,6 +129,21 @@
     "src-tauri/src/native_genesis_snes_fixture.cpp": {
       "snapshot": "snapshot/application/src-tauri/src/native_genesis_snes_fixture.cpp",
       "sha256": "37a61a69a0bd1022fc20841d062b00e95ec121a9fbad238ac9c00304845db5a5",
+      "origin": "application"
+    },
+    "src-tauri/src/native_genesis_spc.cpp": {
+      "snapshot": "snapshot/application/src-tauri/src/native_genesis_spc.cpp",
+      "sha256": "628a59f9d01ca3d19296dab87fc7f654b4adb444930241e30b7f19d466f77693",
+      "origin": "application"
+    },
+    "src-tauri/src/native_genesis_spc.h": {
+      "snapshot": "snapshot/application/src-tauri/src/native_genesis_spc.h",
+      "sha256": "ae6e729b76db5c8b7f51a5fab3fea84a3c7d63fcae470a6d0b7a0ec525819663",
+      "origin": "application"
+    },
+    "src-tauri/src/native_genesis_spc_fixture.cpp": {
+      "snapshot": "snapshot/application/src-tauri/src/native_genesis_spc_fixture.cpp",
+      "sha256": "2e36e829e90844f2b1c53a08f475cbcb0610798fe008625c49a7ef5d8e68620d",
       "origin": "application"
     }
   }

@@ -45,7 +45,9 @@ def main():
         path.write_bytes(data)
         files[name] = {'snapshot': relative, 'sha256': digest(data)}
     for name in ['src-tauri/src/native_genesis_snes.cpp', 'src-tauri/src/native_genesis_snes.h',
-                 'src-tauri/src/native_genesis_snes_fixture.cpp']:
+                 'src-tauri/src/native_genesis_snes_fixture.cpp',
+                 'src-tauri/src/native_genesis_spc.cpp', 'src-tauri/src/native_genesis_spc.h',
+                 'src-tauri/src/native_genesis_spc_fixture.cpp']:
         data = (repository / name).read_bytes()
         relative = 'snapshot/application/' + name
         path = destination / relative
@@ -55,7 +57,7 @@ def main():
     (destination / 'LICENSE').write_bytes((source / 'third_party/snes-spc/LICENSE').read_bytes())
     manifest_path.write_text(json.dumps({'source': 'hello_ymfm/third_party/snes-spc',
         'revision': 'ec8ee2bbe30451614c1d02a83f7af1c97d497d45', 'license': 'LGPL-2.1-or-later',
-        'adaptation': 'Accurate SPC_DSP, local output mute/RAM wrap/read tracking changes retained verbatim; no SPC700 CPU or ROM.',
+        'adaptation': 'Accurate SPC_DSP and full SPC700 file player, local output mute/RAM wrap/read tracking/DSP observer changes retained verbatim; no IPL ROM data.',
         'files': files}, indent=2) + '\n')
     print(f'Native SNES synchronized ({len(files)} exact source files)')
 
