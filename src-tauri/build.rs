@@ -50,6 +50,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_msx.h");
     println!("cargo:rerun-if-changed=native-opl");
     println!("cargo:rerun-if-changed=src/native_genesis_opl.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_extra_okim6258.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_extra_okim6258.h");
     println!("cargo:rerun-if-changed=src/native_genesis_extra_rf5c164.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_extra_rf5c164.h");
     println!("cargo:rerun-if-changed=src/native_genesis_extra_opl.cpp");
@@ -129,6 +131,7 @@ fn main() {
         .include("native-x68000/snapshot/third_party/mame-okim6258")
         .include("native-genesis")
         .file("src/native_genesis_x68000.cpp")
+        .file("src/native_genesis_extra_okim6258.cpp")
         .file("src/native_genesis_ym2151.cpp")
         .file("native-x68000/snapshot/src/ymfm_opm.cpp")
         .file("native-x68000/okim6258.cpp")

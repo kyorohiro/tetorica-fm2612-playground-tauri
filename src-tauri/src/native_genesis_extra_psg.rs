@@ -1,8 +1,8 @@
 //! Independent sound-chip instances (PSG, YM2612 and YM2203). Cores are allocated and finally destroyed on the
 //! control thread; the device callback owns their exclusive mutable access.
 use super::{
-    extra_budget, extra_msx, extra_opl, extra_rf5c164, extra_ym2151, extra_ym2608, extra_ym2610,
-    master_system, ym2203, ym2612, Owner, MAX_SAFE_INTEGER,
+    extra_budget, extra_msx, extra_okim6258, extra_opl, extra_rf5c164, extra_ym2151, extra_ym2608,
+    extra_ym2610, master_system, ym2203, ym2612, Owner, MAX_SAFE_INTEGER,
 };
 use std::{
     cell::UnsafeCell,
@@ -36,6 +36,7 @@ pub enum State {
     Y8950(extra_opl::Shared),
     Ymf262(extra_opl::Shared),
     Rf5c164(extra_rf5c164::Shared),
+    Okim6258(extra_okim6258::Shared),
     Ym3812(extra_opl::Shared),
     Ym3526(extra_opl::Shared),
     Ym2413(extra_msx::Shared),
@@ -52,6 +53,7 @@ enum Kind {
     Y8950,
     Ymf262,
     Rf5c164,
+    Okim6258,
     Ym3812,
     Ym3526,
     Ym2413,
@@ -67,6 +69,7 @@ enum Core {
     Y8950(extra_opl::Renderer),
     Ymf262(extra_opl::Renderer),
     Rf5c164(extra_rf5c164::Renderer),
+    Okim6258(extra_okim6258::Renderer),
     Ym3812(extra_opl::Renderer),
     Ym3526(extra_opl::Renderer),
     Ym2413(extra_msx::Renderer),
@@ -197,6 +200,13 @@ impl Instance {
             Err("Additional instance is not a RF5C164".into())
         }
     }
+    pub fn okim6258(&self) -> Result<&extra_okim6258::Shared, String> {
+        if let State::Okim6258(state) = &self.state {
+            Ok(state)
+        } else {
+            Err("Additional instance is not a OKIM6258".into())
+        }
+    }
     fn kind(&self) -> Kind {
         match self.state {
             State::Psg(_) => Kind::Psg,
@@ -209,6 +219,7 @@ impl Instance {
             State::Y8950(_) => Kind::Y8950,
             State::Ymf262(_) => Kind::Ymf262,
             State::Rf5c164(_) => Kind::Rf5c164,
+            State::Okim6258(_) => Kind::Okim6258,
             State::Ym3812(_) => Kind::Ym3812,
             State::Ym3526(_) => Kind::Ym3526,
             State::Ym2413(_) => Kind::Ym2413,
@@ -232,6 +243,7 @@ pub enum Payload {
     Y8950(Arc<extra_opl::Prepared>),
     Ymf262(Arc<extra_opl::Prepared>),
     Rf5c164(Arc<extra_rf5c164::Prepared>),
+    Okim6258(Arc<extra_okim6258::Prepared>),
     Ym3812(Arc<extra_opl::Prepared>),
     Ym3526(Arc<extra_opl::Prepared>),
     Ym2413(Arc<extra_msx::Prepared>),
@@ -249,6 +261,7 @@ impl Payload {
             Self::Y8950(v) => v.retained_bytes(),
             Self::Ymf262(v) => v.retained_bytes(),
             Self::Rf5c164(v) => v.retained_bytes(),
+            Self::Okim6258(v) => v.retained_bytes(),
             Self::Ym3812(v) => v.retained_bytes(),
             Self::Ym3526(v) => v.retained_bytes(),
             Self::Ym2413(v) => v.retained_bytes(),
@@ -266,6 +279,7 @@ impl Payload {
             Self::Y8950(v) => Arc::strong_count(v) == 1,
             Self::Ymf262(v) => Arc::strong_count(v) == 1,
             Self::Rf5c164(v) => Arc::strong_count(v) == 1,
+            Self::Okim6258(v) => Arc::strong_count(v) == 1,
             Self::Ym3812(v) => Arc::strong_count(v) == 1,
             Self::Ym3526(v) => Arc::strong_count(v) == 1,
             Self::Ym2413(v) => Arc::strong_count(v) == 1,
@@ -301,6 +315,7 @@ impl Shared {
                 State::Y8950(s) => s.collect_retired(),
                 State::Ymf262(s) => s.collect_retired(),
                 State::Rf5c164(s) => s.collect_retired(),
+                State::Okim6258(s) => s.collect_retired(),
                 State::Ym3812(s) => s.collect_retired(),
                 State::Ym3526(s) => s.collect_retired(),
                 State::Ym2413(s) => s.collect_retired(),
@@ -411,6 +426,15 @@ impl Shared {
         clock: Option<u32>,
     ) -> Result<Arc<Instance>, String> {
         self.create_kind(id, epoch, rate, clock, Kind::Rf5c164)
+    }
+    pub fn create_okim6258(
+        &self,
+        id: u64,
+        epoch: u64,
+        rate: u32,
+        clock: Option<u32>,
+    ) -> Result<Arc<Instance>, String> {
+        self.create_kind(id, epoch, rate, clock, Kind::Okim6258)
     }
     pub fn create_y8950(
         &self,
@@ -539,6 +563,24 @@ impl Shared {
             }
             core.publish(&state);
             (State::Rf5c164(state), Core::Rf5c164(core))
+        } else if kind == Kind::Okim6258 {
+            if let Some(hz) = clock {
+                extra_okim6258::validate_clock(hz, rate)?;
+            }
+            let state = extra_okim6258::Shared::default();
+            let mut core = extra_okim6258::Renderer::new(rate)?;
+            if let Some(hz) = clock {
+                let cmd = extra_okim6258::Message {
+                    id: None,
+                    audition: false,
+                    group: None,
+                    method: extra_okim6258::Method::Clock { hz },
+                }
+                .prepare()?;
+                core.apply(&cmd, None, &state);
+            }
+            core.publish(&state);
+            (State::Okim6258(state), Core::Okim6258(core))
         } else if kind == Kind::Ymf262 {
             let chip = extra_opl::Chip::Ymf262;
             let state = extra_opl::Shared::new(chip);
@@ -772,6 +814,9 @@ impl Shared {
     pub fn dispose_rf5c164(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Rf5c164)
     }
+    pub fn dispose_okim6258(&self, id: u64) -> Result<(), String> {
+        self.dispose_kind(id, Kind::Okim6258)
+    }
     pub fn dispose_y8950(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Y8950)
     }
@@ -886,6 +931,9 @@ impl Renderer {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Rf5c164(core), State::Rf5c164(state)) => {
+                                core.cancel_invalid(&valid, state)
+                            }
+                            (Core::Okim6258(core), State::Okim6258(state)) => {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Ym3812(core), State::Ym3812(state)) => {
@@ -1058,6 +1106,19 @@ impl Renderer {
             }
         }
     }
+    pub fn apply_okim6258(
+        &mut self,
+        instance: &Instance,
+        command: &Arc<extra_okim6258::Prepared>,
+        owner: Option<Owner>,
+    ) {
+        unsafe {
+            match (instance.callback_core(), &instance.state) {
+                (Core::Okim6258(core), State::Okim6258(state)) => core.apply(command, owner, state),
+                _ => unreachable!("Additional OKIM6258 target"),
+            }
+        }
+    }
     pub fn apply_y8950(
         &mut self,
         instance: &Instance,
@@ -1083,6 +1144,7 @@ impl Renderer {
                     (Core::Y8950(core), _) => core.mix(pcm),
                     (Core::Ymf262(core), _) => core.mix(pcm),
                     (Core::Rf5c164(core), _) => core.mix(pcm),
+                    (Core::Okim6258(core), _) => core.mix(pcm),
                     (Core::Ym3812(core), _) => core.mix(pcm),
                     (Core::Ym3526(core), _) => core.mix(pcm),
                     (Core::Ym2413(core), _) => core.mix(pcm),
