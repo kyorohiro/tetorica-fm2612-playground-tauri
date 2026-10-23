@@ -35,15 +35,15 @@ cases.push({name:'reset-mid-note',frames:8192,events:[...base,...wave(0,1980),..
 let seed=0x1842;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed;};
 const raw=[...base];for(let i=0;i<300;i++){const address=random()%48,value=random()&255;raw.push(W(1+i*23,address,address===22?128:value));}
 cases.push({name:'deterministic-raw-writes',frames:8192,events:raw});
-const report={date:'2026-10-22',reference:'existing docs/generated/gameboy_apu_wasm.wasm',deviceOpened:false,selfTest:JSON.parse(self.stderr),cases:[],maximumDifference:0,stereoFrames:0};
+const report={date:new Date().toISOString().slice(0,10),reference:'existing docs/generated/gameboy_apu_wasm.wasm; outer clock resampler activated lazily as in the shipped Worklet',deviceOpened:false,selfTest:JSON.parse(self.stderr),cases:[],maximumDifference:0,stereoFrames:0};
 for(const rate of [44100,48000,96000])for(const test of cases){
   const events=test.events.slice().sort((a,b)=>a.frame-b.frame),input=events.map(e=>`${e.frame} ${e.op} ${e.address} ${e.value}`).join('\n')+'\n';
   const native=spawnSync(executable,[String(rate),String(test.frames)],{input,maxBuffer:32*1024*1024});if(native.status!==0)throw new Error(`${test.name}: ${native.stderr}`);
   const pcm=new Float32Array(native.stdout.buffer,native.stdout.byteOffset,native.stdout.byteLength/4);
   const chip=await GameboyApu.create({moduleFactory:factory,moduleOptions:{wasmBinary},sampleRate:rate});
-  const resampler=new ChipClockResampler();let frame=0,index=0,max=0;
-  try{while(frame<test.frames){while(index<events.length&&events[index].frame===frame){const e=events[index++];if(e.op==='write')chip.writeRegister(e.address,e.value);else if(e.op==='clock')resampler.setClock(e.value,4194304);else if(e.op==='reset'){chip.reset();resampler.resetPhase();}}
-    const end=Math.min(test.frames,events[index]?.frame??test.frames,frame+257),left=new Float32Array(end-frame),right=new Float32Array(end-frame);resampler.render(chip,left,right);
+  let resampler=null,frame=0,index=0,max=0;
+  try{while(frame<test.frames){while(index<events.length&&events[index].frame===frame){const e=events[index++];if(e.op==='write')chip.writeRegister(e.address,e.value);else if(e.op==='clock')(resampler??=new ChipClockResampler()).setClock(e.value,4194304);else if(e.op==='reset'){chip.reset();resampler?.resetPhase();}}
+    const end=Math.min(test.frames,events[index]?.frame??test.frames,frame+257),left=new Float32Array(end-frame),right=new Float32Array(end-frame);if(resampler)resampler.render(chip,left,right);else{const pcm=chip.generateStereo(left.length);left.set(pcm.left);right.set(pcm.right);}
     for(let i=0;i<left.length;i++){max=Math.max(max,Math.abs(left[i]-pcm[(frame+i)*2]),Math.abs(right[i]-pcm[(frame+i)*2+1]));}
     frame=end;
   }}finally{chip.dispose();}

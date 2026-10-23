@@ -19,6 +19,7 @@ struct CoreState {
     registers: [u8; 48],
     active_mask: u32,
     clock: u32,
+    source_mute_mask: u32,
 }
 impl Default for CoreState {
     fn default() -> Self {
@@ -26,6 +27,7 @@ impl Default for CoreState {
             registers: [0; 48],
             active_mask: 0,
             clock: CLOCK,
+            source_mute_mask: 0,
         }
     }
 }

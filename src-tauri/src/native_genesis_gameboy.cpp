@@ -11,6 +11,7 @@ constexpr uint32_t BASE_CLOCK = 4194304;
 struct NativeGameboy {
     GameboyApu chip;
     uint32_t clock = BASE_CLOCK;
+    bool clockResamplerActive = false;
     double ratio = 1.0, remainder = 0.0;
     float left = 0.0f, right = 0.0f;
     explicit NativeGameboy(uint32_t rate) : chip(rate, BASE_CLOCK) {}
@@ -49,6 +50,7 @@ struct NativeGameboyAccess {
         out.registers[22] = (chip.powerOn ? 0x80 : 0) | out.active_mask;
         for (int index = 0; index < 16; ++index) out.registers[32 + index] = chip.waveRam[index];
         out.clock = native.clock;
+        out.source_mute_mask = chip.mute_mask;
     }
 };
 
@@ -79,9 +81,20 @@ void native_gameboy_write(void *ptr, uint8_t address, uint8_t value) {
 int native_gameboy_set_clock(void *ptr, uint32_t hz) {
     if (hz < 100000 || hz > 100000000) return 0;
     auto &native = *static_cast<NativeGameboy *>(ptr);
+    // The Browser Worklet creates its outer resampler at the first accepted
+    // clock edit. In particular, its first sub-base-clock held frame is zero.
+    // Later edits preserve the existing fractional phase and held sample.
+    if (!native.clockResamplerActive) {
+        native.clockResamplerActive = true;
+        native.remainder = 0;
+        native.left = native.right = 0;
+    }
     native.clock = hz;
     native.ratio = double(hz) / double(BASE_CLOCK);
     return 1;
+}
+void native_gameboy_set_mute_mask(void *ptr, uint32_t mask) {
+    static_cast<NativeGameboy *>(ptr)->chip.set_mute_mask(mask);
 }
 void native_gameboy_sample(void *ptr, float *left, float *right) {
     auto &native = *static_cast<NativeGameboy *>(ptr);
