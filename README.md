@@ -45,14 +45,14 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 
 ## Native音源SDK
 
-YM2612とYM2203は、自己完結した`tetorica-soundchip-native`のソース配布を
+YM2612、YM2203、YM2608は、自己完結した`tetorica-soundchip-native`のソース配布を
 `src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
 取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
 `python3 scripts/import_soundchip_sdk.py --check`で同梱ファイルを照合できます。
 SDKのcheckout、submodule、ビルド時の音源ソース取得は不要です。
 
-SDKから使うのはYM2612の既存低レベル接続、PC-98／追加生成のYM2203接続と共有OPN providerです。
-YM2203も既に固定しているSDK `0.1.0`を使い、共通providerは一度だけ組み込みます。
+SDKから使うのはYM2612の既存低レベル接続、PC-98／追加生成のYM2203・YM2608接続と共有OPN providerです。
+既に固定しているSDK `0.1.0`を使い、共通providerは一度だけ組み込みます。
 PSG、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
 他の音源は従来の同梱スナップショットを使います。
 固定した版と更新手順、共有providerの範囲は[Native SDKの取り込み](docs/native-sdk-ym2612.md)を参照してください。
@@ -115,8 +115,9 @@ FM 6CH・SSG 3CH・リズム6音・ADPCM-Bを、`fm`／`ssg`／`rhythm`／`adpcm
 PC98サンプラー、共通FX／liveFx／monitor／録音へ接続します。
 標準clockはWeb版と同じ8 MHzで、`await fm.setClock(hz)`で変更できます。
 Stopは発音と予約を止め、音色・clock・8 KiBリズムROM／2 MiB ADPCM-B RAMを保持します。
-適用済みの状態取得は非同期です。追加音源やtimeline専用再生APIはWeb Audioを使ってください。
-原典・ハッシュは`src-tauri/native-ym2608/`に保存し、OPN／SSG／ADPCMのproviderは同梱SDKと共有します。
+適用済みの状態取得は非同期です。`createSoundChip('ym2608')`で独立した追加音源も使えます。
+Native接続と共有OPN／SSG／ADPCMは同梱SDKからビルドします。
+Browser比較用の原典・ハッシュと、Rustが読み込むリズムROM素材は`src-tauri/native-ym2608/`に保持します。
 
 Neo GeoではYM2610（FM 4CH）、Neo Geo（YM2610B）では6CH版をNativeで生成します。
 両方ともSSG・ADPCM-A 6声・ADPCM-Bに対応し、A/Bそれぞれに16 MiBの独立したROM領域を持ちます。
@@ -281,7 +282,7 @@ cargo test --offline --locked --manifest-path src-tauri/Cargo.toml native_genesi
 ```
 
 C++のスナップショットは各`src-tauri/native-*/`と同梱SDKに由来・ハッシュを記録しています。
-YM2612／YM2203の更新は[SDKの取り込み手順](docs/native-sdk-ym2612.md)で行い、
+YM2612／YM2203／YM2608の更新は[SDKの取り込み手順](docs/native-sdk-ym2612.md)で行い、
 `sync_native_genesis.py`は残している従来スナップショットの照合・更新に使います。
 共有UI／Runtimeの変更は上流のPlayground ZIPを通常のimport手順で取り込みます。
 

@@ -30,9 +30,10 @@ fn main() {
     println!("cargo:rerun-if-changed=native-livefx");
     println!("cargo:rerun-if-changed=src/native_genesis_livefx.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_livefx.h");
+    // Rust still embeds the selected/additional rhythm ROM from this snapshot.
     println!("cargo:rerun-if-changed=native-ym2608");
-    println!("cargo:rerun-if-changed=src/native_genesis_ym2608.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_ym2608.h");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2608.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2608.h");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2203.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2203.h");
     println!("cargo:rerun-if-changed=native-ym2610b");
@@ -171,15 +172,16 @@ fn main() {
         .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2203.cpp")
         .warnings(false)
         .compile("tetorica_native_ym2203");
-    // GNU ld scans archives in order; the PC-98 wrapper references the shared
-    // ymfm provider below, which must be linked after this wrapper.
+    // Selected PC-98 and independent additional YM2608 use the pinned SDK
+    // wrapper. GNU ld requires the shared ymfm provider after this consumer.
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
-        .include("native-genesis")
-        .file("src/native_genesis_ym2608.cpp")
+        .include("vendor/tetorica-soundchip-native/vendor/ymfm")
+        .include("vendor/tetorica-soundchip-native/wasm")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2608.cpp")
         .warnings(false)
         .compile("tetorica_native_ym2608");
     // Keep the application's Genesis mixing, DC centering, gains and Sega PSG

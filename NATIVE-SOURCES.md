@@ -9,13 +9,15 @@ records their SHA-256 hashes and the frontend release archive hash.
 The complete pinned `tetorica-soundchip-native` source distribution is included
 under `src-tauri/vendor/tetorica-soundchip-native/`, together with the separate
 import receipt `src-tauri/soundchip-sdk.json`. Its source manifests, provenance,
-licenses and notices are preserved. YM2612, the selected/additional YM2203 adapter
-and the shared OPN/SSG/ADPCM provider build from that snapshot; the other
+licenses and notices are preserved. YM2612, the selected/additional YM2203 and
+YM2608 adapters, and the shared OPN/SSG/ADPCM provider build from that snapshot; the other
 application adapters retain their existing source snapshots. The
 [SDK adoption guide](docs/native-sdk-ym2612.md) lists the
 consumed paths, pinned archive hash and deliberate offline update procedure.
 A separate SDK checkout or sound-core download is not required to rebuild this
 application from its matching source ZIP.
+YM2608's project rhythm ROM remains under `src-tauri/native-ym2608/snapshot/web/`
+and is uploaded by the Rust host; adopting the SDK adapter does not move that asset.
 
 Nuked OPN2 and SNES-SPC are **LGPL-2.1-or-later**. Their licenses, copyright
 notices, provenance and corresponding modified sources are under

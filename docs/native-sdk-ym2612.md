@@ -1,9 +1,9 @@
-# Native SDKの取り込み — YM2612／YM2203
+# Native SDKの取り込み — YM2612／YM2203／YM2608
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
-YM2612とYM2203をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
+YM2612、YM2203、YM2608をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
-この手順書は最初のYM2612移行時のファイル名を保持し、その後のYM2203移行も記録しています。
+この手順書は最初のYM2612移行時のファイル名を保持し、その後のYM2203／YM2608移行も記録しています。
 
 ## 固定した配布物
 
@@ -37,6 +37,7 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | Genesis主音源のYM2612接続 | `wasm/ym2612_wasm.cpp` |
 | `createSoundChip('ym2612')`の独立Native接続 | `native/reference/tauri/native_genesis_ym2612.cpp` |
 | PC-98（YM2203）と`createSoundChip('ym2203')`のNative接続 | `native/reference/tauri/native_genesis_ym2203.cpp` |
+| PC-98（YM2608）と`createSoundChip('ym2608')`のNative接続 | `native/reference/tauri/native_genesis_ym2608.cpp` |
 | 共有OPN provider | `native/src/ymfm_opn_provider.cpp` |
 | 共有SSG／ADPCM実装 | `vendor/ymfm/ymfm_ssg.cpp`、`vendor/ymfm/ymfm_adpcm.cpp` |
 
@@ -44,12 +45,12 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 SDKのOPN providerがymfmのOPN実装と明示的なテンプレート実体化を一度だけ提供します。
 従来のOPN providerと重複してリンクしません。
 
-YM2203は選択中のPC-98音源と追加生成の両方で、同じSDK側のNative接続を使います。
+YM2203とYM2608は、それぞれ選択中のPC-98音源と追加生成の両方で、同じSDK側のNative接続を使います。
 既に同梱済みのSDK `0.1.0`へビルド参照を切り替えるため、SDK配布物や固定値は更新しません。
 共有OPN／SSG／ADPCMはYM2612移行時からSDK側のものを一度だけ組み込んでおり、
-YM2203用にもう一つ追加しません。既存のarchive順序を維持します。
+個別の移行用にもう一つ追加しません。既存のarchive順序を維持します。
 
-YM2608／YM2610等の既存アプリ接続も同じproviderを参照します。
+YM2610等の既存アプリ接続も同じproviderを参照します。
 共通ADPCM実装は既存のOPM／OPL側からも参照します。
 それらの音源接続までSDKへ移したという意味ではありません。
 従来providerとSDK側ソースの同一性を確認し、共有ライブラリーの依存順序を保持します。
@@ -58,12 +59,20 @@ Genesisのgain、DC除去、PSG混合と出力レート変換は`src-tauri/src/n
 Rustの予約、owner、音源ラックと予算管理、CPAL、ミキサー、FX／liveFx、録音、WebViewとJS APIも
 アプリ側の担当です。YM2203のFM／SSG制御、Stop、レート変換も既存の接続動作を引き継ぎ、
 Rust側の予約・owner・追加生成の管理やJS APIを変更しません。
-Sega PSGと、YM2612／YM2203以外の音源の接続とソースは従来の同梱スナップショットを使います。
+
+YM2608のSDK接続は、各インスタンスに8 KiBのリズムROM領域と2 MiBのADPCM-B RAMを確保します。
+リズムROMの素材はTauri側の`src-tauri/native-ym2608/snapshot/web/tetorica_ym2608_adpcm_rom.bin`を
+Rustの選択中音源／追加音源が引き続き読み込み、Native接続へアップロードします。素材の参照先はSDKへ移しません。
+サンプルの準備・転送予約・メモリー予算と寿命管理はホスト側に残り、既存のStop／resetとレート変換を引き継ぎます。
+
+Sega PSGと、YM2612／YM2203／YM2608以外の音源の接続とソースは従来の同梱スナップショットを使います。
 ブラウザー／npmのWASM配布やPlaygroundの`dist/`は、このSDK取り込みで更新しません。
 
 従来の`src-tauri/src/native_genesis_ym2203.cpp`／`.h`と`src-tauri/native-ym2203/`は、
 由来やBrowser比較用の固定記録として保持します。実際のコンパイル対象は`src-tauri/build.rs`で確認してください。
 従来コピーの編集や`sync_native_ym2203.py`の実行だけでは、SDK側のNative接続は更新されません。
+YM2608も従来の`src-tauri/src/native_genesis_ym2608.cpp`／`.h`と`src-tauri/native-ym2608/`を保持します。
+Browser比較用のコピーや`sync_native_ym2608.py`の更新と、実際にコンパイルするSDK接続の更新は別です。
 
 ## 照合と更新
 
@@ -109,13 +118,15 @@ node scripts/check_native_extra_stability.mjs --out=native-validation/extra-stab
 node scripts/check_native_genesis_core.mjs /path/to/hello_ymfm --seconds=60 --out=native-validation/web-native.json
 ```
 
-YM2203の選択中音源／追加音源の比較は、Browser／WASM側の`hello_ymfm`ルートで実行します。
+YM2203／YM2608の選択中音源／追加音源の比較は、Browser／WASM側の`hello_ymfm`ルートで実行します。
 既定のビルドはTauriへ同梱したSDKの接続実装と共有providerを使用し、旧コピーをコンパイルしません。
 
 ```sh
 cd /path/to/hello_ymfm
 node scripts/check_native_ym2203.mjs
 node scripts/check_native_extra_ym2203.mjs
+node scripts/check_native_ym2608.mjs
+node scripts/check_native_extra_ym2608.mjs
 ```
 
 一致試験はデバイスを開かない生成結果の検証です。各OSのインストーラーや実機での音声出力は
@@ -151,4 +162,20 @@ macOSで次を確認しました。
 
 このYM2203移行はWindows／Linuxの新しいCIや実機の音声出力では未確認です。
 先のYM2612移行の5環境CIとは対象コミットを分け、OS間のPCM一致や聴感上のノイズ改善まで
+確認済みとは扱いません。
+
+## YM2608移行の検証
+
+今回のYM2608参照切替は、macOS ARM64／Clangで次を確認しました。音声デバイスは開いていません。
+
+- 接続実装・ヘッダーと推移依存を含む9入力が旧コピーと同一。SDK全374ファイルのオフライン照合も成功し、固定版は変更なし。
+- 旧接続とSDK接続を別々にコンパイルし、同じ命令列を実WASMとも比較。選択中音源は30ケース・184,320フレームで左右PCMが一致。追加音源は252ケース・1,585,152フレームで左右PCM、status、statusHi、IRQ、4種類のread結果が一致。どちらも旧接続とSDK接続はbyte一致、WASMとの差分は0。
+- 合計は重複を除いて282ケース・1,769,472フレーム。既定の選択中／追加音源checkerも実SDKからビルドして成功し、使用した5つのC++ソースのハッシュを記録した。この再実行分は合計に加えていない。
+- 別のNative間比較6ケース・49,152フレームで、524／536バイトの両state形式全体、PCMとread結果、各観測でRAMの3箇所・合計96バイトが旧接続とSDK接続で一致。RAM全領域のdumpや、WASMとの全state比較ではない。
+- 拡張fixtureでROM／RAMの所有・境界・保持、両profileのreset、Stop／再発音、他ボイスの継続、callback中の割当て／解放0を確認。
+- `cargo test --locked --offline`が723件成功、明示実行用4件ignored。
+- 22 modeの604,032フレーム、88回のRun／Stop遷移が成功。3混合構成、7単独音源、追加生成の受入れと台数制限の試験も成功。
+
+このYM2608移行はWindows／Linuxの新しいCIや実機での音声出力では未確認です。
+以前の移行のCI結果とは対象コミットを分け、OS間のPCM一致や聴感上のノイズ改善まで
 確認済みとは扱いません。
