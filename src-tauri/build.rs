@@ -82,16 +82,15 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_ay8910.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_ay8910.h");
     println!("cargo:rerun-if-changed=src/native_genesis_msx.h");
-    println!("cargo:rerun-if-changed=native-opl");
-    println!("cargo:rerun-if-changed=src/native_genesis_opl.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_opl.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_okim6258.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_okim6258.h");
     println!("cargo:rerun-if-changed=src/native_genesis_extra_rf5c164.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_extra_rf5c164.h");
-    println!("cargo:rerun-if-changed=src/native_genesis_extra_opl.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_extra_opl.h");
-    println!("cargo:rerun-if-changed=src/native_genesis_opl.h");
-    println!("cargo:rerun-if-changed=src/native_genesis_y8950_memory.h");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_opl.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_opl.h");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_opl.h");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_y8950_memory.h");
     // Both the independent YM2612 and primary Genesis YM2612 now consume SDK
     // sources. Their common ymfm provider is compiled only once below.
     cc::Build::new()
@@ -114,8 +113,9 @@ fn main() {
         .file("src/native_genesis_game_gear.cpp")
         .warnings(false)
         .compile("tetorica_native_game_gear");
-    // The selected DOS OPL core references the same ymfm OPL/PCM provider as
-    // Master System and MSX. Compile it once and keep consumers first on GNU ld.
+    // Selected DOS/MSX Audio and additional OPL adapters use the pinned SDK.
+    // Their shared OPL/PCM provider follows with Master System/MSX on GNU ld;
+    // RF5C164 keeps its application-owned adapter in this archive.
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
@@ -124,8 +124,10 @@ fn main() {
         .include("vendor/tetorica-soundchip-native/vendor/ymfm")
         .include("vendor/tetorica-soundchip-native/wasm")
         .include("native-genesis")
-        .file("src/native_genesis_opl.cpp")
-        .file("src/native_genesis_extra_opl.cpp")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_opl.cpp")
+        .file(
+            "vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_opl.cpp",
+        )
         .file("src/native_genesis_extra_rf5c164.cpp")
         .warnings(false)
         .compile("tetorica_native_opl");

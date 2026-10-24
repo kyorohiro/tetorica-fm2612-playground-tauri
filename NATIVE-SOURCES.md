@@ -20,8 +20,12 @@ The generation recipe is in `src-tauri/build.rs` and needs no Python/CMake step.
 X68000's machine adapter, sample ownership and mixing remain in Tauri; its
 FM uses the SDK OPM provider and its OKI shares the generated decoder.
 The independent YM2413 adapter and common OPL/PCM provider also use the SDK.
-Master System/MSX machine adapters and their `NativeOpllCore` helper, Sega PSG,
-AY, and OPL/Y8950 application wrappers remain local; shared OPL/PCM is compiled
+Selected and independent YM3526/YM3812/YMF262/Y8950 adapters and their Y8950
+memory helper now also use the SDK. Y8950 borrows mutable 4 KiB RAM pages owned
+by Rust; ownership, lifetime, control-side copy-on-write, scheduling and budgets
+remain application responsibilities. Master System/MSX machine adapters and
+their `NativeOpllCore` helper, Sega PSG, AY and the RF5C164 adapter remain local;
+shared OPL/PCM is compiled
 once with the existing archive order and common ADPCM support.
 Other application adapters retain their existing
 source snapshots. The

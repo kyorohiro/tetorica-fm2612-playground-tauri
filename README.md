@@ -45,7 +45,8 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 
 ## Native音源SDK
 
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413は、自己完結した`tetorica-soundchip-native`のソース配布を
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413とOPL系4種類
+（YM3526／YM3812／YMF262／Y8950）は、自己完結した`tetorica-soundchip-native`のソース配布を
 `src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
 取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
 `python3 scripts/import_soundchip_sdk.py --check`で同梱ファイルを照合できます。
@@ -57,6 +58,7 @@ YM2151の追加生成用接続と共通OPM provider、OKIM6258の共有decoder�
 OKI decoderは既存のスレッド安全な初期化を保持するため、SDKソースからCargoの出力先へ生成してコンパイルします。
 X68000の機種用接続とサンプルの管理はTauri側に残ります。
 YM2413の追加生成用接続と共有OPL／PCM providerもSDKを使い、Master System／MSXの機種用接続とOPLL補助処理はTauri側に残ります。
+DOS PC／MSX Audioの選択中OPL系接続と、4種類の独立追加接続もSDKを使います。Y8950のRAMページの所有と予約・予算管理はRust側に残ります。
 既に固定しているSDK `0.1.0`を使い、共通providerは一度だけ組み込みます。
 PSG、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
 他の音源は従来の同梱スナップショットを使います。
@@ -165,7 +167,8 @@ YM2413はMaster Systemと共通の実装を使い、由来・ハッシュ・AY�
 MSX Audioでは既存MSX構成にY8950（3,579,545 Hz）のFM 9CH／リズムを加えます。
 `opl`＝Y8950、`opll`＝YM2413、`ay`＝AY-3-8910として、Main／Worker、Keyboard／音源タブを使います。
 3音源の音量とclockは独立し、Stopは全体を止めて音色・clock・AYの音量／envelope設定を保持します。
-Y8950は現行Playgroundと同じFM／リズムを対象とし、ADPCMメモリーAPIは追加していません。
+Y8950の既存ADPCM-B RAMはRustが保持する可変ページを使い、転送とCPUアクセスの動作を維持します。
+Y8950のNative接続は固定SDKからビルドし、素材・RAMの所有や転送予約はTauri側に残ります。
 原典・ハッシュは`src-tauri/native-msx-audio/`に保存しています。
 
 Game GearではSega PSGだけをNative生成し、3 tone＋noiseの4チャンネルと左右独立のステレオマスクを使います。
@@ -178,6 +181,7 @@ DOS PCではYM3526／YM3812（3,579,545 Hz）またはYMF262（14,318,180 Hz）�
 OPL／OPL2はモノラル、OPL3は左右出力を使います。全モデルでコードと音源タブからリズムを操作できます。
 Stopは音色・clock・LFO・出力設定・4op構成を保持して発音と予約を止め、通常のkeyOffはリリースを残します。
 原典・ハッシュは`src-tauri/native-opl/`に保存し、既存ymfm providerを共有します。
+選択中音源と`createSoundChip()`のOPL系4種類の接続は固定SDKからビルドします。
 
 DX7 modeではMSFAのC++音源を直接使い、16音ポリフォニーで生成します。
 `dx7`／`useSoundChip('dx7')`、音色・SysEx、オペレーター・feedback編集、Keyboard／Operatorsに対応します。
