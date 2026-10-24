@@ -1,9 +1,9 @@
-# Native SDKの取り込み — OPN系／YM2151
+# Native SDKの取り込み — OPN系／YM2151／OKIM6258
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
-この手順書は最初のYM2612移行時のファイル名を保持し、その後のOPN系音源とYM2151の移行も記録しています。
+この手順書は最初のYM2612移行時のファイル名を保持し、その後の音源の移行も記録しています。
 
 ## 固定した配布物
 
@@ -40,6 +40,8 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | PC-98（YM2608）と`createSoundChip('ym2608')`のNative接続 | `native/reference/tauri/native_genesis_ym2608.cpp` |
 | Neo GeoのYM2610／YM2610Bと、それぞれの追加音源のNative接続 | `native/reference/tauri/native_genesis_ym2610b.cpp` |
 | `createSoundChip('ym2151')`の独立Native接続 | `native/reference/tauri/native_genesis_ym2151.cpp` |
+| `createSoundChip('okim6258')`の独立Native接続 | `native/reference/tauri/native_genesis_extra_okim6258.cpp` |
+| X68000と追加OKIに共通のdecoderの生成入力 | `vendor/mame-okim6258/okim6258.cpp`と対応ヘッダー |
 | 共有OPN provider | `native/src/ymfm_opn_provider.cpp` |
 | X68000のFMと追加YM2151に共通のOPM provider | `native/src/ymfm_opm_provider.cpp` |
 | 共有SSG／ADPCM実装 | `vendor/ymfm/ymfm_ssg.cpp`、`vendor/ymfm/ymfm_adpcm.cpp` |
@@ -78,8 +80,18 @@ SDK接続はそのページを借用します。
 ページの所有権・寿命・予算・回収、転送の予約とサンプル素材の準備は引き続きTauri側の担当です。
 既存のROM素材やその読込み元をSDKへ移す変更ではありません。
 
-X68000の機種用接続、OKIM6258のdecoderと追加OKI接続、Rust側のサンプル所有・予約・予算管理、
-音源別の混合はTauri側に残ります。FMのOPM providerと独立YM2151接続を移す変更で、OKIの素材や管理は移しません。
+OKIM6258の追加生成用接続とヘッダーもSDKからビルドし、X68000と追加音源は同じdecoderを共有します。
+ただし固定SDKのraw decoderには、Tauriが従来から持つスレッド安全な初期化がありません。
+`src-tauri/build.rs`がSDKソースから`OUT_DIR/tetorica_sdk_okim6258.cpp`へコンパイル用decoderを生成し、
+constructorのテーブル初期化だけを従来と同じ一度限りの処理へ置き換えます。
+置換の目印が一つだけであることを検査し、一致しなければビルドを失敗させます。
+ADPCMの計算を変えず、固定SDKのバイト列・版も変更しません。新しいPython／CMakeのビルド依存は追加しません。
+生成したdecoderは既存のarchive内で一度だけコンパイルし、SDKのヘッダーを優先して参照します。
+
+X68000の機種用接続、Rust側のサンプル所有・予約・予算管理、音源別の混合はTauri側に残ります。
+選択中音源の2つの16 MiBサンプルバンクも機種用接続に残ります。
+追加OKI接続はサンプルをコピーせず借用し、Rustがその参照の所有・寿命を管理します。
+OKIの素材やサンプル転送の管理をSDKへ移す変更ではありません。
 
 Sega PSGと、上記以外の音源の接続とソースは従来の同梱スナップショットを使います。
 ブラウザー／npmのWASM配布やPlaygroundの`dist/`は、このSDK取り込みで更新しません。
@@ -94,7 +106,11 @@ YM2610／YM2610Bも従来の`src-tauri/src/native_genesis_ym2610b.cpp`／`.h`と
 SDK側の接続は更新されません。
 YM2151も従来の`src-tauri/src/native_genesis_ym2151.cpp`／`.h`とローカルOPM provider、
 `src-tauri/native-x68000/`のBrowserスナップショットを由来の記録として保持します。
-ただし`native-x68000/`には実際に使うOKI実装も残るため、Cargoの監視を継続します。
+従来のOKI decoderと追加接続も由来の記録として保持します。
+実際のビルドはSDK側の接続・decoder入力と`build.rs`の生成処理を使うため、
+従来コピーやスナップショットの更新だけでは、生成されるdecoderは変わりません。
+CargoはSDKの`vendor/mame-okim6258/`と追加接続の入力を監視します。
+機種用のローカルcpp／headerの監視は残し、実際のコンパイル入力がなくなった`native-x68000/`の監視は外します。
 
 ## 照合と更新
 
@@ -142,7 +158,9 @@ node scripts/check_native_genesis_core.mjs /path/to/hello_ymfm --seconds=60 --ou
 
 各音源の選択中音源／追加音源の比較は、Browser／WASM側の`hello_ymfm`ルートで実行します。
 既定のビルドはTauriへ同梱したSDKの接続実装と共有providerを使用し、旧コピーをコンパイルしません。
-X68000の比較は、機種用接続とOKIをTauri側に残し、FMのSDK OPM providerを組み込んだ構成を使います。
+X68000の比較は、機種用接続をTauri側に残し、SDKのOPM providerとSDK入力から生成したOKI decoderを組み込んだ構成を使います。
+OKIを使う比較は、Browser側の`scripts/native_okim6258_source.mjs`で同じ生成処理を行い、
+SDK入力と生成されたdecoderのパス／ハッシュを記録します。
 
 ```sh
 cd /path/to/hello_ymfm
@@ -154,6 +172,7 @@ node scripts/check_native_ym2610b.mjs
 node scripts/check_native_extra_ym2610.mjs
 node scripts/check_native_x68000.mjs
 node scripts/check_native_extra_ym2151.mjs
+node scripts/check_native_extra_okim6258.mjs
 ```
 
 一致試験はデバイスを開かない生成結果の検証です。各OSのインストーラーや実機での音声出力は
@@ -261,3 +280,19 @@ run全体と全5ジョブが成功し、CIのためのコード修正は不要�
 
 上の全OPN移行CIはコミット`5280f83adebc542fdba1f49c5ff9bc8b51860734`に対するもので、
 今回のYM2151差分を検証した結果ではありません。新しい各OSのCIと実機の音声出力は未確認です。
+
+## OKIM6258移行の検証
+
+今回のOKIM6258参照切替と生成処理は、macOS／Clangで次を確認しました。音声デバイスは開いていません。
+
+- SDKのraw decoderを変更せずに生成したコンパイル用decoderが、従来のTauri decoderとbyte一致。接続・ヘッダー・機種用接続の6入力もbyte一致。
+- 旧Nativeと生成SDK接続を別々にコンパイルして比較。X68000の選択中音源は42入力・258,048フレーム、追加OKIは45入力・264,192フレームでbyte一致。固有の入力は合計87通り・522,240フレーム。
+- 実WASMは選択中音源42件に加え、追加OKIの45入力を3種類のブロック分割で135回比較。合計177比較・延べ1,050,624フレームで最大差分0。177件を固有の入力数としては数えない。
+- 既定の両checkerも同じ生成処理で成功し、SDK入力・生成decoder・実際にコンパイルしたソースのハッシュを記録。この再実行分は上の件数に加えていない。
+- 別のNative間比較6ケース・49,152フレームで、選択中音源292バイト／追加OKI 28バイトのstate全体とPCMが一致。借用サンプルの内容は音源破棄後も変化しなかった。WASM内部state全体の比較ではない。
+- 旧Nativeと生成decoderを別プロセスでそれぞれ16スレッド・513回生成し、49段のテーブル計算が一度だけ行われることを確認。
+- 既存fixtureでcallback中の割当て／解放0を確認。
+- `cargo test --locked --offline`が723件成功、明示実行用4件ignored。
+- 再生ライフサイクルは22 mode、604,032フレーム、88回のRun／Stop遷移が成功。混合音源は3構成、7単独音源、追加生成の受入れが成功。16台の制限で17台目を拒否し、Stop後に予約した予算をすべて回収する試験も成功。両runnerのexit codeは0、`deviceOpened: false`。
+
+先行する全OPN移行CIは、今回のOKIM6258差分を含みません。新しい各OSのCIと実機の音声出力は未確認です。

@@ -12,9 +12,14 @@ import receipt `src-tauri/soundchip-sdk.json`. Its source manifests, provenance,
 licenses and notices are preserved. YM2612, the selected/additional YM2203,
 YM2608 and shared YM2610/YM2610B adapters, and the common OPN/SSG/ADPCM provider
 build from that snapshot. The additional YM2151 adapter and shared OPM provider
-also use the SDK. X68000's machine adapter, OKIM6258 and additional OKI adapter,
-sample ownership and mixing remain in Tauri; the selected machine's FM core
-uses the same SDK OPM provider. Other application adapters retain their existing
+also use the SDK. The independent OKIM6258 adapter uses the SDK, and its shared
+decoder is generated from the SDK source into Cargo's `OUT_DIR`. A guarded
+constructor-only substitution preserves Tauri's existing thread-safe one-time
+table initialization; decoder arithmetic and the pinned SDK bytes are unchanged.
+The generation recipe is in `src-tauri/build.rs` and needs no Python/CMake step.
+X68000's machine adapter, sample ownership and mixing remain in Tauri; its
+FM uses the SDK OPM provider and its OKI shares the generated decoder.
+Other application adapters retain their existing
 source snapshots. The
 [SDK adoption guide](docs/native-sdk-ym2612.md) lists the
 consumed paths, pinned archive hash and deliberate offline update procedure.

@@ -1,3 +1,24 @@
+fn native_okim6258_source() -> std::path::PathBuf {
+    // Keep the SDK snapshot immutable. Preserve the existing Native-only
+    // thread-safe table initialization in the generated compilation input.
+    const ORIGINAL: &str = "Oki6258::Oki6258(uint32_t clock, uint8_t flags, uint32_t rate):initial_clock(clock),initial_flags(flags),rate(rate) { compute_tables();reset(); }";
+    const NATIVE: &str = "Oki6258::Oki6258(uint32_t clock, uint8_t flags, uint32_t rate):initial_clock(clock),initial_flags(flags),rate(rate) { static const bool initialized = []{compute_tables();return true;}();(void)initialized;reset(); }";
+    let source = std::fs::read_to_string(
+        "vendor/tetorica-soundchip-native/vendor/mame-okim6258/okim6258.cpp",
+    )
+    .expect("read pinned SDK OKIM6258 source");
+    assert_eq!(
+        source.matches(ORIGINAL).count(),
+        1,
+        "SDK OKIM6258 constructor changed; review the Native table-init adaptation"
+    );
+    let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo OUT_DIR"))
+        .join("tetorica_sdk_okim6258.cpp");
+    std::fs::write(&output, source.replacen(ORIGINAL, NATIVE, 1))
+        .expect("write Native OKIM6258 compilation input");
+    output
+}
+
 fn main() {
     // Native C++ wrappers catch allocation failures before returning across Rust FFI.
     // Enable standard exception unwinding for all MSVC C++ translation units.
@@ -40,7 +61,7 @@ fn main() {
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2203.h");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2610b.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2610b.h");
-    println!("cargo:rerun-if-changed=native-x68000");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/mame-okim6258");
     println!("cargo:rerun-if-changed=src/native_genesis_x68000.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2151.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2151.h");
@@ -62,8 +83,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_msx.h");
     println!("cargo:rerun-if-changed=native-opl");
     println!("cargo:rerun-if-changed=src/native_genesis_opl.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_extra_okim6258.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_extra_okim6258.h");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_okim6258.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_okim6258.h");
     println!("cargo:rerun-if-changed=src/native_genesis_extra_rf5c164.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_extra_rf5c164.h");
     println!("cargo:rerun-if-changed=src/native_genesis_extra_opl.cpp");
@@ -136,8 +157,9 @@ fn main() {
         .file("native-master-system/snapshot/src/ymfm_pcm.cpp")
         .warnings(false)
         .compile("tetorica_native_master_system");
-    // X68000 mixing and OKI stay application-owned. Its FM and the independent
-    // YM2151 share the SDK's once-compiled OPM provider, before common ymfm on GNU ld.
+    // X68000 mixing stays application-owned. Its FM and the independent YM2151
+    // share the SDK's OPM provider. Both OKI adapters share one SDK-derived
+    // decoder with the existing Native table-init fix, generated in OUT_DIR.
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
@@ -145,13 +167,13 @@ fn main() {
         .opt_level(2)
         .include("vendor/tetorica-soundchip-native/vendor/ymfm")
         .include("vendor/tetorica-soundchip-native/wasm")
-        .include("native-x68000/snapshot/third_party/mame-okim6258")
+        .include("vendor/tetorica-soundchip-native/vendor/mame-okim6258")
         .include("native-genesis")
         .file("src/native_genesis_x68000.cpp")
-        .file("src/native_genesis_extra_okim6258.cpp")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_okim6258.cpp")
         .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2151.cpp")
         .file("vendor/tetorica-soundchip-native/native/src/ymfm_opm_provider.cpp")
-        .file("native-x68000/okim6258.cpp")
+        .file(native_okim6258_source())
         .warnings(false)
         .compile("tetorica_native_x68000");
     // Selected Neo Geo and independent YM2610/YM2610B share the pinned SDK

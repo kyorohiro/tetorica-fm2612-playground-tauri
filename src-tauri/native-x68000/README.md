@@ -17,16 +17,27 @@ Common ymfm support, including ADPCM, continues to use the already pinned SDK.
 The SDK version and source bytes are unchanged. See the
 [SDK adoption guide](../../docs/native-sdk-ym2612.md).
 
-The machine adapter, OKIM6258 decoder, additional OKI adapter and sample handling
-remain local to Tauri. This directory still supplies the OKI implementation and
-remains a Cargo rebuild watch. Its Browser snapshots and hashes, and the old
-local YM2151 wrapper/provider sources, are retained as provenance; editing those
-reference copies or running the sync script alone does not update the SDK inputs.
+The shared OKIM6258 decoder now takes its input from the pinned SDK's
+`vendor/mame-okim6258/okim6258.cpp` and header. Cargo's build script generates
+the compiled decoder in `OUT_DIR`, retaining the existing Tauri constructor's
+C++ thread-safe one-time ADPCM table initialization. The raw SDK constructor
+does not contain that adaptation. The build applies a guarded constructor-only
+substitution and fails if the expected anchor is not unique. Decoder arithmetic
+is unchanged; the SDK snapshot and pin are unchanged. No Python or CMake build
+step is added. The generated decoder is compiled once and shared by the selected
+machine and independent OKI instances.
 
-The generated `okim6258.cpp` differs from its pinned snapshot only by initializing
-the shared ADPCM difference table once, with C++ thread-safe static initialization.
-The Browser constructor otherwise rewrites that global table on every new chip,
-which can race an already-running Native callback. Decoding remains identical.
+Additional OKI instances compile the SDK's
+`native/reference/tauri/native_genesis_extra_okim6258.cpp` and matching header.
+The machine adapter and sample handling remain local to Tauri. Independent
+instances borrow sample bytes; the host retains the bytes for as long as the
+adapter can reference them, including after Stop/reset.
+
+This directory's Browser snapshots and hashes, its old generated decoder, and
+the local YM2151/OKI wrapper reference copies are retained as provenance.
+Editing those copies or running the sync script alone does not update the SDK
+inputs or the Cargo-generated decoder. The actual SDK inputs and generation
+recipe are tracked by `src-tauri/build.rs`.
 
 The host adapter `src/native_genesis_x68000.cpp` mirrors Browser FM averaging /
 hold resampling, immediate force-key-off with authored total-level restoration,
