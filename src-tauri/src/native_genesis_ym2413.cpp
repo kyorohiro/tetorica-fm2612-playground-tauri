@@ -10,8 +10,6 @@
 extern template class ymfm::fm_engine_base<ymfm::opll_registers>;
 extern template class ymfm::fm_channel<ymfm::opll_registers>;
 extern template class ymfm::fm_operator<ymfm::opll_registers>;
-template int32_t ymfm::fm_operator<ymfm::opll_registers>::compute_volume(uint32_t, uint32_t) const;
-template uint32_t ymfm::fm_operator<ymfm::opll_registers>::envelope_attenuation(uint32_t) const;
 namespace {
 struct CachedOpll : ymfm::ym2413 {
     explicit CachedOpll(ymfm_wasm_interface &intf) : ym2413(intf) {}

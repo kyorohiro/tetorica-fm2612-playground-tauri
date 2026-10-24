@@ -8,12 +8,10 @@
 #include <cstring>
 #include <vector>
 
-// The shared provider owns these templates; instantiate only the key-source
-// helper which optimized builds otherwise inline into the provider.
+// The Native OPN provider explicitly supplies these template definitions.
 extern template class ymfm::fm_engine_base<ymfm::opna_registers>;
 extern template class ymfm::fm_channel<ymfm::opna_registers>;
 extern template class ymfm::fm_operator<ymfm::opna_registers>;
-template void ymfm::fm_operator<ymfm::opna_registers>::keyonoff(uint32_t, ymfm::keyon_type);
 
 namespace {
 constexpr uint32_t ROM_SIZE = 0x2000, MEMORY_SIZE = 0x200000;

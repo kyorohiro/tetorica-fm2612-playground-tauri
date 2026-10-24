@@ -16,26 +16,6 @@ extern template class ymfm::fm_channel<ymfm::opl3_registers>;
 extern template class ymfm::fm_operator<ymfm::opl_registers>;
 extern template class ymfm::fm_operator<ymfm::opl2_registers>;
 extern template class ymfm::fm_operator<ymfm::opl3_registers>;
-template void ymfm::fm_operator<ymfm::opl_registers>::keyonoff(uint32_t, ymfm::keyon_type);
-template void ymfm::fm_operator<ymfm::opl2_registers>::keyonoff(uint32_t, ymfm::keyon_type);
-template void ymfm::fm_operator<ymfm::opl3_registers>::keyonoff(uint32_t, ymfm::keyon_type);
-template int32_t ymfm::fm_operator<ymfm::opl_registers>::compute_volume(uint32_t, uint32_t) const;
-template int32_t ymfm::fm_operator<ymfm::opl2_registers>::compute_volume(uint32_t, uint32_t) const;
-template int32_t ymfm::fm_operator<ymfm::opl3_registers>::compute_volume(uint32_t, uint32_t) const;
-template uint32_t ymfm::fm_operator<ymfm::opl_registers>::envelope_attenuation(uint32_t) const;
-template uint32_t ymfm::fm_operator<ymfm::opl2_registers>::envelope_attenuation(uint32_t) const;
-template uint32_t ymfm::fm_operator<ymfm::opl3_registers>::envelope_attenuation(uint32_t) const;
-// Keep observation helpers linkable in scalar/sanitized builds where inlining
-// differs from the common ymfm provider. No new FM provider is instantiated.
-template ymfm::fm_channel<ymfm::opl_registers> *ymfm::fm_engine_base<ymfm::opl_registers>::debug_channel(uint32_t) const;
-template ymfm::fm_operator<ymfm::opl_registers> *ymfm::fm_engine_base<ymfm::opl_registers>::debug_operator(uint32_t) const;
-template ymfm::fm_operator<ymfm::opl_registers> *ymfm::fm_channel<ymfm::opl_registers>::debug_operator(uint32_t) const;
-template ymfm::fm_channel<ymfm::opl2_registers> *ymfm::fm_engine_base<ymfm::opl2_registers>::debug_channel(uint32_t) const;
-template ymfm::fm_operator<ymfm::opl2_registers> *ymfm::fm_engine_base<ymfm::opl2_registers>::debug_operator(uint32_t) const;
-template ymfm::fm_operator<ymfm::opl2_registers> *ymfm::fm_channel<ymfm::opl2_registers>::debug_operator(uint32_t) const;
-template ymfm::fm_channel<ymfm::opl3_registers> *ymfm::fm_engine_base<ymfm::opl3_registers>::debug_channel(uint32_t) const;
-template ymfm::fm_operator<ymfm::opl3_registers> *ymfm::fm_engine_base<ymfm::opl3_registers>::debug_operator(uint32_t) const;
-template ymfm::fm_operator<ymfm::opl3_registers> *ymfm::fm_channel<ymfm::opl3_registers>::debug_operator(uint32_t) const;
 namespace {
 constexpr uint8_t SLOTS[9] = {0,1,2,8,9,10,16,17,18}, PHYSICAL[5] = {6,7,8,8,7}, PAIRS[6] = {0,1,2,9,10,11};
 float normalize(int32_t value) { return float(std::max(-32768, std::min(32767,value))) / 32768.0f; }

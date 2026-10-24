@@ -11,7 +11,6 @@
 extern template class ymfm::fm_engine_base<ymfm::opm_registers>;
 extern template class ymfm::fm_channel<ymfm::opm_registers>;
 extern template class ymfm::fm_operator<ymfm::opm_registers>;
-template void ymfm::fm_operator<ymfm::opm_registers>::keyonoff(uint32_t, ymfm::keyon_type);
 
 namespace {
 struct Chip : ymfm::ym2151 {

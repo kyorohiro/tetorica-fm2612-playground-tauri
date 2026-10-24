@@ -26,28 +26,32 @@ pub fn error(message: String) -> String {
     }
 }
 
+// Keep the tagged values pointer-sized. Otherwise every branch temporary in
+// create_kind_with_nes reserves the largest chip snapshot/renderer on the stack,
+// even for a small PSG/HuC6280 instance. Allocation and final destruction still
+// happen on the control thread, before publication/after callback retirement.
 pub enum State {
-    Psg(master_system::Shared),
-    Ym2612(ym2612::Shared),
-    Ym2203(ym2203::Shared),
-    Ym2608(extra_ym2608::Shared),
-    Ym2610(extra_ym2610::Shared),
-    Ym2151(extra_ym2151::Shared),
-    Ay8910(extra_msx::Shared),
-    Y8950(extra_opl::Shared),
-    Ymf262(extra_opl::Shared),
-    Rf5c164(extra_rf5c164::Shared),
-    Okim6258(extra_okim6258::Shared),
-    Gameboy(extra_gameboy::Shared),
-    Huc6280(extra_huc6280::Shared),
-    Dx7(extra_dx7::Shared),
-    Pwm(extra_pwm::Shared),
-    Snes(extra_snes::Shared),
-    Spc(extra_spc::Shared),
-    Nes(extra_nes::Shared),
-    Ym3812(extra_opl::Shared),
-    Ym3526(extra_opl::Shared),
-    Ym2413(extra_msx::Shared),
+    Psg(Box<master_system::Shared>),
+    Ym2612(Box<ym2612::Shared>),
+    Ym2203(Box<ym2203::Shared>),
+    Ym2608(Box<extra_ym2608::Shared>),
+    Ym2610(Box<extra_ym2610::Shared>),
+    Ym2151(Box<extra_ym2151::Shared>),
+    Ay8910(Box<extra_msx::Shared>),
+    Y8950(Box<extra_opl::Shared>),
+    Ymf262(Box<extra_opl::Shared>),
+    Rf5c164(Box<extra_rf5c164::Shared>),
+    Okim6258(Box<extra_okim6258::Shared>),
+    Gameboy(Box<extra_gameboy::Shared>),
+    Huc6280(Box<extra_huc6280::Shared>),
+    Dx7(Box<extra_dx7::Shared>),
+    Pwm(Box<extra_pwm::Shared>),
+    Snes(Box<extra_snes::Shared>),
+    Spc(Box<extra_spc::Shared>),
+    Nes(Box<extra_nes::Shared>),
+    Ym3812(Box<extra_opl::Shared>),
+    Ym3526(Box<extra_opl::Shared>),
+    Ym2413(Box<extra_msx::Shared>),
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -75,27 +79,27 @@ enum Kind {
     Ym2413,
 }
 enum Core {
-    Psg(master_system::Renderer),
-    Ym2612(ym2612::Renderer),
-    Ym2203(ym2203::Renderer),
-    Ym2608(extra_ym2608::Renderer),
-    Ym2610(extra_ym2610::Renderer),
-    Ym2151(extra_ym2151::Renderer),
-    Ay8910(extra_msx::Renderer),
-    Y8950(extra_opl::Renderer),
-    Ymf262(extra_opl::Renderer),
-    Rf5c164(extra_rf5c164::Renderer),
-    Okim6258(extra_okim6258::Renderer),
-    Gameboy(extra_gameboy::Renderer),
-    Huc6280(extra_huc6280::Renderer),
-    Dx7(extra_dx7::Renderer),
-    Pwm(extra_pwm::Renderer),
-    Snes(extra_snes::Renderer),
-    Spc(extra_spc::Renderer),
-    Nes(extra_nes::Renderer),
-    Ym3812(extra_opl::Renderer),
-    Ym3526(extra_opl::Renderer),
-    Ym2413(extra_msx::Renderer),
+    Psg(Box<master_system::Renderer>),
+    Ym2612(Box<ym2612::Renderer>),
+    Ym2203(Box<ym2203::Renderer>),
+    Ym2608(Box<extra_ym2608::Renderer>),
+    Ym2610(Box<extra_ym2610::Renderer>),
+    Ym2151(Box<extra_ym2151::Renderer>),
+    Ay8910(Box<extra_msx::Renderer>),
+    Y8950(Box<extra_opl::Renderer>),
+    Ymf262(Box<extra_opl::Renderer>),
+    Rf5c164(Box<extra_rf5c164::Renderer>),
+    Okim6258(Box<extra_okim6258::Renderer>),
+    Gameboy(Box<extra_gameboy::Renderer>),
+    Huc6280(Box<extra_huc6280::Renderer>),
+    Dx7(Box<extra_dx7::Renderer>),
+    Pwm(Box<extra_pwm::Renderer>),
+    Snes(Box<extra_snes::Renderer>),
+    Spc(Box<extra_spc::Renderer>),
+    Nes(Box<extra_nes::Renderer>),
+    Ym3812(Box<extra_opl::Renderer>),
+    Ym3526(Box<extra_opl::Renderer>),
+    Ym2413(Box<extra_msx::Renderer>),
 }
 pub struct Instance {
     pub id: u64,
@@ -690,8 +694,8 @@ impl Shared {
             id,
             epoch,
             active: AtomicBool::new(true),
-            state: State::Pwm(state),
-            core: UnsafeCell::new(Core::Pwm(core)),
+            state: State::Pwm(Box::new(state)),
+            core: UnsafeCell::new(Core::Pwm(Box::new(core))),
             _memory: memory,
         });
         control.highest = id;
@@ -722,8 +726,8 @@ impl Shared {
             id,
             epoch,
             active: AtomicBool::new(true),
-            state: State::Snes(state),
-            core: UnsafeCell::new(Core::Snes(core)),
+            state: State::Snes(Box::new(state)),
+            core: UnsafeCell::new(Core::Snes(Box::new(core))),
             _memory: memory,
         });
         control.highest = id;
@@ -754,8 +758,8 @@ impl Shared {
             id,
             epoch,
             active: AtomicBool::new(true),
-            state: State::Spc(state),
-            core: UnsafeCell::new(Core::Spc(core)),
+            state: State::Spc(Box::new(state)),
+            core: UnsafeCell::new(Core::Spc(Box::new(core))),
             _memory: memory,
         });
         control.highest = id;
@@ -962,7 +966,10 @@ impl Shared {
                 core.apply(&cmd, None, &state);
             }
             core.publish(&state);
-            (State::Rf5c164(state), Core::Rf5c164(core))
+            (
+                State::Rf5c164(Box::new(state)),
+                Core::Rf5c164(Box::new(core)),
+            )
         } else if kind == Kind::Huc6280 {
             let state = extra_huc6280::Shared::default();
             let mut core = extra_huc6280::Renderer::new(rate)?;
@@ -977,12 +984,15 @@ impl Shared {
                 core.apply(&cmd, None, &state);
             }
             core.publish(&state);
-            (State::Huc6280(state), Core::Huc6280(core))
+            (
+                State::Huc6280(Box::new(state)),
+                Core::Huc6280(Box::new(core)),
+            )
         } else if kind == Kind::Dx7 {
             let state = extra_dx7::Shared::default();
             let core = extra_dx7::Renderer::new(rate)?;
             core.publish(&state);
-            (State::Dx7(state), Core::Dx7(core))
+            (State::Dx7(Box::new(state)), Core::Dx7(Box::new(core)))
         } else if kind == Kind::Gameboy {
             let state = extra_gameboy::Shared::default();
             let mut core = extra_gameboy::Renderer::new(rate)?;
@@ -997,13 +1007,16 @@ impl Shared {
                 core.apply(&cmd, None, &state);
             }
             core.publish(&state);
-            (State::Gameboy(state), Core::Gameboy(core))
+            (
+                State::Gameboy(Box::new(state)),
+                Core::Gameboy(Box::new(core)),
+            )
         } else if kind == Kind::Nes {
             let state = extra_nes::Shared::default();
             let core =
                 extra_nes::Renderer::new(rate, nes_clock.unwrap_or(extra_nes::CLOCK as f64), fds)?;
             core.publish(&state);
-            (State::Nes(state), Core::Nes(core))
+            (State::Nes(Box::new(state)), Core::Nes(Box::new(core)))
         } else if kind == Kind::Okim6258 {
             if let Some(hz) = clock {
                 extra_okim6258::validate_clock(hz, rate)?;
@@ -1021,7 +1034,10 @@ impl Shared {
                 core.apply(&cmd, None, &state);
             }
             core.publish(&state);
-            (State::Okim6258(state), Core::Okim6258(core))
+            (
+                State::Okim6258(Box::new(state)),
+                Core::Okim6258(Box::new(core)),
+            )
         } else if kind == Kind::Ymf262 {
             let chip = extra_opl::Chip::Ymf262;
             let state = extra_opl::Shared::with_budget(chip, self.budget.clone());
@@ -1037,7 +1053,7 @@ impl Shared {
                 core.apply(&cmd, None, &state);
             }
             core.publish(&state);
-            (State::Ymf262(state), Core::Ymf262(core))
+            (State::Ymf262(Box::new(state)), Core::Ymf262(Box::new(core)))
         } else if kind == Kind::Y8950 {
             let chip = extra_opl::Chip::Y8950;
             let state = extra_opl::Shared::with_budget(chip, self.budget.clone());
@@ -1053,7 +1069,7 @@ impl Shared {
                 core.apply(&cmd, None, &state);
             }
             core.publish(&state);
-            (State::Y8950(state), Core::Y8950(core))
+            (State::Y8950(Box::new(state)), Core::Y8950(Box::new(core)))
         } else if kind == Kind::Ym3812 {
             let chip = extra_opl::Chip::Ym3812;
             let state = extra_opl::Shared::with_budget(chip, self.budget.clone());
@@ -1069,7 +1085,7 @@ impl Shared {
                 core.apply(&cmd, None, &state);
             }
             core.publish(&state);
-            (State::Ym3812(state), Core::Ym3812(core))
+            (State::Ym3812(Box::new(state)), Core::Ym3812(Box::new(core)))
         } else if kind == Kind::Ym3526 {
             let chip = extra_opl::Chip::Ym3526;
             let state = extra_opl::Shared::with_budget(chip, self.budget.clone());
@@ -1085,7 +1101,7 @@ impl Shared {
                 core.apply(&cmd, None, &state);
             }
             core.publish(&state);
-            (State::Ym3526(state), Core::Ym3526(core))
+            (State::Ym3526(Box::new(state)), Core::Ym3526(Box::new(core)))
         } else if kind == Kind::Ay8910 {
             let chip = extra_msx::Chip::Ay8910;
             let state = extra_msx::Shared::new(chip);
@@ -1101,7 +1117,7 @@ impl Shared {
                 core.apply(&cmd, None, &state);
             }
             core.publish(&state);
-            (State::Ay8910(state), Core::Ay8910(core))
+            (State::Ay8910(Box::new(state)), Core::Ay8910(Box::new(core)))
         } else if kind == Kind::Ym2413 {
             let chip = extra_msx::Chip::Ym2413;
             let state = extra_msx::Shared::new(chip);
@@ -1117,7 +1133,7 @@ impl Shared {
                 core.apply(&cmd, None, &state);
             }
             core.publish(&state);
-            (State::Ym2413(state), Core::Ym2413(core))
+            (State::Ym2413(Box::new(state)), Core::Ym2413(Box::new(core)))
         } else if kind == Kind::Ym2151 {
             let state = extra_ym2151::Shared::default();
             let mut core = extra_ym2151::Renderer::new_additional(rate)?;
@@ -1132,7 +1148,7 @@ impl Shared {
                 core.apply(&cmd, None, &state);
             }
             core.publish(&state);
-            (State::Ym2151(state), Core::Ym2151(core))
+            (State::Ym2151(Box::new(state)), Core::Ym2151(Box::new(core)))
         } else if matches!(kind, Kind::Ym2610 | Kind::Ym2610b) {
             let variant = kind == Kind::Ym2610b;
             let state = extra_ym2610::Shared::with_budget_variant(self.budget.clone(), variant);
@@ -1148,7 +1164,7 @@ impl Shared {
                 core.apply(&cmd, None, &state);
             }
             core.publish(&state);
-            (State::Ym2610(state), Core::Ym2610(core))
+            (State::Ym2610(Box::new(state)), Core::Ym2610(Box::new(core)))
         } else if kind == Kind::Ym2608 {
             let state = extra_ym2608::Shared::default();
             let mut core = extra_ym2608::Renderer::new_additional(rate)?;
@@ -1163,7 +1179,7 @@ impl Shared {
                 core.apply(&cmd, None, &state);
             }
             core.publish(&state);
-            (State::Ym2608(state), Core::Ym2608(core))
+            (State::Ym2608(Box::new(state)), Core::Ym2608(Box::new(core)))
         } else if kind == Kind::Ym2612 {
             let state = ym2612::Shared::new(ym2612_engine);
             let mut core = match ym2612_engine {
@@ -1180,7 +1196,7 @@ impl Shared {
                 core.apply(&command, None, &state);
             }
             core.publish(&state);
-            (State::Ym2612(state), Core::Ym2612(core))
+            (State::Ym2612(Box::new(state)), Core::Ym2612(Box::new(core)))
         } else if kind == Kind::Ym2203 {
             let state = ym2203::Shared::additional();
             let mut core = ym2203::Renderer::new_additional(rate)?;
@@ -1195,7 +1211,7 @@ impl Shared {
                 core.apply(&command, None, &state);
             }
             core.publish(&state);
-            (State::Ym2203(state), Core::Ym2203(core))
+            (State::Ym2203(Box::new(state)), Core::Ym2203(Box::new(core)))
         } else {
             let state = master_system::Shared::game_gear();
             let mut core = master_system::Renderer::new_game_gear(rate)?;
@@ -1211,7 +1227,7 @@ impl Shared {
                 core.apply(&command, None, &state);
             }
             core.publish(&state);
-            (State::Psg(state), Core::Psg(core))
+            (State::Psg(Box::new(state)), Core::Psg(Box::new(core)))
         };
         let instance = Arc::new(Instance {
             id,
@@ -1352,6 +1368,47 @@ impl Shared {
         Self::collect(&mut control);
         Ok(())
     }
+}
+
+#[cfg(test)]
+#[test]
+fn extra_heap_payloads_remain_inside_fixed_instance_headroom() {
+    assert!(std::mem::size_of::<State>() <= 2 * std::mem::size_of::<usize>());
+    assert!(std::mem::size_of::<Core>() <= 2 * std::mem::size_of::<usize>());
+    macro_rules! payload {
+        ($state:ty, $core:ty) => {
+            // Check actual heap payloads, not just their Box pointers. The
+            // existing instance permit includes a retired queue plus 64 KiB
+            // core/rack headroom; separate RAM/voice reservations are unchanged.
+            assert!(
+                std::mem::size_of::<Instance>()
+                    + std::mem::size_of::<$state>()
+                    + std::mem::size_of::<$core>()
+                    + 256
+                    < 64 * 1024,
+                "Heap payload exceeds fixed instance headroom: {} / {}",
+                stringify!($state),
+                stringify!($core)
+            );
+        };
+    }
+    payload!(master_system::Shared, master_system::Renderer);
+    payload!(ym2612::Shared, ym2612::Renderer);
+    payload!(ym2203::Shared, ym2203::Renderer);
+    payload!(extra_ym2608::Shared, extra_ym2608::Renderer);
+    payload!(extra_ym2610::Shared, extra_ym2610::Renderer);
+    payload!(extra_ym2151::Shared, extra_ym2151::Renderer);
+    payload!(extra_msx::Shared, extra_msx::Renderer);
+    payload!(extra_opl::Shared, extra_opl::Renderer);
+    payload!(extra_rf5c164::Shared, extra_rf5c164::Renderer);
+    payload!(extra_okim6258::Shared, extra_okim6258::Renderer);
+    payload!(extra_gameboy::Shared, extra_gameboy::Renderer);
+    payload!(extra_huc6280::Shared, extra_huc6280::Renderer);
+    payload!(extra_dx7::Shared, extra_dx7::Renderer);
+    payload!(extra_pwm::Shared, extra_pwm::Renderer);
+    payload!(extra_snes::Shared, extra_snes::Renderer);
+    payload!(extra_spc::Shared, extra_spc::Renderer);
+    payload!(extra_nes::Shared, extra_nes::Renderer);
 }
 
 pub struct Renderer {

@@ -7,12 +7,10 @@
 #include <array>
 #include <cstring>
 
-// The common provider owns the FM templates. Only this small public key-source
-// helper needs a local instantiation because optimized providers inline it.
+// The Native OPN provider explicitly supplies these template definitions.
 extern template class ymfm::fm_engine_base<ymfm::opn_registers>;
 extern template class ymfm::fm_channel<ymfm::opn_registers>;
 extern template class ymfm::fm_operator<ymfm::opn_registers>;
-template void ymfm::fm_operator<ymfm::opn_registers>::keyonoff(uint32_t, ymfm::keyon_type);
 
 namespace {
 struct Chip : ymfm::ym2203 {

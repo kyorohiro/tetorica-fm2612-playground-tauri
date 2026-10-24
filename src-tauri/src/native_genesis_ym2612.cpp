@@ -2,19 +2,15 @@
 #include "native_genesis_ym2612.h"
 #include "ymfm_opn.h"
 #include "ymfm_wasm_interface.h"
-// Instantiate the public debug channel's key-source helper in this translation
-// unit; optimized common-provider builds may inline it without an export.
 #include "ymfm_fm.ipp"
 #include <algorithm>
 #include <array>
 #include <cstring>
 
-// Other FM methods are provided once by ymfm_opn.cpp. Instantiate only the
-// tiny public key-source helper that optimized providers normally inline.
+// The Native OPN provider explicitly supplies these template definitions.
 extern template class ymfm::fm_engine_base<ymfm::opna_registers>;
 extern template class ymfm::fm_channel<ymfm::opna_registers>;
 extern template class ymfm::fm_operator<ymfm::opna_registers>;
-template void ymfm::fm_operator<ymfm::opna_registers>::keyonoff(uint32_t, ymfm::keyon_type);
 
 namespace {
 struct Chip : ymfm::ym2612 {

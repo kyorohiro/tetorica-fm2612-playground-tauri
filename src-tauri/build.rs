@@ -11,6 +11,9 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_core.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_ym2612.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_ym2612.h");
+    println!("cargo:rerun-if-changed=src/native_genesis_ymfm_opn.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_ymfm_opm.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_ymfm_opl.cpp");
     println!("cargo:rerun-if-changed=native-nuked");
     println!("cargo:rerun-if-changed=src/native_genesis_nuked.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_nuked_ym2612.inc");
@@ -119,7 +122,7 @@ fn main() {
         .include("native-genesis")
         .file("src/native_genesis_master_system.cpp")
         .file("src/native_genesis_ym2413.cpp")
-        .file("native-master-system/snapshot/src/ymfm_opl.cpp")
+        .file("src/native_genesis_ymfm_opl.cpp")
         .file("native-master-system/snapshot/src/ymfm_pcm.cpp")
         .warnings(false)
         .compile("tetorica_native_master_system");
@@ -135,7 +138,7 @@ fn main() {
         .file("src/native_genesis_x68000.cpp")
         .file("src/native_genesis_extra_okim6258.cpp")
         .file("src/native_genesis_ym2151.cpp")
-        .file("native-x68000/snapshot/src/ymfm_opm.cpp")
+        .file("src/native_genesis_ymfm_opm.cpp")
         .file("native-x68000/okim6258.cpp")
         .warnings(false)
         .compile("tetorica_native_x68000");
@@ -180,7 +183,7 @@ fn main() {
         .file("src/native_genesis_noise.cpp")
         .file("native-genesis/ym2612_wasm.cpp")
         .file("native-genesis/segapsg_wasm.cpp")
-        .file("native-genesis/ymfm_opn.cpp")
+        .file("src/native_genesis_ymfm_opn.cpp")
         .file("native-genesis/ymfm_adpcm.cpp")
         .file("native-genesis/ymfm_ssg.cpp")
         .file("native-genesis/segapsg.cpp")

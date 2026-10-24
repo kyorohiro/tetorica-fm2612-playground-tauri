@@ -680,3 +680,86 @@ fn extra_huc6280_lfo_modulator_pan_and_volume_edits_preserve_foreign_carrier_pcm
     assert_eq!(a.held, [0]);
     assert!(gate(&a, 0) && gate(&a, 1));
 }
+
+#[test]
+fn native_sessions_construct_render_and_drop_on_one_megabyte_stack() {
+    const CHILD: &str = "TETORICA_NATIVE_SMALL_STACK_CHILD";
+    const TEST: &str = "native_genesis::extra_huc6280_tests::native_sessions_construct_render_and_drop_on_one_megabyte_stack";
+    // A stack overflow aborts instead of unwinding. Run the constrained thread
+    // in a child process so this regression reports a normal test failure.
+    if std::env::var_os(CHILD).is_some() {
+        std::thread::Builder::new()
+            .name("native-one-megabyte-stack".into())
+            .stack_size(1024 * 1024)
+            .spawn(|| {
+                // This exact two-session PCM comparison overflowed the default
+                // Windows test stack when inactive primary snapshots were inline.
+                extra_huc6280_lfo_modulator_pan_and_volume_edits_preserve_foreign_carrier_pcm();
+                exercise_primary_modes_on_small_stack();
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        return;
+    }
+    println!(
+        "Native session stack values: Shared={} Renderer={}",
+        std::mem::size_of::<Shared>(),
+        std::mem::size_of::<Renderer>()
+    );
+    assert!(std::mem::size_of::<Shared>() < 32 * 1024);
+    assert!(std::mem::size_of::<Renderer>() < 64 * 1024);
+    let result = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", TEST, "--nocapture"])
+        .env(CHILD, "1")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        result.status.success() && stdout.contains("1 passed"),
+        "Small-stack session subprocess failed ({:?}):\n{stdout}\n{stderr}",
+        result.status
+    );
+}
+
+#[inline(never)]
+fn exercise_primary_modes_on_small_stack() {
+    // Exercise the production constructor branches too, including the large
+    // SNES RAM snapshot and the FM owner tables. Each allocation is made and
+    // released on this control thread; no audio device is opened.
+    for mode in [
+        "genesis",
+        "mega-cd",
+        "32x",
+        "genesis-full-nuked",
+        "genesis-nuked",
+        "dx7",
+        "nes",
+        "gameboy",
+        "snes",
+        "pc-engine",
+        "pc98",
+        "pc98-26",
+        "neogeo",
+        "neogeo-b",
+        "x68000",
+        "master-system",
+        "game-gear",
+        "msx",
+        "msx-audio",
+        "ym3526",
+        "ym3812",
+        "ymf262",
+    ] {
+        let (mega_cd, dx7, nes, console) = NativeGenesis::mode_config(Some(mode)).unwrap();
+        println!("Small-stack primary mode: {mode}");
+        let shared = Shared::new_modes(48000, 1, mega_cd, dx7, nes, console);
+        let mut renderer = Renderer::new_modes(48000, mega_cd, dx7, nes, console).unwrap();
+        assert_eq!(shared.status().sample_rate, 48000);
+        assert!(render(&mut renderer, &shared, 16)
+            .iter()
+            .flatten()
+            .all(|sample| sample.is_finite()));
+    }
+}

@@ -845,19 +845,23 @@ struct Shared {
     mega_cd: bool,
     nuked: bool,
     genesis_engine: Option<&'static str>,
-    dx7: Option<dx7::Shared>,
-    nes: Option<nes::Shared>,
-    gameboy: Option<gameboy::Shared>,
-    snes: Option<snes::Shared>,
-    huc6280: Option<huc6280::Shared>,
-    ym2608: Option<ym2608::Shared>,
-    ym2203: Option<ym2203::Shared>,
-    ym2610b: Option<ym2610b::Shared>,
-    x68000: Option<x68000::Shared>,
-    master_system: Option<master_system::Shared>,
-    msx: Option<msx::Shared>,
-    opl: Option<opl::Shared>,
-    pwm: Option<pwm::Shared>,
+    // Primary control snapshots include fixed RAM and owner tables. Keep only
+    // the selected mode's allocation instead of reserving every mode inline,
+    // even when its Option is None. This also bounds constructor/move stack
+    // usage on Windows and other hosts with small control-thread stacks.
+    dx7: Option<Box<dx7::Shared>>,
+    nes: Option<Box<nes::Shared>>,
+    gameboy: Option<Box<gameboy::Shared>>,
+    snes: Option<Box<snes::Shared>>,
+    huc6280: Option<Box<huc6280::Shared>>,
+    ym2608: Option<Box<ym2608::Shared>>,
+    ym2203: Option<Box<ym2203::Shared>>,
+    ym2610b: Option<Box<ym2610b::Shared>>,
+    x68000: Option<Box<x68000::Shared>>,
+    master_system: Option<Box<master_system::Shared>>,
+    msx: Option<Box<msx::Shared>>,
+    opl: Option<Box<opl::Shared>>,
+    pwm: Option<Box<pwm::Shared>>,
 
     rf5c164: rf5c164::Shared,
     rf_memory: Mutex<Vec<Arc<rf5c164::Memory>>>,
@@ -931,24 +935,28 @@ impl Shared {
             mega_cd,
             nuked,
             genesis_engine,
-            dx7: dx7.then(dx7::Shared::default),
-            nes: nes.then(nes::Shared::default),
-            gameboy: (console == Some("gameboy")).then(gameboy::Shared::default),
-            snes: (console == Some("snes")).then(snes::Shared::default),
-            huc6280: (console == Some("huc6280")).then(huc6280::Shared::default),
-            ym2608: (console == Some("ym2608")).then(ym2608::Shared::default),
-            ym2203: (console == Some("ym2203")).then(ym2203::Shared::default),
+            dx7: dx7.then(|| Box::new(dx7::Shared::default())),
+            nes: nes.then(|| Box::new(nes::Shared::default())),
+            gameboy: (console == Some("gameboy")).then(|| Box::new(gameboy::Shared::default())),
+            snes: (console == Some("snes")).then(|| Box::new(snes::Shared::default())),
+            huc6280: (console == Some("huc6280")).then(|| Box::new(huc6280::Shared::default())),
+            ym2608: (console == Some("ym2608")).then(|| Box::new(ym2608::Shared::default())),
+            ym2203: (console == Some("ym2203")).then(|| Box::new(ym2203::Shared::default())),
             ym2610b: matches!(console, Some("ym2610" | "ym2610b"))
-                .then(|| ym2610b::Shared::new(console == Some("ym2610b"))),
-            x68000: (console == Some("x68000")).then(x68000::Shared::default),
+                .then(|| Box::new(ym2610b::Shared::new(console == Some("ym2610b")))),
+            x68000: (console == Some("x68000")).then(|| Box::new(x68000::Shared::default())),
             master_system: match console {
-                Some("master-system") => Some(master_system::Shared::default()),
-                Some("game-gear") => Some(master_system::Shared::game_gear()),
+                Some("master-system") => Some(Box::new(master_system::Shared::default())),
+                Some("game-gear") => Some(Box::new(master_system::Shared::game_gear())),
                 _ => None,
             },
-            msx: matches!(console, Some("msx" | "msx-audio")).then(msx::Shared::default),
-            opl: console.and_then(opl::Chip::from_mode).map(opl::Shared::new),
-            pwm: matches!(console, Some("32x" | "32x-nuked")).then(pwm::Shared::default),
+            msx: matches!(console, Some("msx" | "msx-audio"))
+                .then(|| Box::new(msx::Shared::default())),
+            opl: console
+                .and_then(opl::Chip::from_mode)
+                .map(|chip| Box::new(opl::Shared::new(chip))),
+            pwm: matches!(console, Some("32x" | "32x-nuked"))
+                .then(|| Box::new(pwm::Shared::default())),
 
             rf5c164: rf5c164::Shared::default(),
             rf_memory: Mutex::new(Vec::new()),
@@ -4732,44 +4740,44 @@ impl Shared {
                 "genesis"
             },
             rf5c164_clock: self.mega_cd.then(|| self.rf5c164.clock()),
-            nes_clock: self.nes.as_ref().map(nes::Shared::clock),
-            gameboy_clock: self.gameboy.as_ref().map(gameboy::Shared::clock),
-            snes_clock: self.snes.as_ref().map(snes::Shared::clock),
-            huc6280_clock: self.huc6280.as_ref().map(huc6280::Shared::clock),
-            ym2608_clock: self.ym2608.as_ref().map(ym2608::Shared::clock),
-            ym2203_clock: self.ym2203.as_ref().map(ym2203::Shared::clock),
-            ym2610b_clock: self.ym2610b.as_ref().map(ym2610b::Shared::clock),
-            ym2151_clock: self.x68000.as_ref().map(x68000::Shared::clock),
-            okim6258_clock: self.x68000.as_ref().map(x68000::Shared::oki_clock),
+            nes_clock: self.nes.as_deref().map(nes::Shared::clock),
+            gameboy_clock: self.gameboy.as_deref().map(gameboy::Shared::clock),
+            snes_clock: self.snes.as_deref().map(snes::Shared::clock),
+            huc6280_clock: self.huc6280.as_deref().map(huc6280::Shared::clock),
+            ym2608_clock: self.ym2608.as_deref().map(ym2608::Shared::clock),
+            ym2203_clock: self.ym2203.as_deref().map(ym2203::Shared::clock),
+            ym2610b_clock: self.ym2610b.as_deref().map(ym2610b::Shared::clock),
+            ym2151_clock: self.x68000.as_deref().map(x68000::Shared::clock),
+            okim6258_clock: self.x68000.as_deref().map(x68000::Shared::oki_clock),
             ym2413_clock: self
                 .master_system
-                .as_ref()
+                .as_deref()
                 .filter(|chip| !chip.is_game_gear())
                 .map(master_system::Shared::opll_clock)
-                .or_else(|| self.msx.as_ref().map(msx::Shared::opll_clock)),
-            ay8910_clock: self.msx.as_ref().map(msx::Shared::clock),
+                .or_else(|| self.msx.as_deref().map(msx::Shared::opll_clock)),
+            ay8910_clock: self.msx.as_deref().map(msx::Shared::clock),
             y8950_clock: self
                 .opl
-                .as_ref()
+                .as_deref()
                 .filter(|chip| chip.mode() == "y8950")
                 .map(opl::Shared::clock),
-            pwm_clock: self.pwm.as_ref().map(pwm::Shared::clock),
+            pwm_clock: self.pwm.as_deref().map(pwm::Shared::clock),
             sample_rate: self.rate,
             frame: self.frame.load(Ordering::Acquire),
             ym_clock: self
                 .ym2610b
-                .as_ref()
+                .as_deref()
                 .map(ym2610b::Shared::clock)
-                .or_else(|| self.ym2608.as_ref().map(ym2608::Shared::clock))
-                .or_else(|| self.ym2203.as_ref().map(ym2203::Shared::clock))
-                .or_else(|| self.x68000.as_ref().map(x68000::Shared::clock))
+                .or_else(|| self.ym2608.as_deref().map(ym2608::Shared::clock))
+                .or_else(|| self.ym2203.as_deref().map(ym2203::Shared::clock))
+                .or_else(|| self.x68000.as_deref().map(x68000::Shared::clock))
                 .or_else(|| {
                     self.master_system
-                        .as_ref()
+                        .as_deref()
                         .map(master_system::Shared::opll_clock)
                 })
-                .or_else(|| self.opl.as_ref().map(opl::Shared::clock))
-                .or_else(|| self.msx.as_ref().map(msx::Shared::opll_clock))
+                .or_else(|| self.opl.as_deref().map(opl::Shared::clock))
+                .or_else(|| self.msx.as_deref().map(msx::Shared::opll_clock))
                 .unwrap_or(7_670_454),
             psg_clock: if let Some(chip) = &self.master_system {
                 chip.clock()
