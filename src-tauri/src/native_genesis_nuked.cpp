@@ -39,3 +39,5 @@ extern "C" void tetorica_nuked_fixture_free(void *);
 extern "C" {
 #include "../native-nuked/snapshot/wasm/nuked_opn2_wasm.c"
 }
+
+#include "native_genesis_nuked_ym2612.inc"

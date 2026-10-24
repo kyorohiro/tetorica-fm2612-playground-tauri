@@ -42,6 +42,80 @@ extern "C" {
     fn native_ym2612_set_mute_mask(p: *mut c_void, mask: u32);
     fn native_ym2612_get_state(p: *mut c_void, s: *mut CoreState);
 }
+extern "C" {
+    fn native_nuked_ym2612_create(rate: u32) -> *mut c_void;
+    fn native_nuked_ym2612_destroy(p: *mut c_void);
+    fn native_nuked_ym2612_reset(p: *mut c_void);
+    fn native_nuked_ym2612_stop(p: *mut c_void);
+    fn native_nuked_ym2612_write(p: *mut c_void, port: u8, register: u8, value: u8);
+    fn native_nuked_ym2612_key_off_fm(p: *mut c_void, voice: u8);
+    fn native_nuked_ym2612_cancel_csm(p: *mut c_void);
+    fn native_nuked_ym2612_audition_fm_key_on(p: *mut c_void, channel: u8, mask: u8);
+    fn native_nuked_ym2612_sample(p: *mut c_void, l: *mut f32, r: *mut f32);
+    fn native_nuked_ym2612_set_clock(p: *mut c_void, hz: u32) -> i32;
+    fn native_nuked_ym2612_set_mute_mask(p: *mut c_void, mask: u32);
+    fn native_nuked_ym2612_get_state(p: *mut c_void, s: *mut CoreState);
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Engine {
+    #[default]
+    Ymfm,
+    Nuked,
+}
+impl Engine {
+    pub fn parse(value: Option<&str>) -> Result<Self, String> {
+        match value.unwrap_or("ymfm") {
+            "ymfm" => Ok(Self::Ymfm),
+            "nuked" => Ok(Self::Nuked),
+            _ => Err("Additional Native YM2612 engine must be ymfm or nuked".into()),
+        }
+    }
+}
+struct CoreApi {
+    create: unsafe extern "C" fn(u32) -> *mut c_void,
+    destroy: unsafe extern "C" fn(*mut c_void),
+    reset: unsafe extern "C" fn(*mut c_void),
+    stop: unsafe extern "C" fn(*mut c_void),
+    write: unsafe extern "C" fn(*mut c_void, u8, u8, u8),
+    key_off_fm: unsafe extern "C" fn(*mut c_void, u8),
+    cancel_csm: unsafe extern "C" fn(*mut c_void),
+    audition_fm_key_on: unsafe extern "C" fn(*mut c_void, u8, u8),
+    sample: unsafe extern "C" fn(*mut c_void, *mut f32, *mut f32),
+    set_clock: unsafe extern "C" fn(*mut c_void, u32) -> i32,
+    set_mute_mask: unsafe extern "C" fn(*mut c_void, u32),
+    get_state: unsafe extern "C" fn(*mut c_void, *mut CoreState),
+}
+const YMFM_API: CoreApi = CoreApi {
+    create: native_ym2612_create,
+    destroy: native_ym2612_destroy,
+    reset: native_ym2612_reset,
+    stop: native_ym2612_stop,
+    write: native_ym2612_write,
+    key_off_fm: native_ym2612_key_off_fm,
+    cancel_csm: native_ym2612_cancel_csm,
+    audition_fm_key_on: native_ym2612_audition_fm_key_on,
+    sample: native_ym2612_sample,
+    set_clock: native_ym2612_set_clock,
+    set_mute_mask: native_ym2612_set_mute_mask,
+    get_state: native_ym2612_get_state,
+};
+const NUKED_API: CoreApi = CoreApi {
+    create: native_nuked_ym2612_create,
+    destroy: native_nuked_ym2612_destroy,
+    reset: native_nuked_ym2612_reset,
+    stop: native_nuked_ym2612_stop,
+    write: native_nuked_ym2612_write,
+    key_off_fm: native_nuked_ym2612_key_off_fm,
+    cancel_csm: native_nuked_ym2612_cancel_csm,
+    audition_fm_key_on: native_nuked_ym2612_audition_fm_key_on,
+    sample: native_nuked_ym2612_sample,
+    set_clock: native_nuked_ym2612_set_clock,
+    set_mute_mask: native_nuked_ym2612_set_mute_mask,
+    get_state: native_nuked_ym2612_get_state,
+};
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct Message {
     #[serde(default)]
@@ -291,6 +365,7 @@ struct Control {
     rejected_clocks: HashSet<u64>,
 }
 pub struct Shared {
+    engine: Engine,
     revision: AtomicU64,
     registers: [AtomicU8; 512],
     keys: [AtomicU8; 6],
@@ -309,7 +384,13 @@ pub struct Shared {
 }
 impl Default for Shared {
     fn default() -> Self {
+        Self::new(Engine::Ymfm)
+    }
+}
+impl Shared {
+    pub fn new(engine: Engine) -> Self {
         Self {
+            engine,
             revision: AtomicU64::new(0),
             registers: std::array::from_fn(|_| AtomicU8::new(0)),
             keys: std::array::from_fn(|_| AtomicU8::new(0)),
@@ -331,6 +412,7 @@ impl Default for Shared {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChipStatus {
+    pub engine: Engine,
     pub clock: u32,
     pub registers: Vec<Vec<u8>>,
     pub key_masks: Vec<u8>,
@@ -565,6 +647,7 @@ impl Shared {
             }
             let held = self.held.load(Ordering::Relaxed);
             let out = ChipStatus {
+                engine: self.engine,
                 clock: self.clock(),
                 registers: self
                     .registers
@@ -608,6 +691,7 @@ struct Lease {
     audition: bool,
 }
 pub struct Renderer {
+    api: &'static CoreApi,
     ptr: *mut c_void,
     rate: u32,
     owners: [Option<Lease>; VOICES],
@@ -620,16 +704,24 @@ pub struct Renderer {
 unsafe impl Send for Renderer {}
 impl Drop for Renderer {
     fn drop(&mut self) {
-        unsafe { native_ym2612_destroy(self.ptr) }
+        unsafe { (self.api.destroy)(self.ptr) }
     }
 }
 impl Renderer {
     pub fn new(rate: u32) -> Result<Self, String> {
-        let ptr = unsafe { native_ym2612_create(rate) };
+        Self::new_engine(rate, Engine::Ymfm)
+    }
+    pub fn new_engine(rate: u32, engine: Engine) -> Result<Self, String> {
+        let api = match engine {
+            Engine::Ymfm => &YMFM_API,
+            Engine::Nuked => &NUKED_API,
+        };
+        let ptr = unsafe { (api.create)(rate) };
         if ptr.is_null() {
             return Err("Could not allocate Native YM2612 core".into());
         }
         Ok(Self {
+            api,
             ptr,
             rate,
             owners: [None; VOICES],
@@ -642,7 +734,7 @@ impl Renderer {
     }
     fn state(&self) -> CoreState {
         let mut state = CoreState::default();
-        unsafe { native_ym2612_get_state(self.ptr, &mut state) }
+        unsafe { (self.api.get_state)(self.ptr, &mut state) }
         state
     }
     fn protected(&self, ch: usize, voice: Option<u64>, audition: bool) -> bool {
@@ -650,7 +742,7 @@ impl Renderer {
             .is_some_and(|l| l.audition && (!audition || voice.is_some() && l.voice != voice))
     }
     fn release(&mut self, ch: usize) {
-        unsafe { native_ym2612_key_off_fm(self.ptr, ch as u8) }
+        unsafe { (self.api.key_off_fm)(self.ptr, ch as u8) }
         self.owners[ch] = None;
     }
     fn op(
@@ -707,7 +799,7 @@ impl Renderer {
             } = *op
             {
                 unsafe {
-                    native_ym2612_write(self.ptr, port, register, value);
+                    (self.api.write)(self.ptr, port, register, value);
                 }
             }
             if !csm_on {
@@ -762,21 +854,21 @@ impl Renderer {
                         && value & 3 < 3
                     {
                         let code = value & 7;
-                        native_ym2612_audition_fm_key_on(
+                        (self.api.audition_fm_key_on)(
                             self.ptr,
                             (code & 3) + if code & 4 != 0 { 3 } else { 0 },
                             value >> 4,
                         );
                     } else {
-                        native_ym2612_write(self.ptr, port, register, value)
+                        (self.api.write)(self.ptr, port, register, value)
                     }
                 }
-                Op::KeyOff { channel } => native_ym2612_key_off_fm(self.ptr, channel),
+                Op::KeyOff { channel } => (self.api.key_off_fm)(self.ptr, channel),
                 Op::AuditionKeyOn { channel } => {
-                    native_ym2612_audition_fm_key_on(self.ptr, channel, 15)
+                    (self.api.audition_fm_key_on)(self.ptr, channel, 15)
                 }
                 Op::Clock { hz } => {
-                    native_ym2612_set_clock(self.ptr, hz);
+                    (self.api.set_clock)(self.ptr, hz);
                 }
             }
         }
@@ -853,10 +945,10 @@ impl Renderer {
                 self.ramp = (self.rate / 200).max(1)
             }
             Method::SourceMute { mask } => self.source_mute = *mask,
-            Method::ChannelMute { mask } => unsafe { native_ym2612_set_mute_mask(self.ptr, *mask) },
+            Method::ChannelMute { mask } => unsafe { (self.api.set_mute_mask)(self.ptr, *mask) },
             Method::Reset => {
                 if c.audition || !self.owners.iter().flatten().any(|l| l.audition) {
-                    unsafe { native_ym2612_reset(self.ptr) }
+                    unsafe { (self.api.reset)(self.ptr) }
                     self.owners.fill(None);
                     self.csm_owner = None;
                 }
@@ -875,7 +967,7 @@ impl Renderer {
                 );
                 if allowed {
                     unsafe {
-                        native_ym2612_cancel_csm(self.ptr);
+                        (self.api.cancel_csm)(self.ptr);
                     }
                     self.csm_owner = None;
                 }
@@ -884,7 +976,7 @@ impl Renderer {
                 if owner.is_none()
                     && (c.audition || !self.owners.iter().flatten().any(|l| l.audition))
                 {
-                    unsafe { native_ym2612_stop(self.ptr) }
+                    unsafe { (self.api.stop)(self.ptr) }
                     self.owners.fill(None);
                     self.csm_owner = None;
                 } else {
@@ -892,7 +984,7 @@ impl Renderer {
                         (owner.is_none() || lease.owner == owner) && (!lease.audition || c.audition)
                     }) {
                         unsafe {
-                            native_ym2612_cancel_csm(self.ptr);
+                            (self.api.cancel_csm)(self.ptr);
                         }
                         self.csm_owner = None;
                     }
@@ -966,7 +1058,7 @@ impl Renderer {
         let mut changed = false;
         if self.csm_owner.is_some_and(|lease| !valid(lease.owner)) {
             unsafe {
-                native_ym2612_cancel_csm(self.ptr);
+                (self.api.cancel_csm)(self.ptr);
             }
             self.csm_owner = None;
             changed = true;
@@ -985,7 +1077,7 @@ impl Renderer {
     }
     pub fn mix(&mut self, pcm: &mut [f32; 2]) {
         let (mut l, mut r) = (0., 0.);
-        unsafe { native_ym2612_sample(self.ptr, &mut l, &mut r) }
+        unsafe { (self.api.sample)(self.ptr, &mut l, &mut r) }
         if self.ramp > 0 {
             for ch in 0..2 {
                 self.gains[ch] += (self.targets[ch] - self.gains[ch]) / self.ramp as f32

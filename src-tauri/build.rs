@@ -13,6 +13,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_ym2612.h");
     println!("cargo:rerun-if-changed=native-nuked");
     println!("cargo:rerun-if-changed=src/native_genesis_nuked.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_nuked_ym2612.inc");
     println!("cargo:rerun-if-changed=native-megacd");
     println!("cargo:rerun-if-changed=src/native_genesis_rf5c164.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_rf5c164.h");

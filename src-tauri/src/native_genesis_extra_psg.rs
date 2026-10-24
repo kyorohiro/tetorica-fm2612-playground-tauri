@@ -777,7 +777,16 @@ impl Shared {
         clock: Option<f64>,
         fds: bool,
     ) -> Result<Arc<Instance>, String> {
-        self.create_kind_with_nes(id, epoch, rate, None, Kind::Nes, clock, fds)
+        self.create_kind_with_nes(
+            id,
+            epoch,
+            rate,
+            None,
+            Kind::Nes,
+            clock,
+            fds,
+            ym2612::Engine::Ymfm,
+        )
     }
 
     pub fn create_y8950(
@@ -861,6 +870,16 @@ impl Shared {
     ) -> Result<Arc<Instance>, String> {
         self.create_kind(id, epoch, rate, clock, Kind::Ym2612)
     }
+    pub fn create_ym2612_engine(
+        &self,
+        id: u64,
+        epoch: u64,
+        rate: u32,
+        clock: Option<u32>,
+        engine: ym2612::Engine,
+    ) -> Result<Arc<Instance>, String> {
+        self.create_kind_with_nes(id, epoch, rate, clock, Kind::Ym2612, None, false, engine)
+    }
     pub fn create_ym2203(
         &self,
         id: u64,
@@ -878,7 +897,16 @@ impl Shared {
         clock: Option<u32>,
         kind: Kind,
     ) -> Result<Arc<Instance>, String> {
-        self.create_kind_with_nes(id, epoch, rate, clock, kind, None, false)
+        self.create_kind_with_nes(
+            id,
+            epoch,
+            rate,
+            clock,
+            kind,
+            None,
+            false,
+            ym2612::Engine::Ymfm,
+        )
     }
     fn create_kind_with_nes(
         &self,
@@ -889,6 +917,7 @@ impl Shared {
         kind: Kind,
         nes_clock: Option<f64>,
         fds: bool,
+        ym2612_engine: ym2612::Engine,
     ) -> Result<Arc<Instance>, String> {
         let mut control = self
             .control
@@ -1134,8 +1163,11 @@ impl Shared {
             core.publish(&state);
             (State::Ym2608(state), Core::Ym2608(core))
         } else if kind == Kind::Ym2612 {
-            let state = ym2612::Shared::default();
-            let mut core = ym2612::Renderer::new(rate)?;
+            let state = ym2612::Shared::new(ym2612_engine);
+            let mut core = match ym2612_engine {
+                ym2612::Engine::Ymfm => ym2612::Renderer::new(rate)?,
+                ym2612::Engine::Nuked => ym2612::Renderer::new_engine(rate, ym2612_engine)?,
+            };
             if let Some(hz) = clock {
                 let command = ym2612::Message {
                     id: None,

@@ -2565,11 +2565,22 @@ impl Shared {
         *sequence = next_sequence;
         status
     }
+    #[cfg(test)]
     fn create_extra_ym2612(
         &self,
         instance: u64,
         clock: Option<u32>,
     ) -> Result<ym2612::Status, String> {
+        self.create_extra_ym2612_engine(instance, clock, None)
+    }
+    fn create_extra_ym2612_engine(
+        &self,
+        instance: u64,
+        clock: Option<u32>,
+        engine: Option<&str>,
+    ) -> Result<ym2612::Status, String> {
+        // Reject unknown engines before queue reservation or rack allocation.
+        let engine = ym2612::Engine::parse(engine)?;
         let mut sequence = self
             .producer
             .lock()
@@ -2583,10 +2594,15 @@ impl Shared {
             })
             .map_err(|_| "Native command queue is full")?;
         let epoch = self.epoch.load(Ordering::Acquire);
-        let target = match self
-            .extra_psg
-            .create_ym2612(instance, epoch, self.rate, clock)
-        {
+        let allocated = match engine {
+            ym2612::Engine::Ymfm => self
+                .extra_psg
+                .create_ym2612(instance, epoch, self.rate, clock),
+            ym2612::Engine::Nuked => self
+                .extra_psg
+                .create_ym2612_engine(instance, epoch, self.rate, clock, engine),
+        };
+        let target = match allocated {
             Ok(target) => target,
             Err(error) => {
                 self.pending.fetch_sub(1, Ordering::AcqRel);
@@ -6778,10 +6794,11 @@ pub fn native_genesis_extra_ym2612_create(
     session: u64,
     instance: u64,
     clock: Option<u32>,
+    engine: Option<String>,
 ) -> Result<ym2612::Status, String> {
     crate::allowed(&window)?;
     state.with_session(session, |shared| {
-        shared.create_extra_ym2612(instance, clock)
+        shared.create_extra_ym2612_engine(instance, clock, engine.as_deref())
     })
 }
 #[tauri::command]
