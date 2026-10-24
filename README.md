@@ -45,13 +45,14 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 
 ## Native音源SDK
 
-YM2612、YM2203、YM2608は、自己完結した`tetorica-soundchip-native`のソース配布を
+YM2612、YM2203、YM2608、YM2610／YM2610Bは、自己完結した`tetorica-soundchip-native`のソース配布を
 `src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
 取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
 `python3 scripts/import_soundchip_sdk.py --check`で同梱ファイルを照合できます。
 SDKのcheckout、submodule、ビルド時の音源ソース取得は不要です。
 
-SDKから使うのはYM2612の既存低レベル接続、PC-98／追加生成のYM2203・YM2608接続と共有OPN providerです。
+SDKから使うのはYM2612の既存低レベル接続、PC-98／追加生成のYM2203・YM2608接続、
+Neo Geo／追加生成のYM2610・YM2610B共通接続と共有OPN providerです。
 既に固定しているSDK `0.1.0`を使い、共通providerは一度だけ組み込みます。
 PSG、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
 他の音源は従来の同梱スナップショットを使います。
@@ -125,6 +126,8 @@ Neo GeoではYM2610（FM 4CH）、Neo Geo（YM2610B）では6CH版をNativeで�
 `await useSoundChip('ym2610')`は選択中の音源を借り、6CH版では`useSoundChip('ym2610b')`も同じ音源を返します。
 標準clockは8 MHzで変更可能です。Stopは音色・clock・ROM・サンプル範囲を保持します。
 共通ミキサー・FX／liveFx・monitor・録音へ接続し、原典・ハッシュは`src-tauri/native-ym2610b/`に保存しています。
+Native接続は両変種とも固定SDKからビルドします。`createSoundChip('ym2610')`／`createSoundChip('ym2610b')`で
+独立した追加音源も使え、追加音源のROMはRust側で準備・保持する不変ページを参照します。
 
 X68000ではYM2151（4 MHz・FM 8CH）とOKIM6258（8 MHz・ADPCM 1ストリーム）をNativeで生成します。
 既存の`opm`／`adpcm`、`useSoundChip('ym2151')`／`useSoundChip('okim6258')`をMain／Workerから使えます。
@@ -282,7 +285,7 @@ cargo test --offline --locked --manifest-path src-tauri/Cargo.toml native_genesi
 ```
 
 C++のスナップショットは各`src-tauri/native-*/`と同梱SDKに由来・ハッシュを記録しています。
-YM2612／YM2203／YM2608の更新は[SDKの取り込み手順](docs/native-sdk-ym2612.md)で行い、
+SDKへ移したOPN系音源の更新は[SDKの取り込み手順](docs/native-sdk-ym2612.md)で行い、
 `sync_native_genesis.py`は残している従来スナップショットの照合・更新に使います。
 共有UI／Runtimeの変更は上流のPlayground ZIPを通常のimport手順で取り込みます。
 

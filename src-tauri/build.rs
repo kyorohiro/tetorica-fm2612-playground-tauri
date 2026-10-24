@@ -36,9 +36,8 @@ fn main() {
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2608.h");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2203.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2203.h");
-    println!("cargo:rerun-if-changed=native-ym2610b");
-    println!("cargo:rerun-if-changed=src/native_genesis_ym2610b.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_ym2610b.h");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2610b.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2610b.h");
     println!("cargo:rerun-if-changed=native-x68000");
     println!("cargo:rerun-if-changed=src/native_genesis_x68000.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_ym2151.cpp");
@@ -151,13 +150,16 @@ fn main() {
         .file("native-x68000/okim6258.cpp")
         .warnings(false)
         .compile("tetorica_native_x68000");
+    // Selected Neo Geo and independent YM2610/YM2610B share the pinned SDK
+    // wrapper, retaining the common OPN provider after this archive on GNU ld.
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
-        .include("native-genesis")
-        .file("src/native_genesis_ym2610b.cpp")
+        .include("vendor/tetorica-soundchip-native/vendor/ymfm")
+        .include("vendor/tetorica-soundchip-native/wasm")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2610b.cpp")
         .warnings(false)
         .compile("tetorica_native_ym2610b");
     // Selected PC-98 and independent additional YM2203 use the pinned SDK
