@@ -1,7 +1,7 @@
 // Native OPL renderer for DOS PC / MSX Audio. Exact shared Browser ymfm provider.
 #include "native_genesis_opl.h"
 #include "ymfm_opl.h"
-#include "ymfm_wasm_interface.h"
+#include "native_genesis_y8950_memory.h"
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -17,8 +17,31 @@ template<> void output_sample<ymfm::ymf262>(const ymfm::ymf262::output_data &out
     l = normalize(output.data[0] + output.data[2]);
     r = normalize(output.data[1] + output.data[3]);
 }
+// Same y8950::generate ordering and truncation, with the last FM-only
+// contribution retained so stopping ADPCM never drops a held FM sample.
+struct Y8950 : ymfm::y8950 {
+    output_data held_fm{};
+    explicit Y8950(ymfm_wasm_interface &intf) : y8950(intf) {}
+    void generate(output_data *output, uint32_t count=1) {
+        for(uint32_t n=0;n<count;++n,++output) {
+            m_fm.clock(fm_engine::ALL_CHANNELS); m_adpcm_b.clock();
+            m_fm.output(output->clear(),1,32767,fm_engine::ALL_CHANNELS & ~m_mute_mask);
+            output_data discarded; m_fm.output(discarded.clear(),1,32767,fm_engine::ALL_CHANNELS & m_mute_mask);
+            held_fm = *output;
+            if(!(m_mute_mask & 0x200)) m_adpcm_b.output(*output,3);
+            output->roundtrip_fp();
+        }
+    }
+};
+template<class Chip> void restore_fm_hold(Chip &, double &, double &) {}
+void restore_fm_hold(Y8950 &chip, double &left, double &right) {
+    auto output = chip.held_fm; output.roundtrip_fp(); left = right = normalize(output.data[0]);
+}
 struct OplBase {
     virtual ~OplBase() = default;
+    virtual void memory_page(uint32_t,uint8_t*) = 0;
+    virtual void memory_length(uint32_t) = 0;
+    virtual void cancel_adpcm() = 0;
     virtual void reset() = 0;
     virtual void stop() = 0;
     virtual void write(uint16_t, uint8_t) = 0;
@@ -33,7 +56,7 @@ struct OplBase {
     virtual void state(NativeOplState *) = 0;
 };
 template<class Chip> struct NativeOpl final : OplBase {
-    ymfm_wasm_interface intf;
+    NativeY8950Memory intf;
     Chip chip;
     const uint32_t output_rate;
     const uint8_t kind, channels;
@@ -68,10 +91,14 @@ template<class Chip> struct NativeOpl final : OplBase {
         }
     }
     void restore(uint8_t ch) { restore_one(ch); restore_one(paired(ch)); update_mute(); }
+    void memory_page(uint32_t i, uint8_t *p) override { if(kind==3)intf.memory_page(i,p); }
+    void memory_length(uint32_t n) override { if(kind==3)intf.memory_length(n); }
+    void cancel_adpcm() override { if(kind==3){write(7,1);if(chip.sample_rate(clock)<output_rate)restore_fm_hold(chip,left,right);} }
     void write(uint16_t reg, uint8_t value) override {
         if (reg >= (kind == 2 ? 512 : 256)) return;
         const uint8_t low = uint8_t(reg), bank = reg >> 8;
         registers[reg] = value;
+        if(kind==3&&reg==7&&(value&128)&&!(value&1))silent=false;
         if (low >= 0xb0 && low <= 0xb8) {
             const uint8_t ch = bank * 9 + low - 0xb0;
             pending &= ~(1u << ch);
@@ -103,7 +130,7 @@ template<class Chip> struct NativeOpl final : OplBase {
         off(voice); pending |= 1u << voice;
     }
     void stop() override {
-        pending = 0; for (uint8_t ch = 0; ch < channels; ++ch) off(ch);
+        cancel_adpcm(); pending = 0; for (uint8_t ch = 0; ch < channels; ++ch) off(ch);
         registers[0xbd] &= 224; raw(0xbd, registers[0xbd]);
         silent = true; left = right = 0;
     }
@@ -155,11 +182,14 @@ void *native_opl_create(uint32_t rate, uint8_t kind) {
         if (kind == 2) return new NativeOpl<ymfm::ymf262>(rate, kind);
         // Empty ADPCM RAM and I/O use the interface's zero read / no-op write
         // defaults, exactly like the shipped Y8950 WASM before loading memory.
-        if (kind == 3) return new NativeOpl<ymfm::y8950>(rate, kind);
+        if (kind == 3) return new NativeOpl<Y8950>(rate, kind);
     } catch (...) {}
     return nullptr;
 }
 void native_opl_destroy(void *p) { delete core(p); }
+void native_opl_memory_page(void*p,uint32_t index,uint8_t*page){core(p)->memory_page(index,page);}
+void native_opl_memory_length(void*p,uint32_t size){core(p)->memory_length(size);}
+void native_opl_cancel_adpcm(void*p){core(p)->cancel_adpcm();}
 void native_opl_reset(void *p) { core(p)->reset(); }
 void native_opl_stop(void *p) { core(p)->stop(); }
 void native_opl_write(void *p, uint16_t reg, uint8_t value) { core(p)->write(reg, value); }

@@ -7,6 +7,10 @@ struct NativeOplState {
     uint8_t kind, channels, status, irq;
 };
 extern "C" {
+// Callback installs control-owned writable ADPCM pages; Y8950 only.
+void native_opl_memory_page(void *, uint32_t index, uint8_t *page);
+void native_opl_memory_length(void *, uint32_t bytes);
+void native_opl_cancel_adpcm(void *);
 // kind: 0 YM3526, 1 YM3812, 2 YMF262, 3 Y8950. One selected core is constructed.
 void *native_opl_create(uint32_t output_rate, uint8_t kind);
 void native_opl_destroy(void *);

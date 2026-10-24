@@ -1,7 +1,7 @@
 // Independent additional OPL/OPL2/OPL3/Y8950; no machine or PCM memory bank.
 #include "native_genesis_extra_opl.h"
 #include "ymfm_opl.h"
-#include "ymfm_wasm_interface.h"
+#include "native_genesis_y8950_memory.h"
 #include "ymfm_fm.ipp"
 #include <algorithm>
 #include <array>
@@ -25,6 +25,17 @@ template int32_t ymfm::fm_operator<ymfm::opl3_registers>::compute_volume(uint32_
 template uint32_t ymfm::fm_operator<ymfm::opl_registers>::envelope_attenuation(uint32_t) const;
 template uint32_t ymfm::fm_operator<ymfm::opl2_registers>::envelope_attenuation(uint32_t) const;
 template uint32_t ymfm::fm_operator<ymfm::opl3_registers>::envelope_attenuation(uint32_t) const;
+// Keep observation helpers linkable in scalar/sanitized builds where inlining
+// differs from the common ymfm provider. No new FM provider is instantiated.
+template ymfm::fm_channel<ymfm::opl_registers> *ymfm::fm_engine_base<ymfm::opl_registers>::debug_channel(uint32_t) const;
+template ymfm::fm_operator<ymfm::opl_registers> *ymfm::fm_engine_base<ymfm::opl_registers>::debug_operator(uint32_t) const;
+template ymfm::fm_operator<ymfm::opl_registers> *ymfm::fm_channel<ymfm::opl_registers>::debug_operator(uint32_t) const;
+template ymfm::fm_channel<ymfm::opl2_registers> *ymfm::fm_engine_base<ymfm::opl2_registers>::debug_channel(uint32_t) const;
+template ymfm::fm_operator<ymfm::opl2_registers> *ymfm::fm_engine_base<ymfm::opl2_registers>::debug_operator(uint32_t) const;
+template ymfm::fm_operator<ymfm::opl2_registers> *ymfm::fm_channel<ymfm::opl2_registers>::debug_operator(uint32_t) const;
+template ymfm::fm_channel<ymfm::opl3_registers> *ymfm::fm_engine_base<ymfm::opl3_registers>::debug_channel(uint32_t) const;
+template ymfm::fm_operator<ymfm::opl3_registers> *ymfm::fm_engine_base<ymfm::opl3_registers>::debug_operator(uint32_t) const;
+template ymfm::fm_operator<ymfm::opl3_registers> *ymfm::fm_channel<ymfm::opl3_registers>::debug_operator(uint32_t) const;
 namespace {
 constexpr uint8_t SLOTS[9] = {0,1,2,8,9,10,16,17,18}, PHYSICAL[5] = {6,7,8,8,7}, PAIRS[6] = {0,1,2,9,10,11};
 float normalize(int32_t value) { return float(std::max(-32768, std::min(32767,value))) / 32768.0f; }
@@ -91,6 +102,7 @@ struct Base {
     virtual void reset()=0; virtual void stop(bool)=0; virtual void all_off()=0; virtual void write(uint16_t,uint8_t)=0;
     virtual void off(uint8_t,bool)=0; virtual void preview_off(uint8_t)=0; virtual void audition(uint8_t)=0;
     virtual void source_preview_off(uint8_t)=0;virtual void source_audition(uint8_t)=0;
+    virtual void memory_page(uint32_t,uint8_t*)=0; virtual void memory_length(uint32_t)=0;
     virtual void cancel_csm()=0; virtual void cancel_adpcm()=0; virtual void sample(float*,float*)=0;
     virtual bool csm() const=0; virtual uint8_t pair_mask() const=0;
     virtual uint8_t effective_register(uint16_t)const=0;virtual void effective_registers(uint8_t*)const=0;
@@ -98,7 +110,7 @@ struct Base {
 };
 template<class T> struct Native final : Base {
     static constexpr uint8_t CHANNELS=T::fm_engine::CHANNELS;
-    ymfm_wasm_interface intf;
+    NativeY8950Memory intf;
     Cached<T> chip;
     const uint32_t rate;
     const uint8_t kind;
@@ -127,11 +139,14 @@ template<class T> struct Native final : Base {
     void restore_one(uint8_t ch){if(forced&(1u<<ch)){forced&=~(1u<<ch);for(uint8_t slot:{SLOTS[ch%9],uint8_t(SLOTS[ch%9]+3)}){const uint16_t reg=(ch>=9?0x100:0)+0x40+slot;raw(reg,registers[reg],true);}}}
     void restore(uint8_t ch){restore_one(ch);restore_one(public_pair(ch));}
     int operator_channel(uint16_t reg)const {const uint8_t slot=reg&31;for(uint8_t ch=0;ch<9;++ch)if(slot==SLOTS[ch]||slot==SLOTS[ch]+3)return (reg>>8)*9+ch;return -1;}
+    void memory_page(uint32_t i,uint8_t*p)override{if(kind==3)intf.memory_page(i,p);}
+    void memory_length(uint32_t n)override{if(kind==3)intf.memory_length(n);}
     void write(uint16_t reg,uint8_t value)override{
         if(reg>=(kind==2?512:256))return;const uint8_t old=registers[reg],low=uint8_t(reg);registers[reg]=value;
         if(kind==2)effective[bus_register(reg)]=value;
         if(reg==4&&!(value&128))timer_loads=value&3;
         if(csm())cancelled_drums=0;
+        if(kind==3&&reg==7&&(value&128)&&!(value&1))silent=false;
         if(low>=0xb0&&low<=0xb8){const uint8_t ch=(reg>>8)*9+low-0xb0;pending&=~(1u<<ch);source_pending&=~(1u<<ch);if(value&32){restore(ch);silent=false;}}
         if(low==0xbd){for(uint8_t i=0;i<5;++i)if((old^value)&(16>>i)){pending&=~(1u<<(18+i));source_pending&=~(1u<<(18+i));}if(value&31){for(uint8_t ch=6;ch<9;++ch)restore(ch);silent=false;}for(uint8_t i=0;i<5;++i)if(value&(16>>i))cancelled_drums&=~(1u<<i);}
         const int ch=low>=0x40&&low<=0x55?operator_channel(reg):-1;raw(reg,ch>=0&&(forced&(1u<<ch))?uint8_t((value&192)|63):value);
@@ -181,8 +196,8 @@ template<class T> struct Native final : Base {
     }
     void cancel_csm()override{if(kind==2)return;write(8,registers[8]&~128);write(4,(registers[4]&~0x83)|(timer_loads&2));chip.clear_csm();for(uint8_t ch=0;ch<CHANNELS;++ch)if(!(registers[address(ch,0xb0)]&32)&&!drum_active(ch)&&!(pending&(1u<<ch)))off(ch,false);}
     void cancel_adpcm()override{if(kind==3){write(7,1);chip.adpcm.clear();chip.remix();update_hold();}}
-    void all_off()override{pending=source_pending=0;for(uint8_t ch=0;ch<CHANNELS;++ch)write(address(ch,0xb0),registers[address(ch,0xb0)]&~32);write(0xbd,registers[0xbd]&224);}
-    void stop(bool strong)override{pending=source_pending=0;for(uint8_t ch=0;ch<CHANNELS;++ch)preview_off(ch);write(0xbd,registers[0xbd]&224);silent=true;held_left=held_right=0;if(strong){if(kind==2)for(uint8_t ch=0;ch<CHANNELS;++ch)off(ch,false);cancel_csm();cancel_adpcm();}}
+    void all_off()override{if(kind==3)cancel_adpcm();pending=source_pending=0;for(uint8_t ch=0;ch<CHANNELS;++ch)write(address(ch,0xb0),registers[address(ch,0xb0)]&~32);write(0xbd,registers[0xbd]&224);}
+    void stop(bool strong)override{pending=source_pending=0;for(uint8_t ch=0;ch<CHANNELS;++ch)preview_off(ch);write(0xbd,registers[0xbd]&224);silent=true;held_left=held_right=0;if(strong){if(kind==2)for(uint8_t ch=0;ch<CHANNELS;++ch)off(ch,false);cancel_csm();}cancel_adpcm();}
     void reset()override{ymfm::ymfm_saved_state state(initial,false);chip.save_restore(state);intf.irq_asserted=false;intf.timer_remaining[0]=intf.timer_remaining[1]=-1;registers.fill(0);effective.fill(0);forced=(1u<<CHANNELS)-1;pending=source_pending=cancelled_drums=timer_loads=0;remainder=0;held_left=held_right=0;silent=true;chip.clear_history();}
     void sample(float*l,float*r)override{
         remainder+=chip.sample_rate(clock);const uint32_t count=uint32_t(remainder/rate);remainder-=uint64_t(count)*rate;
@@ -211,6 +226,8 @@ void native_extra_opl_key_off_fm(void*p,uint8_t ch){core(p)->off(ch,true);} void
 void native_extra_opl_audition_key_on(void*p,uint8_t voice){core(p)->audition(voice);} void native_extra_opl_cancel_csm(void*p){core(p)->cancel_csm();}
 void native_extra_opl_source_preview_key_off(void*p,uint8_t voice){core(p)->source_preview_off(voice);}
 void native_extra_opl_source_audition_key_on(void*p,uint8_t voice){core(p)->source_audition(voice);}
+void native_extra_opl_memory_page(void*p,uint32_t index,uint8_t*page){core(p)->memory_page(index,page);}
+void native_extra_opl_memory_length(void*p,uint32_t size){core(p)->memory_length(size);}
 void native_extra_opl_cancel_adpcm(void*p){core(p)->cancel_adpcm();} void native_extra_opl_sample(void*p,float*l,float*r){core(p)->sample(l,r);}
 uint8_t native_extra_opl_csm_active(void*p){return core(p)->csm()?1:0;}
 uint8_t native_extra_opl_four_op_mask(void*p){return core(p)->pair_mask();}

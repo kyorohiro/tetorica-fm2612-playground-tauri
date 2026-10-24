@@ -23,6 +23,8 @@ mod dx7;
 #[cfg(test)]
 #[path = "native_genesis_dx7_tests.rs"]
 mod dx7_tests;
+#[path = "native_genesis_y8950_memory.rs"]
+mod y8950_memory;
 #[path = "native_genesis_extra_budget.rs"]
 mod extra_budget;
 #[path = "native_genesis_extra_dx7.rs"]
@@ -57,6 +59,9 @@ mod extra_okim6258;
 mod extra_okim6258_tests;
 #[path = "native_genesis_extra_opl.rs"]
 mod extra_opl;
+#[cfg(test)]
+#[path = "native_genesis_y8950_memory_tests.rs"]
+mod y8950_memory_tests;
 #[cfg(test)]
 #[path = "native_genesis_extra_opl_tests.rs"]
 mod extra_opl_tests;

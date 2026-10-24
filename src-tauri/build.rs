@@ -58,6 +58,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_extra_opl.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_extra_opl.h");
     println!("cargo:rerun-if-changed=src/native_genesis_opl.h");
+    println!("cargo:rerun-if-changed=src/native_genesis_y8950_memory.h");
     // Independent additional YM2612 consumes the common ymfm provider below.
     cc::Build::new()
         .cpp(true)

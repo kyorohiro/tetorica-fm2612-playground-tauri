@@ -549,8 +549,10 @@ impl Shared {
         // Dropping retired Prepared guards may release their immutable page
         // versions. Reclaim those versions on control before new admission.
         for instance in &control.instances {
-            if let State::Ym2610(s) = &instance.state {
-                s.collect_retired();
+            match &instance.state {
+                State::Ym2610(s) => s.collect_retired(),
+                State::Y8950(s) => s.collect_retired(),
+                _ => {}
             }
         }
 
@@ -1022,7 +1024,7 @@ impl Shared {
             (State::Okim6258(state), Core::Okim6258(core))
         } else if kind == Kind::Ymf262 {
             let chip = extra_opl::Chip::Ymf262;
-            let state = extra_opl::Shared::new(chip);
+            let state = extra_opl::Shared::with_budget(chip, self.budget.clone());
             let mut core = extra_opl::Renderer::new(rate, chip)?;
             if let Some(hz) = clock {
                 let cmd = extra_opl::Message {
@@ -1038,7 +1040,7 @@ impl Shared {
             (State::Ymf262(state), Core::Ymf262(core))
         } else if kind == Kind::Y8950 {
             let chip = extra_opl::Chip::Y8950;
-            let state = extra_opl::Shared::new(chip);
+            let state = extra_opl::Shared::with_budget(chip, self.budget.clone());
             let mut core = extra_opl::Renderer::new(rate, chip)?;
             if let Some(hz) = clock {
                 let cmd = extra_opl::Message {
@@ -1054,7 +1056,7 @@ impl Shared {
             (State::Y8950(state), Core::Y8950(core))
         } else if kind == Kind::Ym3812 {
             let chip = extra_opl::Chip::Ym3812;
-            let state = extra_opl::Shared::new(chip);
+            let state = extra_opl::Shared::with_budget(chip, self.budget.clone());
             let mut core = extra_opl::Renderer::new(rate, chip)?;
             if let Some(hz) = clock {
                 let cmd = extra_opl::Message {
@@ -1070,7 +1072,7 @@ impl Shared {
             (State::Ym3812(state), Core::Ym3812(core))
         } else if kind == Kind::Ym3526 {
             let chip = extra_opl::Chip::Ym3526;
-            let state = extra_opl::Shared::new(chip);
+            let state = extra_opl::Shared::with_budget(chip, self.budget.clone());
             let mut core = extra_opl::Renderer::new(rate, chip)?;
             if let Some(hz) = clock {
                 let cmd = extra_opl::Message {

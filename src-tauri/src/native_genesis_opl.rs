@@ -8,7 +8,7 @@ use std::{
     ffi::c_void,
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
     },
 };
 const VOICES: usize = 18;
@@ -29,6 +29,9 @@ impl Default for CoreState {
     }
 }
 extern "C" {
+    fn native_opl_memory_page(p: *mut c_void, index: u32, page: *mut u8);
+    fn native_opl_memory_length(p: *mut c_void, size: u32);
+    fn native_opl_cancel_adpcm(p: *mut c_void);
     fn native_opl_create(rate: u32, kind: u8) -> *mut c_void;
     fn native_opl_destroy(p: *mut c_void);
     fn native_opl_reset(p: *mut c_void);
@@ -114,6 +117,11 @@ pub struct Message {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "method", rename_all = "kebab-case")]
 pub enum Method {
+    AdpcmMemory {
+        address: u32,
+        bytes: Vec<u8>,
+    },
+    AdpcmClear,
     Write {
         register: u16,
         value: u8,
@@ -160,6 +168,9 @@ pub enum LeaseAction {
 }
 #[derive(Debug)]
 pub struct Prepared {
+    memory: OnceLock<Arc<super::y8950_memory::Upload>>,
+    memory_rejected: AtomicBool,
+    cancelled: AtomicBool,
     pub id: Option<u64>,
     chip: Chip,
     audition: bool,
@@ -229,6 +240,15 @@ impl Message {
             return Err("Invalid Native OPL command ID".into());
         }
         match &self.method {
+            Method::AdpcmMemory { address, bytes } => {
+                if self.chip != Chip::Y8950 {
+                    return Err("ADPCM memory is available only on Y8950".into());
+                }
+                super::y8950_memory::validate(*address as usize, bytes.len())?;
+            }
+            Method::AdpcmClear if self.chip != Chip::Y8950 => {
+                return Err("ADPCM memory is available only on Y8950".into())
+            }
             Method::Write { register, value } => validate_op(
                 &Op::Write {
                     register: *register,
@@ -285,6 +305,9 @@ impl Message {
             _ => {}
         }
         Ok(Arc::new(Prepared {
+            memory: OnceLock::new(),
+            memory_rejected: AtomicBool::new(false),
+            cancelled: AtomicBool::new(false),
             id: self.id,
             chip: self.chip,
             audition: self.audition,
@@ -298,7 +321,9 @@ impl Message {
 impl Prepared {
     pub fn starts(&self) -> bool {
         match &self.method {
-            Method::KeyOff { .. }
+            Method::AdpcmMemory { .. }
+            | Method::AdpcmClear
+            | Method::KeyOff { .. }
             | Method::Clock { .. }
             | Method::Mix { .. }
             | Method::SourceMute { .. }
@@ -313,10 +338,10 @@ impl Prepared {
     }
     fn bytes(&self) -> usize {
         std::mem::size_of::<Self>()
-            + if let Method::Batch { commands, .. } = &self.method {
-                commands.len() * std::mem::size_of::<Op>()
-            } else {
-                0
+            + match &self.method {
+                Method::Batch { commands, .. } => commands.len() * std::mem::size_of::<Op>(),
+                Method::AdpcmMemory { bytes, .. } => bytes.len(),
+                _ => 0,
             }
     }
 }
@@ -328,6 +353,9 @@ struct Control {
     rejected_clocks: HashSet<u64>,
 }
 pub struct Shared {
+    memory: super::y8950_memory::Arena,
+    memory_size: AtomicU32,
+    adpcm_held: AtomicBool,
     chip: Chip,
     revision: AtomicU64,
     registers: [AtomicU8; 512],
@@ -347,6 +375,8 @@ pub struct Shared {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChipStatus {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adpcm_memory_size: Option<u32>,
     pub chip: &'static str,
     pub clock: u32,
     pub registers: Vec<u8>,
@@ -377,6 +407,9 @@ pub struct Status {
 impl Shared {
     pub fn new(chip: Chip) -> Self {
         Self {
+            memory: super::y8950_memory::Arena::default(),
+            memory_size: AtomicU32::new(0),
+            adpcm_held: AtomicBool::new(false),
             chip,
             revision: AtomicU64::new(0),
             registers: std::array::from_fn(|_| AtomicU8::new(0)),
@@ -428,8 +461,16 @@ impl Shared {
             }
             retired.insert(Arc::as_ptr(&cmd) as usize);
         }
-        c.prepared
-            .retain(|cmd| !retired.contains(&(Arc::as_ptr(cmd) as usize)));
+        c.prepared.retain(|cmd| {
+            let cancelled = cmd.id.is_some()
+                && (cmd.cancelled.load(Ordering::Acquire)
+                    || cmd.memory_rejected.load(Ordering::Acquire))
+                && matches!(cmd.method, Method::AdpcmMemory { .. } | Method::AdpcmClear);
+            cancelled && !cmd.outcome_observed.load(Ordering::Acquire)
+                || !retired.contains(&(Arc::as_ptr(cmd) as usize))
+                    && !(cancelled && cmd.outcome_observed.load(Ordering::Acquire))
+        });
+        self.memory.collect();
     }
     pub fn retain(&self, commands: &[(Arc<Prepared>, Option<Owner>)]) -> Result<(), String> {
         let mut c = self
@@ -455,6 +496,16 @@ impl Shared {
             return Err("Release the manually held OPL voices before changing the clock".into());
         }
 
+        if self.adpcm_held.load(Ordering::Acquire)
+            && commands.iter().any(|(cmd, _)| {
+                !cmd.audition
+                    && matches!(cmd.method, Method::AdpcmMemory { .. } | Method::AdpcmClear)
+            })
+        {
+            return Err(
+                "Release the manually held Y8950 ADPCM voice before changing memory".into(),
+            );
+        }
         if c.prepared.len() + c.rejected_clocks.len() + commands.len() > CAPACITY
             || c.prepared.iter().map(|v| v.bytes()).sum::<usize>()
                 + commands.iter().map(|(v, _)| v.bytes()).sum::<usize>()
@@ -472,6 +523,14 @@ impl Shared {
         {
             if !ids.insert(id) {
                 return Err("Duplicate pending Native OPL command ID".into());
+            }
+        }
+        for (cmd, _) in commands {
+            if let Method::AdpcmMemory { address, bytes } = &cmd.method {
+                if cmd.memory.get().is_none() {
+                    let memory = self.memory.prepare(*address as usize, bytes)?;
+                    let _ = cmd.memory.set(memory);
+                }
             }
         }
         for (cmd, _) in commands {
@@ -503,11 +562,14 @@ impl Shared {
             while !cmd.complete.load(Ordering::Acquire) {
                 // A scheduled Worker clock change awaits the same applied
                 // command barrier as the authoring client, not an early ACK.
-                let deadline = if matches!(cmd.method, Method::Clock { .. }) {
-                    5000
-                } else {
-                    100
-                };
+                let deadline =
+                    if matches!(cmd.method, Method::AdpcmMemory { .. } | Method::AdpcmClear) {
+                        5000
+                    } else if matches!(cmd.method, Method::Clock { .. }) {
+                        5000
+                    } else {
+                        100
+                    };
                 if start.elapsed() > std::time::Duration::from_millis(deadline) {
                     return Err(format!(
                         "Native OPL command was not applied within {deadline} ms"
@@ -516,6 +578,16 @@ impl Shared {
                 std::thread::sleep(std::time::Duration::from_millis(1));
             }
             cmd.outcome_observed.store(true, Ordering::Release);
+            if cmd.memory_rejected.load(Ordering::Acquire) {
+                return Err(
+                    "Release the manually held Y8950 ADPCM voice before changing memory".into(),
+                );
+            }
+            if cmd.cancelled.load(Ordering::Acquire)
+                && matches!(cmd.method, Method::AdpcmMemory { .. } | Method::AdpcmClear)
+            {
+                return Err("Y8950 ADPCM memory command was cancelled before application".into());
+            }
             if cmd.clock_rejected.load(Ordering::Acquire) {
                 self.control
                     .lock()
@@ -531,6 +603,7 @@ impl Shared {
     }
     pub fn retire(&self, cmd: Arc<Prepared>) {
         if !cmd.complete.load(Ordering::Relaxed) {
+            cmd.cancelled.store(true, Ordering::Release);
             self.revision.fetch_add(1, Ordering::AcqRel);
             cmd.complete.store(true, Ordering::Relaxed);
             self.revision.fetch_add(1, Ordering::Release);
@@ -543,6 +616,9 @@ impl Shared {
     fn publish(&self, r: &Renderer, command: Option<&Prepared>) {
         let s = r.state();
         self.revision.fetch_add(1, Ordering::AcqRel);
+        self.memory_size.store(r.memory.size(), Ordering::Relaxed);
+        self.adpcm_held
+            .store(r.adpcm_owner.is_some_and(|l| l.audition), Ordering::Relaxed);
         for (o, v) in self.registers.iter().zip(s.registers) {
             o.store(v, Ordering::Relaxed)
         }
@@ -557,11 +633,14 @@ impl Shared {
             )
         }
         self.held.store(
-            r.owners
-                .iter()
-                .flatten()
-                .filter(|l| l.audition)
-                .fold(0, |bits, l| bits | (1 << l.channel)),
+            r.owners.iter().flatten().filter(|l| l.audition).fold(
+                if r.adpcm_owner.is_some_and(|l| l.audition) {
+                    (1 << self.chip.channels()) - 1
+                } else {
+                    0
+                },
+                |bits, l| bits | (1 << l.channel),
+            ),
             Ordering::Relaxed,
         );
         self.rate.store(r.rate, Ordering::Relaxed);
@@ -589,6 +668,8 @@ impl Shared {
             let held = self.held.load(Ordering::Relaxed);
             let rate = self.rate.load(Ordering::Relaxed);
             let chip = ChipStatus {
+                adpcm_memory_size: (self.chip == Chip::Y8950)
+                    .then(|| self.memory_size.load(Ordering::Relaxed)),
                 chip: self.mode(),
                 clock: self.clock(),
                 registers: self.registers[..self.chip.registers()]
@@ -641,6 +722,8 @@ struct Lease {
     channel: u8,
 }
 pub struct Renderer {
+    adpcm_owner: Option<Lease>,
+    memory: super::y8950_memory::Applied,
     ptr: *mut c_void,
     chip: Chip,
     rate: u32,
@@ -662,6 +745,8 @@ impl Renderer {
             return Err("Could not allocate Native OPL core".into());
         }
         Ok(Self {
+            adpcm_owner: None,
+            memory: super::y8950_memory::Applied::new(),
             ptr,
             chip,
             rate,
@@ -723,16 +808,44 @@ impl Renderer {
         if target.is_some_and(|p| self.protected(p, voice, audition)) {
             return;
         }
-        let held = self.owners.iter().flatten().any(|l| l.audition);
+        let held = self.owners.iter().flatten().any(|l| l.audition)
+            || self.adpcm_owner.is_some_and(|l| l.audition);
         if !audition
             && held
             && match *op {
                 Op::Clock { .. } => true,
-                Op::Write { register, .. } => register < 0x20 || (0x100..0x120).contains(&register),
+                Op::Write { register, value } => {
+                    (register < 0x20 || (0x100..0x120).contains(&register))
+                        && !(self.chip == Chip::Y8950
+                            && (7..=0x12).contains(&register)
+                            && (register != 8 || (value ^ s.registers[8]) & 0xc0 == 0))
+                }
                 _ => false,
             }
         {
             return;
+        }
+        if let Op::Write { register, value } = *op {
+            if self.chip == Chip::Y8950 && (7..=0x12).contains(&register) {
+                if self.adpcm_owner.is_some_and(|l| {
+                    l.audition && !audition
+                        || register == 7 && value & 128 == 0 && owner.is_some() && l.owner != owner
+                }) {
+                    return;
+                }
+                if register == 7 && !preserve {
+                    if value & 1 != 0 {
+                        self.adpcm_owner = None;
+                    } else if value & 128 != 0 {
+                        self.adpcm_owner = Some(Lease {
+                            owner,
+                            voice,
+                            audition,
+                            channel: 23,
+                        });
+                    }
+                }
+            }
         }
         let mut off = matches!(op, Op::KeyOff { .. });
         let mut on = matches!(op, Op::AuditionKeyOn { .. });
@@ -838,7 +951,8 @@ impl Renderer {
             return;
         }
         if !c.audition
-            && self.owners.iter().flatten().any(|l| l.audition)
+            && (self.owners.iter().flatten().any(|l| l.audition)
+                || self.adpcm_owner.is_some_and(|l| l.audition))
             && match &c.method {
                 Method::Clock { .. } => true,
                 Method::Batch { commands, .. } => {
@@ -851,7 +965,43 @@ impl Renderer {
             shared.publish(self, Some(c));
             return;
         }
+        if !c.audition
+            && self.adpcm_owner.is_some_and(|l| l.audition)
+            && matches!(c.method, Method::AdpcmMemory { .. } | Method::AdpcmClear)
+        {
+            c.memory_rejected.store(true, Ordering::Release);
+            shared.publish(self, Some(c));
+            return;
+        }
         match &c.method {
+            Method::AdpcmMemory { bytes, .. } => {
+                unsafe {
+                    native_opl_write(self.ptr, 7, 1);
+                }
+                self.adpcm_owner = None;
+                if let Some(upload) = c.memory.get() {
+                    let ptr = self.ptr;
+                    self.memory.apply(upload, bytes, |index, page| unsafe {
+                        native_opl_memory_page(ptr, index as u32, page)
+                    });
+                    unsafe {
+                        native_opl_memory_length(ptr, self.memory.size());
+                    }
+                }
+            }
+            Method::AdpcmClear => {
+                unsafe {
+                    native_opl_write(self.ptr, 7, 1);
+                }
+                self.adpcm_owner = None;
+                let ptr = self.ptr;
+                self.memory.clear(|index, page| unsafe {
+                    native_opl_memory_page(ptr, index as u32, page)
+                });
+                unsafe {
+                    native_opl_memory_length(ptr, 0);
+                }
+            }
             Method::Write { register, value } => self.op(
                 &Op::Write {
                     register: *register,
@@ -886,20 +1036,33 @@ impl Renderer {
             }
             Method::SourceMute { mask } => unsafe { native_opl_set_mute_mask(self.ptr, *mask) },
             Method::Reset => {
-                if c.audition || !self.owners.iter().flatten().any(|l| l.audition) {
+                if c.audition
+                    || !(self.owners.iter().flatten().any(|l| l.audition)
+                        || self.adpcm_owner.is_some_and(|l| l.audition))
+                {
                     unsafe { native_opl_reset(self.ptr) }
-                    self.owners.fill(None)
+                    self.owners.fill(None);
+                    self.adpcm_owner = None;
                 }
             }
             Method::StopVoices => {
-                if owner.is_none() {
+                let manual = self.owners.iter().flatten().any(|l| l.audition)
+                    || self.adpcm_owner.is_some_and(|l| l.audition);
+                if owner.is_none() && (c.audition || !manual) {
+                    self.adpcm_owner = None;
                     unsafe { native_opl_stop(self.ptr) }
                     self.owners.fill(None)
                 } else {
+                    if self.adpcm_owner.is_some_and(|l| {
+                        (owner.is_none() || l.owner == owner) && (!l.audition || c.audition)
+                    }) {
+                        unsafe { native_opl_cancel_adpcm(self.ptr) }
+                        self.adpcm_owner = None;
+                    }
                     for p in 0..VOICES {
-                        if self.owners[p]
-                            .is_some_and(|l| l.owner == owner && (!l.audition || c.audition))
-                        {
+                        if self.owners[p].is_some_and(|l| {
+                            (owner.is_none() || l.owner == owner) && (!l.audition || c.audition)
+                        }) {
                             self.release(p)
                         }
                     }
@@ -972,6 +1135,11 @@ impl Renderer {
     }
     pub fn cancel_invalid(&mut self, valid: impl Fn(Option<Owner>) -> bool, s: &Shared) {
         let mut changed = false;
+        if self.adpcm_owner.is_some_and(|l| !valid(l.owner)) {
+            unsafe { native_opl_cancel_adpcm(self.ptr) }
+            self.adpcm_owner = None;
+            changed = true;
+        }
         for p in 0..VOICES {
             if self.owners[p].is_some_and(|l| !valid(l.owner)) {
                 self.release(p);
@@ -985,6 +1153,7 @@ impl Renderer {
     pub fn stop(&mut self, s: &Shared) {
         unsafe { native_opl_stop(self.ptr) }
         self.owners.fill(None);
+        self.adpcm_owner = None;
         s.publish(self, None)
     }
     pub fn mix(&mut self, pcm: &mut [f32; 2]) {

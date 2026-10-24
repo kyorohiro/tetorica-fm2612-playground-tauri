@@ -8,7 +8,7 @@ use std::{
     ffi::c_void,
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering},
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
     },
 };
 pub const CLOCK: u32 = 3_579_545;
@@ -85,6 +85,8 @@ impl Default for CoreState {
     }
 }
 extern "C" {
+    fn native_extra_opl_memory_page(p: *mut c_void, index: u32, page: *mut u8);
+    fn native_extra_opl_memory_length(p: *mut c_void, size: u32);
     fn native_extra_opl_create(rate: u32, kind: u8) -> *mut c_void;
     fn native_extra_opl_destroy(p: *mut c_void);
     fn native_extra_opl_reset(p: *mut c_void);
@@ -118,6 +120,11 @@ pub struct Message {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "method", rename_all = "kebab-case")]
 pub enum Method {
+    AdpcmMemory {
+        address: u32,
+        bytes: Vec<u8>,
+    },
+    AdpcmClear,
     Write {
         register: u16,
         value: u8,
@@ -180,6 +187,9 @@ pub enum LeaseAction {
 }
 #[derive(Debug)]
 pub struct Prepared {
+    memory: OnceLock<Arc<super::y8950_memory::Upload>>,
+    memory_rejected: AtomicBool,
+    cancelled: AtomicBool,
     pub id: Option<u64>,
     chip: Chip,
     audition: bool,
@@ -263,10 +273,10 @@ fn validate_op(chip: Chip, op: &Op) -> Result<(), String> {
 impl Message {
     pub fn prepared_bytes(&self) -> usize {
         std::mem::size_of::<Prepared>()
-            + if let Method::Batch { commands, .. } = &self.method {
-                commands.len() * std::mem::size_of::<Op>()
-            } else {
-                0
+            + match &self.method {
+                Method::Batch { commands, .. } => commands.len() * std::mem::size_of::<Op>(),
+                Method::AdpcmMemory { bytes, .. } => bytes.len(),
+                _ => 0,
             }
     }
     pub fn prepare(&self, chip: Chip) -> Result<Arc<Prepared>, String> {
@@ -274,6 +284,15 @@ impl Message {
             return Err("Invalid Native additional OPL command ID".into());
         }
         match &self.method {
+            Method::AdpcmMemory { address, bytes } => {
+                if chip != Chip::Y8950 {
+                    return Err("ADPCM memory is available only on Y8950".into());
+                }
+                super::y8950_memory::validate(*address as usize, bytes.len())?;
+            }
+            Method::AdpcmClear if chip != Chip::Y8950 => {
+                return Err("ADPCM memory is available only on Y8950".into())
+            }
             Method::Write {
                 register,
                 value,
@@ -335,6 +354,9 @@ impl Message {
             _ => {}
         }
         Ok(Arc::new(Prepared {
+            memory: OnceLock::new(),
+            memory_rejected: AtomicBool::new(false),
+            cancelled: AtomicBool::new(false),
             id: self.id,
             chip,
             audition: self.audition,
@@ -359,10 +381,10 @@ impl Prepared {
     }
     pub fn retained_bytes(&self) -> usize {
         std::mem::size_of::<Self>()
-            + if let Method::Batch { commands, .. } = &self.method {
-                commands.capacity() * std::mem::size_of::<Op>()
-            } else {
-                0
+            + match &self.method {
+                Method::Batch { commands, .. } => commands.capacity() * std::mem::size_of::<Op>(),
+                Method::AdpcmMemory { bytes, .. } => bytes.capacity(),
+                _ => 0,
             }
     }
     fn bytes(&self) -> usize {
@@ -385,6 +407,9 @@ struct Control {
     rejected_clocks: HashSet<u64>,
 }
 pub struct Shared {
+    memory: super::y8950_memory::Arena,
+    memory_size: AtomicU32,
+    adpcm_held: AtomicBool,
     chip: Chip,
     revision: AtomicU64,
     layout_revision: AtomicU64,
@@ -404,8 +429,11 @@ pub struct Shared {
     owner_cancel_before: [AtomicU64; OWNERS],
 }
 impl Shared {
-    pub fn new(chip: Chip) -> Self {
+    pub fn with_budget(chip: Chip, budget: Arc<super::extra_budget::Budget>) -> Self {
         Self {
+            memory: super::y8950_memory::Arena::new(budget),
+            memory_size: AtomicU32::new(0),
+            adpcm_held: AtomicBool::new(false),
             chip,
             revision: AtomicU64::new(0),
             layout_revision: AtomicU64::new(0),
@@ -429,6 +457,8 @@ impl Shared {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChipStatus {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adpcm_memory_size: Option<u32>,
     pub chip: &'static str,
     pub channels: u8,
     pub clock: u32,
@@ -495,11 +525,16 @@ impl Shared {
             retired.insert(Arc::as_ptr(&cmd) as usize);
         }
         c.prepared.retain(|cmd| {
-            let rejected = cmd.id.is_some() && cmd.clock_rejected.load(Ordering::Acquire);
+            let rejected = cmd.id.is_some()
+                && (cmd.clock_rejected.load(Ordering::Acquire)
+                    || (cmd.cancelled.load(Ordering::Acquire)
+                        || cmd.memory_rejected.load(Ordering::Acquire))
+                        && matches!(cmd.method, Method::AdpcmMemory { .. } | Method::AdpcmClear));
             let observed = cmd.outcome_observed.load(Ordering::Acquire);
             rejected && !observed
                 || !retired.contains(&(Arc::as_ptr(cmd) as usize)) && !(rejected && observed)
         });
+        self.memory.collect();
         if c.prepared.capacity() > 64.max(c.prepared.len().saturating_mul(2)) {
             c.prepared.shrink_to_fit();
         }
@@ -525,6 +560,16 @@ impl Shared {
         {
             return Err(self.clock_held_error().into());
         }
+        if self.adpcm_held.load(Ordering::Acquire)
+            && commands.iter().any(|(cmd, _)| {
+                !cmd.audition
+                    && matches!(cmd.method, Method::AdpcmMemory { .. } | Method::AdpcmClear)
+            })
+        {
+            return Err(
+                "Release the manually held Y8950 ADPCM voice before changing memory".into(),
+            );
+        }
         if c.prepared.len() + commands.len() > CAPACITY
             || c.prepared.iter().map(|v| v.bytes()).sum::<usize>()
                 + commands.iter().map(|(v, _)| v.bytes()).sum::<usize>()
@@ -543,6 +588,14 @@ impl Shared {
         {
             if !ids.insert(id) {
                 return Err("Duplicate pending Native additional simple chip command ID".into());
+            }
+        }
+        for (cmd, _) in commands {
+            if let Method::AdpcmMemory { address, bytes } = &cmd.method {
+                if cmd.memory.get().is_none() {
+                    let memory = self.memory.prepare(*address as usize, bytes)?;
+                    let _ = cmd.memory.set(memory);
+                }
             }
         }
         for (cmd, _) in commands {
@@ -572,7 +625,12 @@ impl Shared {
             while !cmd.complete.load(Ordering::Acquire) {
                 // A scheduled Worker clock change awaits the same applied
                 // command barrier as the authoring client, not an early ACK.
-                let deadline = if matches!(cmd.method, Method::Clock { .. } | Method::Reset)
+                let deadline = if matches!(
+                    cmd.method,
+                    Method::AdpcmMemory { .. } | Method::AdpcmClear
+                ) {
+                    5000
+                } else if matches!(cmd.method, Method::Clock { .. } | Method::Reset)
                     || matches!(cmd.method, Method::Write { register, .. } if layout_register(register))
                 {
                     // Applied-layout observations share the Worker lookahead
@@ -590,6 +648,16 @@ impl Shared {
                 std::thread::sleep(std::time::Duration::from_millis(1));
             }
             cmd.outcome_observed.store(true, Ordering::Release);
+            if cmd.memory_rejected.load(Ordering::Acquire) {
+                return Err(
+                    "Release the manually held Y8950 ADPCM voice before changing memory".into(),
+                );
+            }
+            if cmd.cancelled.load(Ordering::Acquire)
+                && matches!(cmd.method, Method::AdpcmMemory { .. } | Method::AdpcmClear)
+            {
+                return Err("Y8950 ADPCM memory command was cancelled before application".into());
+            }
             if cmd.clock_rejected.load(Ordering::Acquire) {
                 self.control
                     .lock()
@@ -643,9 +711,14 @@ impl Shared {
         }
     }
     pub fn rollback(&self, cmd: Arc<Prepared>) {
+        // Unadmitted batches have no asynchronous applied waiter.
+        cmd.outcome_observed.store(true, Ordering::Release);
         self.retire(cmd)
     }
     pub fn retire(&self, cmd: Arc<Prepared>) {
+        if !cmd.complete.load(Ordering::Acquire) {
+            cmd.cancelled.store(true, Ordering::Release);
+        }
         self.complete(&cmd);
         self.retired
             .push(cmd)
@@ -654,6 +727,9 @@ impl Shared {
     fn publish(&self, r: &Renderer, command: Option<&Prepared>) {
         let state = r.state();
         self.revision.fetch_add(1, Ordering::AcqRel);
+        self.memory_size.store(r.memory.size(), Ordering::Relaxed);
+        self.adpcm_held
+            .store(r.adpcm_owner.is_some_and(|l| l.audition), Ordering::Relaxed);
         let pair_mask = r.four_op_mask();
         let mut effective = [0; 512];
         if self.chip == Chip::Ymf262 {
@@ -746,6 +822,8 @@ impl Shared {
             }
             let held = self.held.load(Ordering::Relaxed);
             let chip = ChipStatus {
+                adpcm_memory_size: (self.chip == Chip::Y8950)
+                    .then(|| self.memory_size.load(Ordering::Relaxed)),
                 chip: self.chip.name(),
                 channels: self.chip.channels() as u8,
                 clock: self.clock(),
@@ -813,6 +891,7 @@ struct Lease {
     audition: bool,
 }
 pub struct Renderer {
+    memory: super::y8950_memory::Applied,
     chip: Chip,
     current_group: Option<u64>,
     preview_release: bool,
@@ -838,6 +917,7 @@ impl Renderer {
             return Err("Could not allocate additional Native OPL core".into());
         }
         Ok(Self {
+            memory: super::y8950_memory::Applied::new(),
             chip,
             current_group: None,
             preview_release: false,
@@ -1183,7 +1263,11 @@ impl Renderer {
                 if register == 1 && !audition && self.has_manual() {
                     value = (value & !32) | (old & 32)
                 }
-                if matches!(register, 2 | 3 | 4 | 8) && !audition && self.has_manual() {
+                if matches!(register, 2 | 3 | 4 | 8)
+                    && !audition
+                    && self.has_manual()
+                    && !(self.chip == Chip::Y8950 && register == 8 && (old ^ value) & 0xc0 == 0)
+                {
                     return;
                 }
                 if matches!(register as u8,0xa0..=0xa8|0xb0..=0xb8|0xc0..=0xc8) {
@@ -1227,7 +1311,8 @@ impl Renderer {
                     }
                 }
                 let before_csm = unsafe { native_extra_opl_csm_active(self.ptr) != 0 };
-                let mut may_claim_csm = true;
+                let mut may_claim_csm =
+                    !(self.chip == Chip::Y8950 && register == 8 && (old ^ value) & 0xc0 == 0);
                 if before_csm && matches!(register, 4 | 8) {
                     let stopping = register == 8 && value & 128 == 0
                         || register == 4 && value & 128 == 0 && value & 1 == 0;
@@ -1342,7 +1427,43 @@ impl Renderer {
             return;
         }
         self.current_group = c.group;
+        if !c.audition
+            && self.adpcm_owner.is_some_and(|l| l.audition)
+            && matches!(c.method, Method::AdpcmMemory { .. } | Method::AdpcmClear)
+        {
+            c.memory_rejected.store(true, Ordering::Release);
+            shared.publish(self, Some(c));
+            return;
+        }
         match &c.method {
+            Method::AdpcmMemory { bytes, .. } => {
+                unsafe {
+                    native_extra_opl_write(self.ptr, 7, 1);
+                }
+                self.adpcm_owner = None;
+                if let Some(upload) = c.memory.get() {
+                    let ptr = self.ptr;
+                    self.memory.apply(upload, bytes, |index, page| unsafe {
+                        native_extra_opl_memory_page(ptr, index as u32, page)
+                    });
+                    unsafe {
+                        native_extra_opl_memory_length(ptr, self.memory.size());
+                    }
+                }
+            }
+            Method::AdpcmClear => {
+                unsafe {
+                    native_extra_opl_write(self.ptr, 7, 1);
+                }
+                self.adpcm_owner = None;
+                let ptr = self.ptr;
+                self.memory.clear(|index, page| unsafe {
+                    native_extra_opl_memory_page(ptr, index as u32, page)
+                });
+                unsafe {
+                    native_extra_opl_memory_length(ptr, 0);
+                }
+            }
             Method::Write {
                 register,
                 value,
@@ -1454,8 +1575,8 @@ impl Renderer {
                     }
                     if matches!(c.method, Method::StopVoices) {
                         self.csm_owner = None;
-                        self.adpcm_owner = None;
                     }
+                    self.adpcm_owner = None;
                 } else {
                     for ch in 0..VOICES {
                         if self.owners[ch]
@@ -1463,6 +1584,12 @@ impl Renderer {
                         {
                             self.release(ch)
                         }
+                    }
+                    if self
+                        .adpcm_owner
+                        .is_some_and(|l| self.scoped(l, owner, c.group, c.audition))
+                    {
+                        self.cancel_adpcm();
                     }
                     if matches!(c.method, Method::StopVoices) {
                         if self

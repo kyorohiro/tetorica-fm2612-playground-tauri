@@ -1954,7 +1954,7 @@ mod msx_audio_pipeline_tests {
         assert_eq!(snapshot(&s).ay8910.registers, [0; 16]);
     }
     #[test]
-    fn msx_audio_native_y8950_manual_fm_protects_global_delta_t_controls_without_blocking_pair() {
+    fn msx_audio_native_y8950_manual_fm_protects_shared_bits_and_allows_independent_adpcm() {
         let (s, mut r) = setup();
         let mut manual = y_note(0);
         manual["audition"] = json!(true);
@@ -1965,6 +1965,7 @@ mod msx_audio_pipeline_tests {
             &[
                 command(0, write("y8950", 0x43, 63)),
                 command(0, write("y8950", 7, 0x80)),
+                command(0, write("y8950", 8, 0x80)),
                 command(0, opll_note(1)),
                 command(0, ay_note()),
             ],
@@ -1974,7 +1975,8 @@ mod msx_audio_pipeline_tests {
         let state = snapshot(&s);
         assert_eq!(state.y8950.held, [0]);
         assert_eq!(state.y8950.registers[0x43], 0);
-        assert_eq!(state.y8950.registers[7], 0);
+        assert_eq!(state.y8950.registers[7], 0x80);
+        assert_eq!(state.y8950.registers[8], 0);
         assert_ne!(state.ym2413.registers[0x21] & 16, 0);
         assert_eq!(state.ay8910.registers[8], 9);
         assert_eq!(
