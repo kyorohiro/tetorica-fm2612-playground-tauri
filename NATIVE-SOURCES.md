@@ -9,9 +9,10 @@ records their SHA-256 hashes and the frontend release archive hash.
 The complete pinned `tetorica-soundchip-native` source distribution is included
 under `src-tauri/vendor/tetorica-soundchip-native/`, together with the separate
 import receipt `src-tauri/soundchip-sdk.json`. Its source manifests, provenance,
-licenses and notices are preserved. YM2612 and the shared OPN/SSG/ADPCM provider
-build from that snapshot; the other application adapters retain their existing
-source snapshots. The [SDK adoption guide](docs/native-sdk-ym2612.md) lists the
+licenses and notices are preserved. YM2612, the selected/additional YM2203 adapter
+and the shared OPN/SSG/ADPCM provider build from that snapshot; the other
+application adapters retain their existing source snapshots. The
+[SDK adoption guide](docs/native-sdk-ym2612.md) lists the
 consumed paths, pinned archive hash and deliberate offline update procedure.
 A separate SDK checkout or sound-core download is not required to rebuild this
 application from its matching source ZIP.

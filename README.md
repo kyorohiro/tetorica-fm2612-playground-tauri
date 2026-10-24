@@ -45,13 +45,14 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 
 ## Native音源SDK
 
-YM2612は、自己完結した`tetorica-soundchip-native`のソース配布を
+YM2612とYM2203は、自己完結した`tetorica-soundchip-native`のソース配布を
 `src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
 取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
 `python3 scripts/import_soundchip_sdk.py --check`で同梱ファイルを照合できます。
 SDKのcheckout、submodule、ビルド時の音源ソース取得は不要です。
 
-今回の切替対象はYM2612の既存低レベル接続と共有OPN providerです。
+SDKから使うのはYM2612の既存低レベル接続、PC-98／追加生成のYM2203接続と共有OPN providerです。
+YM2203も既に固定しているSDK `0.1.0`を使い、共通providerは一度だけ組み込みます。
 PSG、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
 他の音源は従来の同梱スナップショットを使います。
 固定した版と更新手順、共有providerの範囲は[Native SDKの取り込み](docs/native-sdk-ym2612.md)を参照してください。
@@ -140,7 +141,7 @@ PC-98（YM2203）では4 MHzのYM2203だけを生成し、FM 3CH＋SSG 3CHをモ
 `fm`／`ssg`／`play`、Main／Worker、6声のKeyboard／音源タブに対応します。
 Stopは音色・clock・CH3特殊モード・SSGのtone／noise／envelopeと保持音量を残します。
 SSGの明示的な音量0とkeyOffを区別し、Workerから表示へ渡す状態を音声命令として再送しません。
-原典・ハッシュは`src-tauri/native-ym2203/`に保存しています。
+Native接続は固定したSDKからビルドし、Browser比較用の原典・ハッシュは`src-tauri/native-ym2203/`にも保持しています。
 
 MSXではYM2413（3,579,545 Hz）とAY-3-8910（1,789,773 Hz）をNative生成します。
 `opll`／`ay`、Main／Worker、Keyboard／Operators、独立ミキサーと共通FX／liveFx・monitor・録音を使えます。
@@ -280,7 +281,7 @@ cargo test --offline --locked --manifest-path src-tauri/Cargo.toml native_genesi
 ```
 
 C++のスナップショットは各`src-tauri/native-*/`と同梱SDKに由来・ハッシュを記録しています。
-YM2612の更新は[SDKの取り込み手順](docs/native-sdk-ym2612.md)で行い、
+YM2612／YM2203の更新は[SDKの取り込み手順](docs/native-sdk-ym2612.md)で行い、
 `sync_native_genesis.py`は残している従来スナップショットの照合・更新に使います。
 共有UI／Runtimeの変更は上流のPlayground ZIPを通常のimport手順で取り込みます。
 

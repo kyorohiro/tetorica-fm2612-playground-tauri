@@ -1,8 +1,9 @@
-# Native SDKの取り込み — YM2612
+# Native SDKの取り込み — YM2612／YM2203
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
-YM2612をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
+YM2612とYM2203をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
+この手順書は最初のYM2612移行時のファイル名を保持し、その後のYM2203移行も記録しています。
 
 ## 固定した配布物
 
@@ -35,6 +36,7 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | --- | --- |
 | Genesis主音源のYM2612接続 | `wasm/ym2612_wasm.cpp` |
 | `createSoundChip('ym2612')`の独立Native接続 | `native/reference/tauri/native_genesis_ym2612.cpp` |
+| PC-98（YM2203）と`createSoundChip('ym2203')`のNative接続 | `native/reference/tauri/native_genesis_ym2203.cpp` |
 | 共有OPN provider | `native/src/ymfm_opn_provider.cpp` |
 | 共有SSG／ADPCM実装 | `vendor/ymfm/ymfm_ssg.cpp`、`vendor/ymfm/ymfm_adpcm.cpp` |
 
@@ -42,15 +44,26 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 SDKのOPN providerがymfmのOPN実装と明示的なテンプレート実体化を一度だけ提供します。
 従来のOPN providerと重複してリンクしません。
 
-YM2203／YM2608／YM2610等の既存アプリ接続も同じproviderを参照するため、共有OPN／SSG／ADPCMは
-今回の依存範囲に含まれます。共通ADPCM実装は既存のOPM／OPL側からも参照します。
+YM2203は選択中のPC-98音源と追加生成の両方で、同じSDK側のNative接続を使います。
+既に同梱済みのSDK `0.1.0`へビルド参照を切り替えるため、SDK配布物や固定値は更新しません。
+共有OPN／SSG／ADPCMはYM2612移行時からSDK側のものを一度だけ組み込んでおり、
+YM2203用にもう一つ追加しません。既存のarchive順序を維持します。
+
+YM2608／YM2610等の既存アプリ接続も同じproviderを参照します。
+共通ADPCM実装は既存のOPM／OPL側からも参照します。
 それらの音源接続までSDKへ移したという意味ではありません。
 従来providerとSDK側ソースの同一性を確認し、共有ライブラリーの依存順序を保持します。
 
 Genesisのgain、DC除去、PSG混合と出力レート変換は`src-tauri/src/native_genesis_core.cpp`に残ります。
 Rustの予約、owner、音源ラックと予算管理、CPAL、ミキサー、FX／liveFx、録音、WebViewとJS APIも
-アプリ側の担当です。Sega PSG、他の音源の接続とソースは従来の同梱スナップショットを使います。
+アプリ側の担当です。YM2203のFM／SSG制御、Stop、レート変換も既存の接続動作を引き継ぎ、
+Rust側の予約・owner・追加生成の管理やJS APIを変更しません。
+Sega PSGと、YM2612／YM2203以外の音源の接続とソースは従来の同梱スナップショットを使います。
 ブラウザー／npmのWASM配布やPlaygroundの`dist/`は、このSDK取り込みで更新しません。
+
+従来の`src-tauri/src/native_genesis_ym2203.cpp`／`.h`と`src-tauri/native-ym2203/`は、
+由来やBrowser比較用の固定記録として保持します。実際のコンパイル対象は`src-tauri/build.rs`で確認してください。
+従来コピーの編集や`sync_native_ym2203.py`の実行だけでは、SDK側のNative接続は更新されません。
 
 ## 照合と更新
 
@@ -90,15 +103,25 @@ node scripts/check_native_extra_stability.mjs --out=native-validation/extra-stab
 
 親のBrowser／WASM checkoutがある場合は、実WASMとのPCM比較も実行できます。
 親checkoutは比較用であり、通常のTauriビルドの必須依存ではありません。
+次はTauriリポジトリのルートで実行する主Genesisの比較です。
 
 ```sh
 node scripts/check_native_genesis_core.mjs /path/to/hello_ymfm --seconds=60 --out=native-validation/web-native.json
 ```
 
+YM2203の選択中音源／追加音源の比較は、Browser／WASM側の`hello_ymfm`ルートで実行します。
+既定のビルドはTauriへ同梱したSDKの接続実装と共有providerを使用し、旧コピーをコンパイルしません。
+
+```sh
+cd /path/to/hello_ymfm
+node scripts/check_native_ym2203.mjs
+node scripts/check_native_extra_ym2203.mjs
+```
+
 一致試験はデバイスを開かない生成結果の検証です。各OSのインストーラーや実機での音声出力は
 別に確認します。配布アプリの対応ソースと再ビルド手順は[NATIVE-SOURCES.md](../NATIVE-SOURCES.md)を参照してください。
 
-## 今回の検証結果
+## YM2612移行時の検証結果
 
 macOSで次を確認しました。
 
@@ -112,4 +135,20 @@ macOSで次を確認しました。
 - 対応ソースZIPを独立した一時ディレクトリへ展開し、SDK照合とYM2612 fixtureのC++14ビルド／自己試験に成功。元のSDKやアプリのcheckoutへ依存せず、音声デバイスやネットワークは使用しない。
 - SDK更新時のCargo再ビルド監視を含め、`cargo check --locked --offline`も成功。
 
-これらはmacOSでの結果です。今回の変更によるWindows／Linuxのビルドと実機での音声出力は未確認です。
+この節の数値はYM2612移行時のmacOSでの結果です。後続の移行や各OSのビルド、実機での音声出力とは
+確認範囲を分けて扱います。
+
+## YM2203移行の検証
+
+今回のYM2203参照切替は、macOSで次を確認しました。
+
+- 接続実装・ヘッダーと推移依存を含む9入力が旧コピーと同一。SDK全374ファイルのオフライン照合も成功し、固定版は変更なし。
+- 実際に旧接続とSDK接続を別々にコンパイルし、同じ命令列を実WASMとも比較。選択中音源は186ケース・1,142,784フレーム、追加音源は195ケース・1,198,080フレームで、旧接続とSDK接続はbyte一致、WASMとの最大PCM差分も0。
+- 合計は重複を除いて381ケース・2,340,864フレーム。既定checkerでも実SDKからビルドして再比較し、使用した5ソースのハッシュを記録した。この再実行分は合計に加えていない。
+- 別の全状態比較6ケース・49,152フレームで、280バイトのsnapshot全体、PCM、status、IRQ、4種類のread結果が一致。
+- `cargo test --locked --offline`が723件成功、明示実行用4件ignored。
+- 22 modeの604,032フレーム、88回のRun／Stop遷移が成功。3混合構成、7単独音源、追加生成の受入れと台数制限の試験も成功。
+
+このYM2203移行はWindows／Linuxの新しいCIや実機の音声出力では未確認です。
+先のYM2612移行の5環境CIとは対象コミットを分け、OS間のPCM一致や聴感上のノイズ改善まで
+確認済みとは扱いません。

@@ -1,8 +1,20 @@
 # Native PC-98 YM2203
 
 One selected YM2203 provides three FM and three SSG voices. It reuses the exact
-OPN/SSG provider already compiled once in `native-genesis`; it constructs no
+OPN/SSG provider already compiled once in the `native-genesis` archive; it constructs no
 Genesis or YM2608 chip. Existing ymfm BSD-3-Clause notices apply.
+
+Both the selected PC-98 chip and `createSoundChip('ym2203')` now compile
+`native/reference/tauri/native_genesis_ym2203.cpp` from the pinned SDK under
+`src-tauri/vendor/tetorica-soundchip-native/`. The SDK version and source bytes
+are unchanged from the YM2612 adoption. Its OPN/SSG/ADPCM provider is linked
+once, in the existing archive order. See the
+[SDK adoption guide](../../docs/native-sdk-ym2612.md) for the pin and update flow.
+
+This directory retains the Browser reference snapshot and provenance. The old
+`src-tauri/src/native_genesis_ym2203.cpp` and header are retained as reference
+copies; editing them does not update the SDK-backed build. Host scheduling,
+ownership, additional-instance admission, output and JS APIs remain in Tauri.
 
 `scripts/sync_native_ym2203.py --source PATH --check` verifies pinned Browser
 wrappers, engines, Worklets and inspection controls against the shared provider.
