@@ -1,5 +1,13 @@
 # Native Genesis source snapshot
 
+YM2612 now builds from the pinned SDK distribution under
+`../vendor/tetorica-soundchip-native/`; see
+[the SDK adoption guide](../../docs/native-sdk-ym2612.md). The files in this
+directory remain a checked legacy snapshot and supply the existing Sega PSG
+integration and shared headers. Updating this snapshot does not update the
+SDK-backed YM2612 build. The shared OPN/SSG/ADPCM provider is built once from
+the SDK; other application adapters continue to consume it.
+
 These files are copied without synthesis changes from the parent hello_ymfm
 repository (`src/` and `wasm/`) on 2026-10-21. They preserve the same YM2612
 reset, timer/IRQ interface and Sega PSG behavior as the Playground WASM build.

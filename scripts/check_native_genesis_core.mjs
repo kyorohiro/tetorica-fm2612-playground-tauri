@@ -1,4 +1,4 @@
-// Compare the native source snapshot against the actual Playground WASM and
+// Compare the application's pinned SDK sources against the actual Playground WASM and
 // its renderFrames implementation. No output device, Tauri app or server opens.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -36,6 +36,8 @@ const started = performance.now();
 const directory = mkdtempSync(join(tmpdir(), 'tetorica-native-genesis-'));
 try {
   const native = join(repo, 'src-tauri/native-genesis');
+  const sdk = 'vendor/tetorica-soundchip-native';
+  const sdkRoot = join(repo, 'src-tauri', sdk);
   const executable = join(directory, 'render');
   const nuked = join(repo, 'src-tauri/native-nuked/snapshot/third_party/nuked-opn2');
   const provider = join(directory, 'nuked.o');
@@ -43,9 +45,16 @@ try {
   const compileStart = performance.now();
   const c = spawnSync(process.env.CC ?? 'cc', ['-std=c11', '-O2', '-fwrapv', ...symbols.map(name => `-DOPN2_${name}=tetorica_nuked_OPN2_${name}`), '-I', nuked, '-c', join(nuked, 'ym3438.c'), '-o', provider], {encoding: 'utf8'});
   assert.equal(c.status, 0, c.stderr);
+  // Match build.rs: the app retains Genesis gain/DC/mixing and PSG, while its
+  // primary YM2612 adapter and once-compiled OPN/SSG/ADPCM provider use the SDK.
   const files = ['src/native_genesis_fixture.cpp', 'src/native_genesis_core.cpp', 'src/native_genesis_nuked.cpp',
-    ...['ym2612_wasm.cpp', 'segapsg_wasm.cpp', 'ymfm_opn.cpp', 'ymfm_adpcm.cpp', 'ymfm_ssg.cpp', 'segapsg.cpp'].map(name => `native-genesis/${name}`)];
-  const compiled = spawnSync(process.env.CXX ?? 'c++', ['-std=c++14', '-O2', '-I', native, '-I', nuked,
+    `${sdk}/wasm/ym2612_wasm.cpp`, `${sdk}/native/src/ymfm_opn_provider.cpp`,
+    `${sdk}/vendor/ymfm/ymfm_adpcm.cpp`, `${sdk}/vendor/ymfm/ymfm_ssg.cpp`,
+    'native-genesis/segapsg_wasm.cpp', 'native-genesis/segapsg.cpp'];
+  report.nativeSources = files.map(file => ({file: `src-tauri/${file}`,
+    sha256: createHash('sha256').update(readFileSync(join(repo, 'src-tauri', file))).digest('hex')}));
+  const compiled = spawnSync(process.env.CXX ?? 'c++', ['-std=c++14', '-O2',
+    '-I', join(sdkRoot, 'vendor/ymfm'), '-I', join(sdkRoot, 'wasm'), '-I', native, '-I', nuked,
     ...files.map(file => join(repo, 'src-tauri', file)), provider, '-o', executable], {encoding: 'utf8'});
   assert.equal(compiled.status, 0, compiled.stderr);
   report.compilerMilliseconds = performance.now() - compileStart;

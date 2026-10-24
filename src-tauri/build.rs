@@ -9,9 +9,16 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_fx.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_fx.h");
     println!("cargo:rerun-if-changed=src/native_genesis_core.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_ym2612.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_ym2612.h");
-    println!("cargo:rerun-if-changed=src/native_genesis_ymfm_opn.cpp");
+    // This pinned source tree is included in the application repository. Cargo
+    // builds it directly, without fetching another checkout or invoking CMake.
+    println!("cargo:rerun-if-changed=soundchip-sdk.json");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/ymfm");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/wasm");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2612.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2612.h");
+    println!(
+        "cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/src/ymfm_opn_provider.cpp"
+    );
     println!("cargo:rerun-if-changed=src/native_genesis_ymfm_opm.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_ymfm_opl.cpp");
     println!("cargo:rerun-if-changed=native-nuked");
@@ -62,14 +69,16 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_extra_opl.h");
     println!("cargo:rerun-if-changed=src/native_genesis_opl.h");
     println!("cargo:rerun-if-changed=src/native_genesis_y8950_memory.h");
-    // Independent additional YM2612 consumes the common ymfm provider below.
+    // Both the independent YM2612 and primary Genesis YM2612 now consume SDK
+    // sources. Their common ymfm provider is compiled only once below.
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
-        .include("native-genesis")
-        .file("src/native_genesis_ym2612.cpp")
+        .include("vendor/tetorica-soundchip-native/vendor/ymfm")
+        .include("vendor/tetorica-soundchip-native/wasm")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2612.cpp")
         .warnings(false)
         .compile("tetorica_native_ym2612");
     // Standalone Game Gear consumes the once-compiled common Sega PSG below.
@@ -172,20 +181,26 @@ fn main() {
         .file("src/native_genesis_ym2608.cpp")
         .warnings(false)
         .compile("tetorica_native_ym2608");
+    // Keep the application's Genesis mixing, DC centering, gains and Sega PSG
+    // path. Only its YM2612 adapter and shared OPN/SSG/ADPCM provider come from
+    // the pinned SDK. Existing OPN, OPM and OPL consumers use identical ymfm
+    // types, so do not add a second provider archive or change GNU ld ordering.
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
+        .include("vendor/tetorica-soundchip-native/vendor/ymfm")
+        .include("vendor/tetorica-soundchip-native/wasm")
         .include("native-genesis")
         .file("src/native_genesis_core.cpp")
         .file("src/native_genesis_fx.cpp")
         .file("src/native_genesis_noise.cpp")
-        .file("native-genesis/ym2612_wasm.cpp")
+        .file("vendor/tetorica-soundchip-native/wasm/ym2612_wasm.cpp")
         .file("native-genesis/segapsg_wasm.cpp")
-        .file("src/native_genesis_ymfm_opn.cpp")
-        .file("native-genesis/ymfm_adpcm.cpp")
-        .file("native-genesis/ymfm_ssg.cpp")
+        .file("vendor/tetorica-soundchip-native/native/src/ymfm_opn_provider.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/ymfm/ymfm_adpcm.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/ymfm/ymfm_ssg.cpp")
         .file("native-genesis/segapsg.cpp")
         .warnings(false)
         .compile("tetorica_native_genesis");

@@ -84,7 +84,10 @@ def verify_pins(root=ROOT, results=None):
             raise ValueError('No source pin check for ' + native.name)
     if results is None:
         results = []
-    for script in scripts:
+    sdk = root / 'scripts/import_soundchip_sdk.py'
+    if not sdk.is_file():
+        raise ValueError('Missing vendored SDK source verifier')
+    for script in [*scripts, sdk]:
         result = subprocess.run([sys.executable, str(script), '--check'], cwd=root,
                                 capture_output=True, text=True, timeout=30)
         summary = result.stdout.strip()

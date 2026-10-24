@@ -9,9 +9,9 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 PREFIX = 'tetorica-playground-source/'
-EXCLUDED = {'.git', 'node_modules', 'target', 'gen', '__pycache__', '.DS_Store', '__MACOSX', '.env', '.npmrc'}
+EXCLUDED = {'.git', 'node_modules', 'target', 'gen', 'build', '__pycache__', '.DS_Store', '__MACOSX', '.env', '.npmrc'}
 ROOT_FILES = ['.gitattributes', 'package.json', 'package-lock.json', 'README.md', 'NATIVE-SOURCES.md', 'release.lock.json']
-DIRECTORIES = ['audio-sidecar', 'desktop', 'dist', 'scripts', 'tests', 'assets', '.github']
+DIRECTORIES = ['audio-sidecar', 'desktop', 'dist', 'scripts', 'tests', 'assets', 'docs', '.github']
 
 
 def collect(root):
@@ -41,6 +41,8 @@ def collect(root):
     for path in sorted((root / 'src-tauri').iterdir()):
         if path.is_file() or path.name in {'src', 'icons', 'capabilities'} or path.name.startswith('native-'):
             visit(path)
+        elif path.name == 'vendor':
+            visit(path / 'tetorica-soundchip-native')
     return sorted(paths, key=lambda p: p.relative_to(root).as_posix())
 
 

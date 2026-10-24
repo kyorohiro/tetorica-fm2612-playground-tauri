@@ -6,6 +6,16 @@ Cargo/npm lockfiles, build scripts, Tauri configuration, icons, desktop bridge,
 audio-sidecar sources and the exact imported frontend. `SOURCE-MANIFEST.json`
 records their SHA-256 hashes and the frontend release archive hash.
 
+The complete pinned `tetorica-soundchip-native` source distribution is included
+under `src-tauri/vendor/tetorica-soundchip-native/`, together with the separate
+import receipt `src-tauri/soundchip-sdk.json`. Its source manifests, provenance,
+licenses and notices are preserved. YM2612 and the shared OPN/SSG/ADPCM provider
+build from that snapshot; the other application adapters retain their existing
+source snapshots. The [SDK adoption guide](docs/native-sdk-ym2612.md) lists the
+consumed paths, pinned archive hash and deliberate offline update procedure.
+A separate SDK checkout or sound-core download is not required to rebuild this
+application from its matching source ZIP.
+
 Nuked OPN2 and SNES-SPC are **LGPL-2.1-or-later**. Their licenses, copyright
 notices, provenance and corresponding modified sources are under
 `src-tauri/native-nuked/` and `src-tauri/native-snes/`. These components are

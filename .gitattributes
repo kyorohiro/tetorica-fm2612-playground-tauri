@@ -5,3 +5,4 @@ dist/** -text
 src-tauri/native-*/** -text
 src-tauri/src/native_genesis_*.cpp -text
 src-tauri/src/native_genesis_*.h -text
+src-tauri/vendor/tetorica-soundchip-native/** -text

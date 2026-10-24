@@ -21,6 +21,13 @@ class NativeSourceTests(unittest.TestCase):
             path = root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('matching source: ' + name)
+        for name in ['src-tauri/vendor/tetorica-soundchip-native/vendor/ymfm/ymfm_opn.cpp',
+                     'src-tauri/vendor/tetorica-soundchip-native/vendor/ymfm/LICENSE',
+                     'src-tauri/vendor/tetorica-soundchip-native/RELEASE-MANIFEST.json',
+                     'src-tauri/soundchip-sdk.json', 'docs/native-sdk-ym2612.md']:
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('matching pinned SDK source: ' + name)
         (root / 'package.json').write_text('{"version":"1.2.3"}')
         (root / 'release.lock.json').write_text('{"sha256":"frontend-hash"}')
 
@@ -40,6 +47,11 @@ class NativeSourceTests(unittest.TestCase):
                              'src-tauri/native-snes/snapshot/SPC_DSP.cpp', 'src-tauri/build.rs',
                              'src-tauri/Cargo.lock', 'dist/playground.js']:
                     self.assertIn(name, manifest['files'])
+                for name in ['src-tauri/vendor/tetorica-soundchip-native/vendor/ymfm/ymfm_opn.cpp',
+                             'src-tauri/vendor/tetorica-soundchip-native/vendor/ymfm/LICENSE',
+                             'src-tauri/vendor/tetorica-soundchip-native/RELEASE-MANIFEST.json',
+                             'src-tauri/soundchip-sdk.json', 'docs/native-sdk-ym2612.md']:
+                    self.assertIn(name, manifest['files'])
             before = archive.read_bytes()
             sources.prepare(root)
             self.assertEqual(archive.read_bytes(), before, 'Source ZIP must not include itself or changing timestamps')
@@ -55,6 +67,8 @@ class NativeSourceTests(unittest.TestCase):
                         'src-tauri/target/build/binary', 'src-tauri/gen/schemas/file',
                         'scripts/.env', 'scripts/__pycache__/cache.pyc',
                         'src-tauri/native-nuked/.DS_Store', 'audio-sidecar-bundle/node']
+            excluded += ['src-tauri/vendor/unrelated/private-token',
+                         'src-tauri/vendor/tetorica-soundchip-native/build/binary']
             for name in excluded:
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)

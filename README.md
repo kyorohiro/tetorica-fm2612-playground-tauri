@@ -43,6 +43,19 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 - `src-tauri/src/main.rs`: ローカルのメインウィンドウに限定した最前面固定コマンド
 - `assets/app-icon.png`: 上流Playgroundアイコン。`npm run icons` でデスクトップ用を生成
 
+## Native音源SDK
+
+YM2612は、自己完結した`tetorica-soundchip-native`のソース配布を
+`src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
+取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
+`python3 scripts/import_soundchip_sdk.py --check`で同梱ファイルを照合できます。
+SDKのcheckout、submodule、ビルド時の音源ソース取得は不要です。
+
+今回の切替対象はYM2612の既存低レベル接続と共有OPN providerです。
+PSG、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
+他の音源は従来の同梱スナップショットを使います。
+固定した版と更新手順、共有providerの範囲は[Native SDKの取り込み](docs/native-sdk-ym2612.md)を参照してください。
+
 ## DX7
 
 FILES → `examples/dx7/dx7-init-sine.js` を開いて Run すると、独立した MSFA DX7 音源で演奏できます。
@@ -102,7 +115,7 @@ PC98サンプラー、共通FX／liveFx／monitor／録音へ接続します。
 標準clockはWeb版と同じ8 MHzで、`await fm.setClock(hz)`で変更できます。
 Stopは発音と予約を止め、音色・clock・8 KiBリズムROM／2 MiB ADPCM-B RAMを保持します。
 適用済みの状態取得は非同期です。追加音源やtimeline専用再生APIはWeb Audioを使ってください。
-原典・ハッシュは`src-tauri/native-ym2608/`に保存し、ymfmは`native-genesis`と共有します。
+原典・ハッシュは`src-tauri/native-ym2608/`に保存し、OPN／SSG／ADPCMのproviderは同梱SDKと共有します。
 
 Neo GeoではYM2610（FM 4CH）、Neo Geo（YM2610B）では6CH版をNativeで生成します。
 両方ともSSG・ADPCM-A 6声・ADPCM-Bに対応し、A/Bそれぞれに16 MiBの独立したROM領域を持ちます。
@@ -216,6 +229,7 @@ Keyboardは物理CHを共有し、scriptの未来の書込みが手動演奏を�
 
 ```sh
 cargo test --locked --manifest-path src-tauri/Cargo.toml native_genesis
+python3 scripts/import_soundchip_sdk.py --check
 node scripts/check_native_genesis_core.mjs ../..
 node scripts/check_native_genesis_noise.mjs ../..
 python3 scripts/sync_native_genesis.py --check --source ../..
@@ -265,7 +279,9 @@ overflow、liveFx under／overrunと差分も保存します。通常再生時�
 cargo test --offline --locked --manifest-path src-tauri/Cargo.toml native_genesis::tests::native_device_silent_smoke -- --ignored --exact --nocapture --test-threads=1
 ```
 
-C++のスナップショットは`src-tauri/native-genesis/`に由来・ハッシュを記録しています。
+C++のスナップショットは各`src-tauri/native-*/`と同梱SDKに由来・ハッシュを記録しています。
+YM2612の更新は[SDKの取り込み手順](docs/native-sdk-ym2612.md)で行い、
+`sync_native_genesis.py`は残している従来スナップショットの照合・更新に使います。
 共有UI／Runtimeの変更は上流のPlayground ZIPを通常のimport手順で取り込みます。
 
 ### Web Audioの出力先
