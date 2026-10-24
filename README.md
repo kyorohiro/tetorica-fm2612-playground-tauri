@@ -45,7 +45,7 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 
 ## Native音源SDK
 
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258は、自己完結した`tetorica-soundchip-native`のソース配布を
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413は、自己完結した`tetorica-soundchip-native`のソース配布を
 `src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
 取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
 `python3 scripts/import_soundchip_sdk.py --check`で同梱ファイルを照合できます。
@@ -56,6 +56,7 @@ Neo Geo／追加生成のYM2610・YM2610B共通接続と共有OPN providerです
 YM2151の追加生成用接続と共通OPM provider、OKIM6258の共有decoderと追加生成用接続もSDKを使います。
 OKI decoderは既存のスレッド安全な初期化を保持するため、SDKソースからCargoの出力先へ生成してコンパイルします。
 X68000の機種用接続とサンプルの管理はTauri側に残ります。
+YM2413の追加生成用接続と共有OPL／PCM providerもSDKを使い、Master System／MSXの機種用接続とOPLL補助処理はTauri側に残ります。
 既に固定しているSDK `0.1.0`を使い、共通providerは一度だけ組み込みます。
 PSG、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
 他の音源は従来の同梱スナップショットを使います。
@@ -146,6 +147,8 @@ Master SystemではSega PSG（3音＋noise）とYM2413 OPLLを、両方3,579,545
 OPLLはROM楽器・共有User音色・9 FM声、または6 FM声＋5 rhythm音を使えます。
 Stopは音色・PSGのperiod／noise設定・clockを保持し、発音と予約を止めます。
 由来・ハッシュは`src-tauri/native-master-system/`に保存し、ymfmとSegaPSGは共有providerを一度だけ組み込みます。
+共有OPL／PCMと`createSoundChip('ym2413')`の独立接続は固定SDKからビルドします。
+Master System／MSXのOPLL補助処理、機種用接続、PSG／AYは既存のTauri実装を使います。
 
 PC-98（YM2203）では4 MHzのYM2203だけを生成し、FM 3CH＋SSG 3CHをモノラルで左右へ出力します。
 `fm`／`ssg`／`play`、Main／Worker、6声のKeyboard／音源タブに対応します。

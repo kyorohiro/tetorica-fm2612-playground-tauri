@@ -1,7 +1,7 @@
-# Native SDKの取り込み — OPN系／YM2151／OKIM6258
+# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
 この手順書は最初のYM2612移行時のファイル名を保持し、その後の音源の移行も記録しています。
 
@@ -41,9 +41,12 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | Neo GeoのYM2610／YM2610Bと、それぞれの追加音源のNative接続 | `native/reference/tauri/native_genesis_ym2610b.cpp` |
 | `createSoundChip('ym2151')`の独立Native接続 | `native/reference/tauri/native_genesis_ym2151.cpp` |
 | `createSoundChip('okim6258')`の独立Native接続 | `native/reference/tauri/native_genesis_extra_okim6258.cpp` |
+| `createSoundChip('ym2413')`の独立Native接続 | `native/reference/tauri/native_genesis_ym2413.cpp` |
 | X68000と追加OKIに共通のdecoderの生成入力 | `vendor/mame-okim6258/okim6258.cpp`と対応ヘッダー |
 | 共有OPN provider | `native/src/ymfm_opn_provider.cpp` |
 | X68000のFMと追加YM2151に共通のOPM provider | `native/src/ymfm_opm_provider.cpp` |
+| YM2413と既存OPL／Y8950接続が共有するOPL provider | `native/src/ymfm_opl_provider.cpp` |
+| 共有PCM実装 | `vendor/ymfm/ymfm_pcm.cpp` |
 | 共有SSG／ADPCM実装 | `vendor/ymfm/ymfm_ssg.cpp`、`vendor/ymfm/ymfm_adpcm.cpp` |
 
 `wasm/ym2612_wasm.cpp`は名前に`wasm`を含みますが、ここではC++としてNativeにコンパイルします。
@@ -62,6 +65,14 @@ SDKのincludeを従来スナップショットより先に指定し、OPM provid
 既存のarchive順序と、先行移行でSDKへ切り替えた共有SSG／ADPCMも維持します。
 共通ADPCMを参照するOPL等の接続全体までSDKへ移したという意味ではありません。
 従来providerとSDK側ソースの同一性を確認し、共有ライブラリーの依存順序を保持します。
+
+YM2413の独立接続と、共有OPL provider／PCM実装も同じ固定SDKからビルドします。
+Master System／MSXの選択中音源は、Tauriの`src-tauri/src/native_genesis_opll.h`にある
+`NativeOpllCore`と機種用接続を引き続き使います。独立SDK接続には別のrendererがあり、
+この共通ヘッダーを置き換える変更ではありません。
+SDKのincludeを優先し、OPL provider／PCMは既存のarchive内で一度だけコンパイルします。
+Sega PSG、AY、DOS PCのOPLやMSX AudioのY8950接続はアプリ側に残ります。
+それらが共有するOPL／PCMと、先行移行済みのADPCM実装への依存も維持します。
 
 Genesisのgain、DC除去、PSG混合と出力レート変換は`src-tauri/src/native_genesis_core.cpp`に残ります。
 Rustの予約、owner、音源ラックと予算管理、CPAL、ミキサー、FX／liveFx、録音、WebViewとJS APIも
@@ -111,6 +122,9 @@ YM2151も従来の`src-tauri/src/native_genesis_ym2151.cpp`／`.h`とローカ�
 従来コピーやスナップショットの更新だけでは、生成されるdecoderは変わりません。
 CargoはSDKの`vendor/mame-okim6258/`と追加接続の入力を監視します。
 機種用のローカルcpp／headerの監視は残し、実際のコンパイル入力がなくなった`native-x68000/`の監視は外します。
+YM2413の旧接続／providerと`src-tauri/native-master-system/`も由来の記録として保持し、
+SDKの接続・OPL／PCM入力を監視します。`native-master-system/`は原典だけになったため監視を外しますが、
+機種用接続とローカル`NativeOpllCore`の監視は継続します。`native-msx/`はAY実装を使うため監視を継続します。
 
 ## 照合と更新
 
@@ -173,6 +187,12 @@ node scripts/check_native_extra_ym2610.mjs
 node scripts/check_native_x68000.mjs
 node scripts/check_native_extra_ym2151.mjs
 node scripts/check_native_extra_okim6258.mjs
+node scripts/check_native_master_system.mjs
+node scripts/check_native_msx.mjs
+node scripts/check_native_extra_ym2413.mjs
+node scripts/check_native_opl.mjs
+node scripts/check_native_extra_opl.mjs
+node scripts/check_native_msx_audio.mjs
 ```
 
 一致試験はデバイスを開かない生成結果の検証です。各OSのインストーラーや実機での音声出力は
@@ -296,3 +316,33 @@ run全体と全5ジョブが成功し、CIのためのコード修正は不要�
 - 再生ライフサイクルは22 mode、604,032フレーム、88回のRun／Stop遷移が成功。混合音源は3構成、7単独音源、追加生成の受入れが成功。16台の制限で17台目を拒否し、Stop後に予約した予算をすべて回収する試験も成功。両runnerのexit codeは0、`deviceOpened: false`。
 
 先行する全OPN移行CIは、今回のOKIM6258差分を含みません。新しい各OSのCIと実機の音声出力は未確認です。
+
+## YM2413移行の検証
+
+今回のYM2413接続と共有OPL／PCMの参照切替は、macOS／Clangで次を確認しました。音声デバイスは開いていません。
+
+15入力が旧コピーとbyte一致し、OPL providerとの差は相対includeパスだけでした。
+SDK優先で解決される`segapsg.h`も旧ヘッダーと一致し、PSGの実装cppはローカルのままです。
+旧接続とSDK接続を別々にコンパイルして出力のbyte一致を確認し、実WASMとも比較しました。
+
+| 対象 | 比較数 | フレーム |
+| --- | ---: | ---: |
+| Master System | 60 | 368,640 |
+| MSX | 93 | 571,392 |
+| 追加YM2413 | 558 | 2,285,568 |
+| DOS PC OPLの回帰確認 | 198 | 1,216,512 |
+| 追加OPLの回帰確認 | 552 | 3,391,488 |
+| MSX Audio／Y8950の回帰確認 | 138 | 847,872 |
+
+YM2413関連は711件・3,225,600フレーム、共有providerの回帰確認は888件・5,455,872フレーム。
+合計1,599件・8,681,472フレームで、旧接続とSDK接続はbyte一致、WASMとの最大差分は0でした。
+6つの既定checkerも実際のSDKからコンパイルして成功し、使用したパスとソースのハッシュを記録しました。
+この再実行分は合計に加えていません。
+
+- 別のNative間比較9ケース・36,864フレームで、追加YM2413の72バイト、Master Systemの100バイト、MSXの104バイトの公開state全体と、PCM／read／status／IRQが一致。ymfmのprivate領域のdumpや、WASMとの全state比較ではない。
+- 既存fixtureでcallback中の割当て／解放0を確認。
+- `cargo test --locked --offline`が723件成功、明示実行用4件ignored。
+- 再生ライフサイクルは22 mode、604,032フレーム、88回のRun／Stop遷移が成功。混合音源は3構成、7単独音源、追加生成の受入れが成功。16台の制限で17台目を拒否し、Stop後に予約した予算をすべて回収する試験も成功。両runnerのexit codeは0、`deviceOpened: false`。
+
+これはAY／PSG接続自体のSDK移行や、Y8950の新しいADPCM素材転送APIを追加したという意味ではありません。
+先行する全OPN移行CIは今回のYM2413差分を含まず、新しい各OSのCIと実機の音声出力は未確認です。

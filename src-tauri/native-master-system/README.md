@@ -5,12 +5,28 @@ Master System combines the existing project Sega PSG core with ymfm YM2413
 left/right before the separate chip mixer gains/pan and global effects.
 Game Gear's stereo register is deliberately unavailable in this mode.
 
-The synthesis sources are exact snapshots of the shipped Browser/WASM sources.
+The shared OPL provider and PCM support now compile from the pinned SDK's
+`native/src/ymfm_opl_provider.cpp` and `vendor/ymfm/ymfm_pcm.cpp`. They are
+compiled once in the existing archive order. The SDK version and source bytes
+are unchanged. Independent `createSoundChip('ym2413')` instances also compile
+the SDK's `native/reference/tauri/native_genesis_ym2413.cpp` and matching header.
+
+Selected Master System and MSX renderers still use the application's
+`src/native_genesis_opll.h` (`NativeOpllCore`) and local machine adapters.
+The independent SDK adapter has its own renderer; it does not replace that
+shared application helper. Sega PSG, AY and the OPL/Y8950 application wrappers
+remain local, while their existing common provider dependencies resolve through
+the SDK OPL/PCM sources and previously adopted ADPCM support. No whole-machine
+adapter is imported from the SDK. See the
+[SDK adoption guide](../../docs/native-sdk-ym2612.md).
+
+This directory retains exact snapshots of the shipped Browser/WASM sources.
 `scripts/sync_native_master_system.py --check --source /path/to/hello_ymfm`
-verifies the pinned sources and the common ymfm/PSG provider. The provider is
-compiled only once by `native-genesis`; the OPLL wrapper/archive precedes it in
-GNU static archive order. The OPLL translation unit also includes the PCM
-implementation used by other classes in that upstream translation unit.
+verifies the pinned sources and the common ymfm/PSG references. The legacy
+directory is provenance-only and no longer a Cargo rebuild watch; active SDK
+inputs and local machine/helper sources are watched instead. Updating these
+snapshots or the old local YM2413 wrapper/provider does not update the SDK build.
+The common Sega PSG core continues to compile once through `native-genesis`.
 
 The adapter mirrors Browser PSG clock-resampling phase and OPLL source-rate
 averaging/hold, including clocks changed during playback. Stop retains patches,

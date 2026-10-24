@@ -43,7 +43,9 @@ fn main() {
     println!(
         "cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/src/ymfm_opm_provider.cpp"
     );
-    println!("cargo:rerun-if-changed=src/native_genesis_ymfm_opl.cpp");
+    println!(
+        "cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/src/ymfm_opl_provider.cpp"
+    );
     println!("cargo:rerun-if-changed=native-nuked");
     println!("cargo:rerun-if-changed=src/native_genesis_nuked.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_nuked_ym2612.inc");
@@ -66,7 +68,6 @@ fn main() {
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2151.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2151.h");
     println!("cargo:rerun-if-changed=src/native_genesis_x68000.h");
-    println!("cargo:rerun-if-changed=native-master-system");
     println!("cargo:rerun-if-changed=src/native_genesis_master_system.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_master_system.h");
     println!("cargo:rerun-if-changed=src/native_genesis_psg.h");
@@ -76,8 +77,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_opll.h");
     println!("cargo:rerun-if-changed=native-msx");
     println!("cargo:rerun-if-changed=src/native_genesis_msx.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_ym2413.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_ym2413.h");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2413.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2413.h");
     println!("cargo:rerun-if-changed=src/native_genesis_ay8910.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_ay8910.h");
     println!("cargo:rerun-if-changed=src/native_genesis_msx.h");
@@ -120,7 +121,8 @@ fn main() {
         .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
-        .include("native-master-system/snapshot/src")
+        .include("vendor/tetorica-soundchip-native/vendor/ymfm")
+        .include("vendor/tetorica-soundchip-native/wasm")
         .include("native-genesis")
         .file("src/native_genesis_opl.cpp")
         .file("src/native_genesis_extra_opl.cpp")
@@ -134,27 +136,30 @@ fn main() {
         .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
+        .include("vendor/tetorica-soundchip-native/vendor/ymfm")
+        .include("vendor/tetorica-soundchip-native/wasm")
         .include("native-msx/snapshot/third_party/mame-ay8910")
-        .include("native-master-system/snapshot/src")
         .include("native-genesis")
         .file("src/native_genesis_msx.cpp")
         .file("src/native_genesis_ay8910.cpp")
         .file("native-msx/snapshot/third_party/mame-ay8910/ay8910.cpp")
         .warnings(false)
         .compile("tetorica_native_msx");
-    // The OPLL wrapper needs shared ymfm ADPCM and Sega PSG symbols below.
-    // Keep the dependent archive before the common provider for GNU ld.
+    // Machine adapters retain their local NativeOpllCore; independent YM2413
+    // and the once-compiled OPL/PCM provider come from the pinned SDK. Shared
+    // ADPCM and Sega PSG remain in the following common archive on GNU ld.
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
-        .include("native-master-system/snapshot/src")
+        .include("vendor/tetorica-soundchip-native/vendor/ymfm")
+        .include("vendor/tetorica-soundchip-native/wasm")
         .include("native-genesis")
         .file("src/native_genesis_master_system.cpp")
-        .file("src/native_genesis_ym2413.cpp")
-        .file("src/native_genesis_ymfm_opl.cpp")
-        .file("native-master-system/snapshot/src/ymfm_pcm.cpp")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2413.cpp")
+        .file("vendor/tetorica-soundchip-native/native/src/ymfm_opl_provider.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/ymfm/ymfm_pcm.cpp")
         .warnings(false)
         .compile("tetorica_native_master_system");
     // X68000 mixing stays application-owned. Its FM and the independent YM2151
