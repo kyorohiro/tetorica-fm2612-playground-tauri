@@ -440,7 +440,8 @@ clear、保持したRAMでのStop／reset、FMとの同時再生、KeyboardのAD
 - 22 mode、604,032フレーム、88回のRun／Stop遷移が成功。3混合構成、7単独音源、受入れ／16台制限とStop後の予算回収も成功。両report runnerはexit code 0、`deviceOpened: false`。
 
 先行するrun `40137093552`は共有OPL／PCM providerまでの移行を含みますが、今回の接続差分は含みません。
-新しい各OSのCIと、実機の音声出力・インストール後の起動は未確認です。
+このローカル検証時点では新しい各OSのCIは未実行でした。後続CIの結果は末尾に記録します。
+実機の音声出力・インストール後の起動は別の確認です。
 
 ## AY-3-8910移行の検証
 
@@ -464,5 +465,50 @@ clockのhold／平均化、明示的な音量0、Stop／reset／再試奏と独�
 - Rust全試験は723成功・0失敗・明示実行用4件ignored。
 - 22 mode・604,032フレーム・88 Run／Stop、および3混合構成・7単独音源、受入れ／16台制限とStop後の予算回収が成功しました。MSX Audioを含む既存のRust機種構成を使い、両runnerのexit codeは0でした。
 
-実機の音声出力と今回のOPL接続／AY移行を含む5構成CIは未確認です。
-先行するrun `40137093552`の成功範囲と区別してください。
+このローカル検証時点では、今回のOPL接続／AY移行を含む5構成CIは未実行でした。
+後続CIの結果は次節に記録します。先行するrun `40137093552`の成功範囲と区別してください。
+実機の音声出力は別の確認です。
+
+## OPL接続／AY移行後の5環境CI — 4構成成功、macOS x86_64失敗
+
+[Build Desktop — run 40142510765](https://github.com/kyorohiro/tetorica-fm2612-playground-tauri/actions/runs/40142510765)を、
+mainのコミット`276e744ee5ed00513558b1d995e950a3ef91884c`から`workflow_dispatch`で手動実行しました。
+`4451195...`のOPL系4種類の接続移行と、AYコア／独立接続の移行を含みます。
+アプリ版は`0.90.1`のままで、タグや新しいドラフトリリース・一般公開は作成していません。
+attempt 1は`completed`／`failure`で終了し、5ジョブ中4成功・1失敗でした。再実行はしていません。
+
+| 構成 | ソース照合 | Rust試験・再生／混合report | インストーラービルド |
+| --- | --- | --- | --- |
+| macOS ARM64 | 成功 | 成功 | 成功（DMG） |
+| macOS x86_64 | 成功 | Rust試験1件失敗、再生／混合reportなし | 未完了 |
+| Windows x86_64 | 成功 | 成功 | 成功（NSIS） |
+| Linux ARM64 | 成功 | 成功 | 成功（DEB／AppImage） |
+| Linux x86_64 | 成功 | 成功 | 成功（DEB／AppImage） |
+
+5構成の検証アーティファクトを取得し、各ZIPのdigestをGitHubの記録と照合しました。
+全構成の`sources.json`でSDK374ファイルを含む22件の固定記録と、対応ソースZIP1,796ファイルの照合が成功しました。
+macOS x86_64以外の4構成では次のreportを確認しました。
+
+- 22 mode、604,032フレーム、88回のRun／Stop遷移が成功。
+- 3混合構成、7単独音源、受入れと16台制限が成功。
+- 両runnerはexit code 0、`deviceOpened: false`。
+
+macOS x86_64はRust試験が722成功・1失敗・4件ignoredでexit code 101でした。
+失敗は`native_genesis::extra_snes_tests::extra_snes_completion_wait_releases_control_and_history_expires`です。
+CI対象の`src/native_genesis_extra_snes_tests.rs:656`で、状態読取が返した
+`Native additional SNES state changed while reading; retry`を`unwrap()`してpanicしました。
+この構成にはソース照合reportだけがあり、欠けた再生／混合reportを成功とは扱いません。
+検証レポート5件と、成功した4構成のインストーラーの計9アーティファクトをGitHub APIで確認しました。
+すべて有効期限内で、サイズは0より大きいものです。全5ジョブのドラフトリリース作成stepはskippedでした。
+インストーラーのダウンロード・インストール後の起動は確認していません。
+
+この失敗に対して、ローカルでは上記の試験だけを修正しました。
+同じretryエラーに限って5秒を上限に再読取し、通知受信待ちも200 msから5秒へ延長します。
+ほかのエラーと、完了前の待機・履歴失効・状態値等のassertは保持します。
+音源コア・製品のRust実装・ビルド・APIは変更していません。
+修正後のローカルRust全試験は723成功・0失敗・4件ignoredで、対象試験の反復も50／50成功しました。
+修正は未コミットで、CI対象`276e744...`には含まれません。修正版のCI再実行はまだ行っていません。
+OPL／AY移行との因果関係を確定したという意味ではありません。
+
+このCIはOS間のPCM bit一致や各OSでのWASM比較を確認するものではありません。
+音声デバイスを使う実機の音声出力・ノイズ・UI操作・インストール後の起動も別の確認です。

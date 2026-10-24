@@ -644,14 +644,29 @@ fn extra_snes_completion_wait_releases_control_and_history_expires() {
     let (tx, rx) = mpsc::channel();
     let waiting = s.clone();
     let task = std::thread::spawn(move || {
-        tx.send(waiting.extra_snes_status(1, Some(1), false))
-            .unwrap()
+        // A completed command can still overlap snapshot publication. Honor
+        // the bounded reader's retry contract if CI deschedules the writer;
+        // every other error must still reach the assertion below.
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let retry = "Native additional SNES state changed while reading; retry";
+        let result = loop {
+            let result = waiting.extra_snes_status(1, Some(1), false);
+            if !matches!(&result, Err(error) if error == retry) {
+                break result;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "concurrent SNES state publication did not finish"
+            );
+            std::thread::yield_now();
+        };
+        tx.send(result).unwrap()
     });
     assert!(rx.recv_timeout(Duration::from_millis(20)).is_err());
     send(&s, 1, vec![write(1, 66)]);
     render(&s, &mut r, 1100);
     assert_eq!(
-        rx.recv_timeout(Duration::from_millis(200))
+        rx.recv_timeout(Duration::from_secs(5))
             .unwrap()
             .unwrap()
             .snes
