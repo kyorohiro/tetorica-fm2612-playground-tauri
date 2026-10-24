@@ -6,6 +6,8 @@ struct NativeExtraOplState {
     uint8_t kind, channels, status, irq;
 };
 extern "C" {
+uint64_t native_extra_opl_memory_revision(void *);
+uint64_t native_extra_opl_memory_upload_revision(void *);
 // Callback installs control-owned writable ADPCM pages; Y8950 only.
 void native_extra_opl_memory_page(void *, uint32_t index, uint8_t *page);
 void native_extra_opl_memory_length(void *, uint32_t bytes);
@@ -18,7 +20,7 @@ void native_extra_opl_all_notes_off(void *);
 void native_extra_opl_host_all_notes_off(void *);
 void native_extra_opl_stop(void *);
 void native_extra_opl_write(void *, uint16_t reg, uint8_t value);
-// FM0..8 (OPL3 0..17) and BD/SD/TOM/CYM/HH18..22.
+// FM0..8 (OPL3 0..17), BD/SD/TOM/CYM/HH18..22, Y8950 ADPCM23.
 void native_extra_opl_key_off(void *, uint8_t voice);
 void native_extra_opl_key_off_fm(void *, uint8_t channel);
 void native_extra_opl_preview_key_off(void *, uint8_t voice);

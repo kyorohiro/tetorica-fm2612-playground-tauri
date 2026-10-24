@@ -102,7 +102,7 @@ struct Base {
     virtual void reset()=0; virtual void stop(bool)=0; virtual void all_off()=0; virtual void write(uint16_t,uint8_t)=0;
     virtual void off(uint8_t,bool)=0; virtual void preview_off(uint8_t)=0; virtual void audition(uint8_t)=0;
     virtual void source_preview_off(uint8_t)=0;virtual void source_audition(uint8_t)=0;
-    virtual void memory_page(uint32_t,uint8_t*)=0; virtual void memory_length(uint32_t)=0;
+    virtual uint64_t memory_upload_revision()const=0; virtual uint64_t memory_revision()const=0; virtual void memory_page(uint32_t,uint8_t*)=0; virtual void memory_length(uint32_t)=0;
     virtual void cancel_csm()=0; virtual void cancel_adpcm()=0; virtual void sample(float*,float*)=0;
     virtual bool csm() const=0; virtual uint8_t pair_mask() const=0;
     virtual uint8_t effective_register(uint16_t)const=0;virtual void effective_registers(uint8_t*)const=0;
@@ -139,6 +139,8 @@ template<class T> struct Native final : Base {
     void restore_one(uint8_t ch){if(forced&(1u<<ch)){forced&=~(1u<<ch);for(uint8_t slot:{SLOTS[ch%9],uint8_t(SLOTS[ch%9]+3)}){const uint16_t reg=(ch>=9?0x100:0)+0x40+slot;raw(reg,registers[reg],true);}}}
     void restore(uint8_t ch){restore_one(ch);restore_one(public_pair(ch));}
     int operator_channel(uint16_t reg)const {const uint8_t slot=reg&31;for(uint8_t ch=0;ch<9;++ch)if(slot==SLOTS[ch]||slot==SLOTS[ch]+3)return (reg>>8)*9+ch;return -1;}
+    uint64_t memory_upload_revision()const override{return kind==3?intf.memory_upload_revision:0;}
+    uint64_t memory_revision()const override{return kind==3?intf.memory_revision:0;}
     void memory_page(uint32_t i,uint8_t*p)override{if(kind==3)intf.memory_page(i,p);}
     void memory_length(uint32_t n)override{if(kind==3)intf.memory_length(n);}
     void write(uint16_t reg,uint8_t value)override{
@@ -152,7 +154,7 @@ template<class T> struct Native final : Base {
         const int ch=low>=0x40&&low<=0x55?operator_channel(reg):-1;raw(reg,ch>=0&&(forced&(1u<<ch))?uint8_t((value&192)|63):value);
     }
     void update_hold(){if(chip.sample_rate(clock)<rate){float l,r;chip.stereo(l,r);held_left=l;held_right=r;}}
-    void off(uint8_t voice,bool normal_only)override{
+    void off(uint8_t voice,bool normal_only)override{if(kind==3&&voice==23){write(7,(registers[7]&16)|1);return;}
         if(voice<CHANNELS){
             const uint16_t reg=address(voice,0xb0);pending&=~(1u<<voice);source_pending&=~(1u<<voice);registers[reg]&=~32;
             // Runtime cancellation addresses the physical core directly. NEW=0
@@ -169,8 +171,8 @@ template<class T> struct Native final : Base {
         }
     }
     void preview_one(uint8_t ch){const uint16_t reg=address(ch,0xb0);pending&=~(1u<<ch);source_pending&=~(1u<<ch);registers[reg]&=~32;raw(reg,registers[reg],true);forced|=1u<<ch;for(uint8_t slot:{SLOTS[ch%9],uint8_t(SLOTS[ch%9]+3)}){const uint16_t tl=(ch>=9?0x100:0)+0x40+slot;raw(tl,(registers[tl]&192)|63);}}
-    void preview_off(uint8_t voice)override {if(voice<CHANNELS){preview_one(voice);const uint8_t pair=public_pair(voice);if(pair!=voice)preview_one(pair);}else if(voice>=18&&voice<23){pending&=~(1u<<voice);source_pending&=~(1u<<voice);write(0xbd,registers[0xbd]&~(16>>(voice-18)));}}
-    void audition(uint8_t voice)override{if(voice<CHANNELS||(voice>=18&&voice<23&&rhythm())){preview_off(voice);pending|=1u<<voice;}}
+    void preview_off(uint8_t voice)override {if(kind==3&&voice==23){write(7,(registers[7]&16)|1);return;}if(voice<CHANNELS){preview_one(voice);const uint8_t pair=public_pair(voice);if(pair!=voice)preview_one(pair);}else if(voice>=18&&voice<23){pending&=~(1u<<voice);source_pending&=~(1u<<voice);write(0xbd,registers[0xbd]&~(16>>(voice-18)));}}
+    void audition(uint8_t voice)override{if(kind==3&&voice==23){const uint8_t repeat=registers[7]&16;write(7,repeat|1);write(7,0xa0|repeat);return;}if(voice<CHANNELS||(voice>=18&&voice<23&&rhythm())){preview_off(voice);pending|=1u<<voice;}}
     void source_preview_off(uint8_t voice)override{
         if(kind!=2){preview_off(voice);return;}
         const auto cached=chip.held;const auto routes=chip.routes;const auto drums=chip.drums;const auto combined=chip.combined;
@@ -226,6 +228,8 @@ void native_extra_opl_key_off_fm(void*p,uint8_t ch){core(p)->off(ch,true);} void
 void native_extra_opl_audition_key_on(void*p,uint8_t voice){core(p)->audition(voice);} void native_extra_opl_cancel_csm(void*p){core(p)->cancel_csm();}
 void native_extra_opl_source_preview_key_off(void*p,uint8_t voice){core(p)->source_preview_off(voice);}
 void native_extra_opl_source_audition_key_on(void*p,uint8_t voice){core(p)->source_audition(voice);}
+uint64_t native_extra_opl_memory_upload_revision(void*p){return core(p)->memory_upload_revision();}
+uint64_t native_extra_opl_memory_revision(void*p){return core(p)->memory_revision();}
 void native_extra_opl_memory_page(void*p,uint32_t index,uint8_t*page){core(p)->memory_page(index,page);}
 void native_extra_opl_memory_length(void*p,uint32_t size){core(p)->memory_length(size);}
 void native_extra_opl_cancel_adpcm(void*p){core(p)->cancel_adpcm();} void native_extra_opl_sample(void*p,float*l,float*r){core(p)->sample(l,r);}

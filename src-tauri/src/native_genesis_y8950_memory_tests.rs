@@ -445,3 +445,364 @@ fn y8950_retired_pages_are_reclaimed_before_next_large_payload_admission() {
     wait(&s, false, 3).unwrap();
     assert_eq!(snapshot(&s, false)["adpcmMemorySize"], 1024 * 1024);
 }
+
+fn voice_batch(channel: u8, voice: u64, action: &str, commands: Vec<Value>) -> Value {
+    json!({"method":"batch","channel":channel,"voice":voice,"action":action,"audition":true,"commands":commands})
+}
+fn manual_fm_voice() -> Vec<Value> {
+    vec![
+        write(0x20, 0x21),
+        write(0x23, 0x21),
+        write(0x40, 63),
+        write(0x43, 18),
+        write(0x60, 0xf0),
+        write(0x63, 0xf0),
+        write(0x80, 0x0f),
+        write(0x83, 0x0f),
+        write(0xa0, 0x44),
+        write(0xb0, 0x12),
+        json!({"method":"audition-key-on","channel":0}),
+    ]
+}
+fn manual_adpcm_voice(repeat: bool) -> Vec<Value> {
+    vec![
+        write(7, if repeat { 16 } else { 0 }),
+        json!({"method":"audition-key-on","channel":23}),
+    ]
+}
+#[test]
+fn y8950_adpcm_keyboard_channel23_has_independent_held_and_stale_release_tokens() {
+    for primary in [false, true] {
+        let (s, mut r) = setup(primary);
+        play(&s, primary, vec![memory(1, 0, wave())]);
+        render(&s, &mut r, 1);
+        let mut config = start();
+        config.pop();
+        play(&s, primary, config);
+        play(
+            &s,
+            primary,
+            vec![voice_batch(23, 101, "on", manual_adpcm_voice(true))],
+        );
+        assert!(varies(&render(&s, &mut r, 1024)));
+        let a = snapshot(&s, primary);
+        assert_eq!(a["held"], json!([23]));
+        assert_eq!(a["registers"][7], 0xb0);
+        play(
+            &s,
+            primary,
+            vec![voice_batch(0, 201, "on", manual_fm_voice())],
+        );
+        render(&s, &mut r, 1024);
+        assert_eq!(snapshot(&s, primary)["held"], json!([0, 23]));
+        // Script Stop must retain both independent keyboard sources.
+        play(
+            &s,
+            primary,
+            vec![
+                json!({"method":"stop-voices"}),
+                json!({"method":"key-off","channel":23}),
+            ],
+        );
+        render(&s, &mut r, 128);
+        assert_eq!(snapshot(&s, primary)["held"], json!([0, 23]));
+        assert_eq!(snapshot(&s, primary)["registers"][7], 0xb0);
+        play(
+            &s,
+            primary,
+            vec![
+                voice_batch(23, 102, "on", manual_adpcm_voice(false)),
+                voice_batch(
+                    23,
+                    101,
+                    "off",
+                    vec![json!({"method":"key-off","channel":23})],
+                ),
+                voice_batch(23, 101, "edit", vec![write(18, 1)]),
+            ],
+        );
+        render(&s, &mut r, 128);
+        let state = snapshot(&s, primary);
+        assert_eq!(state["held"], json!([0, 23]));
+        assert_eq!(state["registers"][7], 0xa0);
+        assert_eq!(state["registers"][18], 220);
+        play(
+            &s,
+            primary,
+            vec![voice_batch(
+                23,
+                102,
+                "edit",
+                vec![write(18, 64), write(8, 0xc2)],
+            )],
+        );
+        render(&s, &mut r, 128);
+        let state = snapshot(&s, primary);
+        assert_eq!(state["registers"][8], 2);
+        assert_eq!(state["registers"][18], 64);
+        assert_eq!(state["registers"][0xb0], 0x32);
+        play(
+            &s,
+            primary,
+            vec![voice_batch(
+                0,
+                201,
+                "off",
+                vec![json!({"method":"key-off","channel":0})],
+            )],
+        );
+        render(&s, &mut r, 128);
+        assert_eq!(snapshot(&s, primary)["held"], json!([23]));
+        assert_eq!(snapshot(&s, primary)["registers"][7], 0xa0);
+        play(
+            &s,
+            primary,
+            vec![voice_batch(
+                23,
+                102,
+                "off",
+                vec![json!({"method":"key-off","channel":23})],
+            )],
+        );
+        render(&s, &mut r, 128);
+        let state = snapshot(&s, primary);
+        assert_eq!(state["held"], json!([]));
+        assert_eq!(state["registers"][7], 1);
+    }
+}
+#[test]
+fn y8950_adpcm_keyboard_does_not_change_csm_manual_fm_scope() {
+    let (s, mut r) = setup(false);
+    play(&s, false, vec![memory(1, 0, wave())]);
+    render(&s, &mut r, 1);
+    let mut config = start();
+    config.pop();
+    play(&s, false, config);
+    let mut csm = vec![write(2, 255), write(8, 0x82), write(4, 1)];
+    for m in &mut csm {
+        m["audition"] = json!(true);
+    }
+    play(&s, false, csm);
+    render(&s, &mut r, 128);
+    assert_eq!(
+        snapshot(&s, false)["held"],
+        json!([0, 1, 2, 3, 4, 5, 6, 7, 8])
+    );
+    play(
+        &s,
+        false,
+        vec![
+            voice_batch(23, 1, "on", manual_adpcm_voice(true)),
+            voice_batch(23, 1, "edit", vec![write(8, 2)]),
+        ],
+    );
+    render(&s, &mut r, 128);
+    let state = snapshot(&s, false);
+    assert_eq!(state["held"], json!([0, 1, 2, 3, 4, 5, 6, 7, 8, 23]));
+    assert_eq!(state["registers"][8], 0x82);
+    play(
+        &s,
+        false,
+        vec![voice_batch(
+            23,
+            1,
+            "off",
+            vec![json!({"method":"key-off","channel":23})],
+        )],
+    );
+    render(&s, &mut r, 128);
+    assert_eq!(
+        snapshot(&s, false)["held"],
+        json!([0, 1, 2, 3, 4, 5, 6, 7, 8])
+    );
+    assert_eq!(snapshot(&s, false)["registers"][8], 0x82);
+    assert_eq!(snapshot(&s, false)["registers"][7], 0x11);
+}
+#[test]
+fn y8950_adpcm_keyboard_release_and_stop_preserve_independent_fm_without_callback_allocations() {
+    for primary in [false, true] {
+        let (s, mut r) = setup(primary);
+        play(&s, primary, vec![memory(1, 0, wave())]);
+        render(&s, &mut r, 1);
+        let mut config = start();
+        config.pop();
+        play(&s, primary, config);
+        for message in [
+            voice_batch(0, 201, "on", manual_fm_voice()),
+            voice_batch(23, 101, "on", manual_adpcm_voice(true)),
+            voice_batch(23, 101, "edit", vec![write(18, 64)]),
+            voice_batch(
+                23,
+                101,
+                "off",
+                vec![json!({"method":"key-off","channel":23})],
+            ),
+        ] {
+            play(&s, primary, vec![message]);
+            assert_eq!(
+                y8950_memory::allocation_probe::measure(|| {
+                    r.prepare(&s);
+                    for _ in 0..128 {
+                        let _ = r.sample(&s);
+                    }
+                    r.prepare(&s);
+                }),
+                (0, 0),
+                "manual callback primary={primary}"
+            );
+        }
+        let state = snapshot(&s, primary);
+        assert_eq!(state["held"], json!([0]));
+        assert_eq!(state["registers"][7], 0x11);
+        assert_eq!(state["registers"][0xb0], 0x32);
+        play(
+            &s,
+            primary,
+            vec![voice_batch(
+                23,
+                102,
+                "on",
+                vec![json!({"method":"audition-key-on","channel":23})],
+            )],
+        );
+        render(&s, &mut r, 128);
+        assert_eq!(snapshot(&s, primary)["held"], json!([0, 23]));
+        assert_eq!(snapshot(&s, primary)["registers"][7], 0xb0);
+        // An explicit manual Stop has stronger scope than script Stop and
+        // must clear both leases while keeping the sample RAM reusable.
+        play(
+            &s,
+            primary,
+            vec![json!({"method":"stop-voices","audition":true})],
+        );
+        render(&s, &mut r, 128);
+        let state = snapshot(&s, primary);
+        assert_eq!(state["held"], json!([]));
+        assert_eq!(state["registers"][7], 1);
+        assert_eq!(state["registers"][0xb0].as_u64().unwrap() & 32, 0);
+        assert_eq!(state["adpcmMemorySize"], 256);
+    }
+}
+#[test]
+fn y8950_adpcm_keyboard_reg8_protects_fm_and_adpcm_bits_independently() {
+    for primary in [false, true] {
+        let (s, mut r) = setup(primary);
+        play(&s, primary, vec![memory(1, 0, wave())]);
+        render(&s, &mut r, 1);
+        let mut config = start();
+        config.pop();
+        play(&s, primary, config);
+        play(
+            &s,
+            primary,
+            vec![voice_batch(23, 101, "on", manual_adpcm_voice(true))],
+        );
+        render(&s, &mut r, 128);
+        // A script may edit FM note-select while ADPCM owns memory mode.
+        play(&s, primary, vec![write(8, 0x40)]);
+        render(&s, &mut r, 128);
+        assert_eq!(snapshot(&s, primary)["registers"][8], 0x42);
+        play(
+            &s,
+            primary,
+            vec![voice_batch(0, 201, "on", manual_fm_voice())],
+        );
+        render(&s, &mut r, 128);
+        play(&s, primary, vec![write(8, 5)]);
+        render(&s, &mut r, 128);
+        assert_eq!(snapshot(&s, primary)["registers"][8], 0x42);
+        play(
+            &s,
+            primary,
+            vec![voice_batch(
+                23,
+                101,
+                "off",
+                vec![json!({"method":"key-off","channel":23})],
+            )],
+        );
+        render(&s, &mut r, 128);
+        play(&s, primary, vec![write(8, 5)]);
+        render(&s, &mut r, 128);
+        let state = snapshot(&s, primary);
+        assert_eq!(state["registers"][8], 0x45);
+        assert_eq!(state["held"], json!([0]));
+        assert_eq!(state["registers"][0xb0], 0x32);
+    }
+}
+#[test]
+fn y8950_adpcm_keyboard_rejects_foreign_chip_and_cross_source_batches() {
+    for chip in [opl::Chip::Ym3526, opl::Chip::Ym3812, opl::Chip::Ymf262] {
+        let mut v = voice_batch(23, 1, "on", manual_adpcm_voice(false));
+        v["chip"] = json!(chip.name());
+        assert!(serde_json::from_value::<opl::Message>(v)
+            .unwrap()
+            .prepare()
+            .is_err());
+    }
+    for primary in [false, true] {
+        let (s, mut r) = setup(primary);
+        for commands in [
+            vec![write(0xb0, 0x32)],
+            vec![json!({"method":"key-off","channel":0})],
+            vec![json!({"method":"clock","hz":8000000})],
+        ] {
+            assert!(s
+                .enqueue(
+                    1,
+                    &[command(primary, 0, voice_batch(23, 1, "on", commands))]
+                )
+                .is_err());
+        }
+        render(&s, &mut r, 128);
+        assert_eq!(snapshot(&s, primary)["held"], json!([]));
+    }
+}
+#[test]
+fn y8950_memory_revisions_distinguish_resource_commit_cpu_write_and_reset() {
+    for primary in [false, true] {
+        let (s, mut r) = setup(primary);
+        let initial = snapshot(&s, primary);
+        assert_eq!(initial["adpcmMemoryRevision"], 0);
+        assert_eq!(initial["adpcmMemoryUploadRevision"], 0);
+        play(&s, primary, vec![memory(1, 0, vec![0; 256])]);
+        render(&s, &mut r, 1);
+        let loaded = snapshot(&s, primary);
+        assert_eq!(loaded["adpcmMemoryRevision"], 1);
+        assert_eq!(loaded["adpcmMemoryUploadRevision"], 1);
+        play(
+            &s,
+            primary,
+            vec![
+                write(8, 2),
+                write(9, 0),
+                write(10, 0),
+                write(11, 7),
+                write(12, 0),
+                write(7, 0x60),
+            ],
+        );
+        let data = (0..32).map(|i| write(15, i * 7)).collect();
+        play(&s, primary, data);
+        render(&s, &mut r, 128);
+        let raw = snapshot(&s, primary);
+        assert!(raw["adpcmMemoryRevision"].as_u64().unwrap() > 1);
+        assert_eq!(raw["adpcmMemoryUploadRevision"], 1);
+        play(&s, primary, vec![json!({"method":"reset"})]);
+        render(&s, &mut r, 128);
+        let reset = snapshot(&s, primary);
+        assert_eq!(reset["adpcmMemoryRevision"], raw["adpcmMemoryRevision"]);
+        assert_eq!(reset["adpcmMemoryUploadRevision"], 1);
+        play(&s, primary, vec![json!({"method":"adpcm-clear","id":2})]);
+        render(&s, &mut r, 128);
+        let cleared = snapshot(&s, primary);
+        assert_eq!(
+            cleared["adpcmMemoryRevision"],
+            cleared["adpcmMemoryUploadRevision"]
+        );
+        assert!(
+            cleared["adpcmMemoryRevision"].as_u64().unwrap()
+                > raw["adpcmMemoryRevision"].as_u64().unwrap()
+        );
+    }
+}

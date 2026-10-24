@@ -30,6 +30,8 @@ struct Chip{
   else if(e.op=="clock"){assert(extra?native_extra_opl_set_clock(p,e.a):native_opl_set_clock(p,e.a));clock=e.a;}
   else if(e.op=="reset"){if(extra)native_extra_opl_reset(p);else native_opl_reset(p);}
   else if(e.op=="stop"){if(extra)native_extra_opl_stop(p);else native_opl_stop(p);}
+  else if(e.op=="audition-adpcm"){if(extra)native_extra_opl_source_audition_key_on(p,23);else native_opl_audition_key_on(p,23);}
+  else if(e.op=="off-adpcm"){if(extra)native_extra_opl_key_off_fm(p,23);else native_opl_key_off(p,23);}
   else std::abort();
  }
  void sample(float*o){if(extra)native_extra_opl_sample(p,o,o+1);else native_opl_sample(p,o,o+1);o[2]=extra?native_extra_opl_read_status(p):native_opl_read_status(p);o[3]=extra?native_extra_opl_get_irq(p):native_opl_get_irq(p);for(int i=0;i<4;++i)o[4+i]=extra?native_extra_opl_read(p,i):native_opl_read(p,i);o[8]=float(size);o[9]=float(clock);}

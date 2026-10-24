@@ -39,6 +39,8 @@ void restore_fm_hold(Y8950 &chip, double &left, double &right) {
 }
 struct OplBase {
     virtual ~OplBase() = default;
+    virtual uint64_t memory_upload_revision() const = 0;
+    virtual uint64_t memory_revision() const = 0;
     virtual void memory_page(uint32_t,uint8_t*) = 0;
     virtual void memory_length(uint32_t) = 0;
     virtual void cancel_adpcm() = 0;
@@ -91,6 +93,8 @@ template<class Chip> struct NativeOpl final : OplBase {
         }
     }
     void restore(uint8_t ch) { restore_one(ch); restore_one(paired(ch)); update_mute(); }
+    uint64_t memory_upload_revision() const override { return kind==3?intf.memory_upload_revision:0; }
+    uint64_t memory_revision() const override { return kind==3?intf.memory_revision:0; }
     void memory_page(uint32_t i, uint8_t *p) override { if(kind==3)intf.memory_page(i,p); }
     void memory_length(uint32_t n) override { if(kind==3)intf.memory_length(n); }
     void cancel_adpcm() override { if(kind==3){write(7,1);if(chip.sample_rate(clock)<output_rate)restore_fm_hold(chip,left,right);} }
@@ -119,6 +123,7 @@ template<class Chip> struct NativeOpl final : OplBase {
         for (uint8_t slot : {SLOTS[ch % 9], uint8_t(SLOTS[ch % 9] + 3)}) raw(bank + 0x40 + slot, uint8_t((registers[bank + 0x40 + slot] & 192) | 63));
     }
     void off(uint8_t voice) override {
+        if(kind==3&&voice==23){write(7,(registers[7]&16)|1);return;}
         if (voice < channels) { const uint8_t pair = paired(voice); off_one(voice); if (pair != voice) off_one(pair); update_mute(); }
         else if (voice >= 18 && voice < 23) {
             pending &= ~(1u << voice); const uint8_t value = registers[0xbd] & ~(16 >> (voice - 18));
@@ -126,6 +131,7 @@ template<class Chip> struct NativeOpl final : OplBase {
         }
     }
     void audition(uint8_t voice) override {
+        if(kind==3&&voice==23){const uint8_t repeat=registers[7]&16;write(7,repeat|1);write(7,0xa0|repeat);return;}
         if (voice >= channels && !(voice >= 18 && voice < 23)) return;
         off(voice); pending |= 1u << voice;
     }
@@ -187,6 +193,8 @@ void *native_opl_create(uint32_t rate, uint8_t kind) {
     return nullptr;
 }
 void native_opl_destroy(void *p) { delete core(p); }
+uint64_t native_opl_memory_upload_revision(void*p){return core(p)->memory_upload_revision();}
+uint64_t native_opl_memory_revision(void*p){return core(p)->memory_revision();}
 void native_opl_memory_page(void*p,uint32_t index,uint8_t*page){core(p)->memory_page(index,page);}
 void native_opl_memory_length(void*p,uint32_t size){core(p)->memory_length(size);}
 void native_opl_cancel_adpcm(void*p){core(p)->cancel_adpcm();}

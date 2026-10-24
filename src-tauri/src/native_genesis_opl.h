@@ -7,6 +7,8 @@ struct NativeOplState {
     uint8_t kind, channels, status, irq;
 };
 extern "C" {
+uint64_t native_opl_memory_revision(void *);
+uint64_t native_opl_memory_upload_revision(void *);
 // Callback installs control-owned writable ADPCM pages; Y8950 only.
 void native_opl_memory_page(void *, uint32_t index, uint8_t *page);
 void native_opl_memory_length(void *, uint32_t bytes);
@@ -17,7 +19,7 @@ void native_opl_destroy(void *);
 void native_opl_reset(void *);
 void native_opl_stop(void *);
 void native_opl_write(void *, uint16_t reg, uint8_t value);
-// voices 0..17: FM; 18..22: BD, SD, TOM, CYM, HH.
+// voices 0..17: FM; 18..22: BD, SD, TOM, CYM, HH; 23: Y8950 ADPCM.
 void native_opl_key_off(void *, uint8_t voice);
 void native_opl_audition_key_on(void *, uint8_t voice);
 void native_opl_sample(void *, float *left, float *right);

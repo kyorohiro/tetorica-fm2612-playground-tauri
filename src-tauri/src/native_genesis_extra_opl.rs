@@ -60,10 +60,12 @@ impl Chip {
         }
     }
     fn valid_voice(self, ch: usize) -> bool {
-        ch < self.channels() || (18..23).contains(&ch)
+        ch < self.channels() || (18..23).contains(&ch) || self == Self::Y8950 && ch == 23
     }
     fn physical(self, ch: usize) -> usize {
-        if ch >= 18 {
+        if ch == 23 {
+            23
+        } else if ch >= 18 {
             [6, 7, 8, 8, 7][ch - 18]
         } else {
             ch
@@ -85,6 +87,8 @@ impl Default for CoreState {
     }
 }
 extern "C" {
+    fn native_extra_opl_memory_upload_revision(p: *mut c_void) -> u64;
+    fn native_extra_opl_memory_revision(p: *mut c_void) -> u64;
     fn native_extra_opl_memory_page(p: *mut c_void, index: u32, page: *mut u8);
     fn native_extra_opl_memory_length(p: *mut c_void, size: u32);
     fn native_extra_opl_create(rate: u32, kind: u8) -> *mut c_void;
@@ -335,15 +339,33 @@ impl Message {
                 {
                     return Err("Invalid Native additional OPL batch or voice lease".into());
                 }
+                if *channel == 23
+                    && commands.iter().any(|op| {
+                        !matches!(
+                            op,
+                            Op::Write {
+                                register: 7..=0x12,
+                                ..
+                            } | Op::KeyOff { channel: 23 }
+                                | Op::AuditionKeyOn { channel: 23 }
+                        )
+                    })
+                {
+                    return Err(
+                        "Y8950 ADPCM batch must target only ADPCM registers and channel 23".into(),
+                    );
+                }
                 for op in commands {
                     validate_op(chip, op)?;
-                    if declared_channel(op).is_some_and(|target| {
-                        if chip == Chip::Ymf262 {
-                            !paired(chip.physical(target), chip.physical(*channel as usize))
-                        } else {
-                            chip.physical(target) != chip.physical(*channel as usize)
-                        }
-                    }) {
+                    if *channel != 23
+                        && declared_channel(op).is_some_and(|target| {
+                            if chip == Chip::Ymf262 {
+                                !paired(chip.physical(target), chip.physical(*channel as usize))
+                            } else {
+                                chip.physical(target) != chip.physical(*channel as usize)
+                            }
+                        })
+                    {
                         return Err(
                             "Native additional OPL batch must target its declared physical channel"
                                 .into(),
@@ -409,6 +431,8 @@ struct Control {
 pub struct Shared {
     memory: super::y8950_memory::Arena,
     memory_size: AtomicU32,
+    memory_revision: AtomicU64,
+    memory_upload_revision: AtomicU64,
     adpcm_held: AtomicBool,
     chip: Chip,
     revision: AtomicU64,
@@ -433,6 +457,8 @@ impl Shared {
         Self {
             memory: super::y8950_memory::Arena::new(budget),
             memory_size: AtomicU32::new(0),
+            memory_revision: AtomicU64::new(0),
+            memory_upload_revision: AtomicU64::new(0),
             adpcm_held: AtomicBool::new(false),
             chip,
             revision: AtomicU64::new(0),
@@ -459,6 +485,10 @@ impl Shared {
 pub struct ChipStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adpcm_memory_size: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adpcm_memory_revision: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adpcm_memory_upload_revision: Option<u64>,
     pub chip: &'static str,
     pub channels: u8,
     pub clock: u32,
@@ -728,6 +758,14 @@ impl Shared {
         let state = r.state();
         self.revision.fetch_add(1, Ordering::AcqRel);
         self.memory_size.store(r.memory.size(), Ordering::Relaxed);
+        self.memory_upload_revision.store(
+            unsafe { native_extra_opl_memory_upload_revision(r.ptr) },
+            Ordering::Relaxed,
+        );
+        self.memory_revision.store(
+            unsafe { native_extra_opl_memory_revision(r.ptr) },
+            Ordering::Relaxed,
+        );
         self.adpcm_held
             .store(r.adpcm_owner.is_some_and(|l| l.audition), Ordering::Relaxed);
         let pair_mask = r.four_op_mask();
@@ -772,10 +810,12 @@ impl Shared {
                 .enumerate()
                 .filter(|(_, v)| v.is_some_and(|l| l.audition))
                 .fold(
-                    if r.csm_owner.is_some_and(|l| l.audition)
-                        || r.adpcm_owner.is_some_and(|l| l.audition)
-                    {
+                    (if r.csm_owner.is_some_and(|l| l.audition) {
                         (1 << self.chip.channels()) - 1
+                    } else {
+                        0
+                    }) | if r.adpcm_owner.is_some_and(|l| l.audition) {
+                        1 << 23
                     } else {
                         0
                     },
@@ -822,6 +862,10 @@ impl Shared {
             }
             let held = self.held.load(Ordering::Relaxed);
             let chip = ChipStatus {
+                adpcm_memory_upload_revision: (self.chip == Chip::Y8950)
+                    .then(|| self.memory_upload_revision.load(Ordering::Relaxed)),
+                adpcm_memory_revision: (self.chip == Chip::Y8950)
+                    .then(|| self.memory_revision.load(Ordering::Relaxed)),
                 adpcm_memory_size: (self.chip == Chip::Y8950)
                     .then(|| self.memory_size.load(Ordering::Relaxed)),
                 chip: self.chip.name(),
@@ -833,7 +877,7 @@ impl Shared {
                     .collect(),
                 status: self.status.load(Ordering::Relaxed),
                 irq: self.irq.load(Ordering::Relaxed) != 0,
-                held: (0..VOICES)
+                held: (0..24)
                     .filter(|ch| held & (1 << ch) != 0)
                     .map(|ch| ch as u8)
                     .collect(),
@@ -964,6 +1008,10 @@ impl Renderer {
             }
         }
         p
+    }
+    fn has_manual_fm(&self) -> bool {
+        self.owners.iter().flatten().any(|l| l.audition)
+            || self.csm_owner.is_some_and(|l| l.audition)
     }
     fn has_manual(&self) -> bool {
         self.owners.iter().flatten().any(|l| l.audition)
@@ -1124,6 +1172,94 @@ impl Renderer {
             || voice.is_some() && l.voice != voice && (audition || l.audition)
             || l.audition && !audition
     }
+    fn adpcm_op(
+        &mut self,
+        op: &Op,
+        owner: Option<Owner>,
+        voice: Option<u64>,
+        audition: bool,
+        preserve: bool,
+    ) {
+        let current = self.adpcm_owner;
+        if current.is_some_and(|l| l.audition && (!audition || voice.is_some() && l.voice != voice))
+        {
+            return;
+        }
+        if matches!(op, Op::KeyOff { .. })
+            && current.is_some_and(|l| self.foreign(l, owner, voice, audition))
+        {
+            return;
+        }
+        unsafe {
+            match *op {
+                Op::KeyOff { .. } => native_extra_opl_key_off_fm(self.ptr, 23),
+                Op::AuditionKeyOn { .. } => native_extra_opl_source_audition_key_on(self.ptr, 23),
+                Op::Write {
+                    register, value, ..
+                } => {
+                    let value = if register == 8 {
+                        (value & 0x3f) | (self.state().registers[8] & 0xc0)
+                    } else {
+                        value
+                    };
+                    native_extra_opl_write(self.ptr, register, value);
+                }
+                _ => return,
+            }
+        }
+        if !preserve {
+            match *op {
+                Op::KeyOff { .. } => self.adpcm_owner = None,
+                Op::AuditionKeyOn { .. } => {
+                    self.adpcm_owner = Some(self.lease(owner, voice, audition))
+                }
+                Op::Write {
+                    register: 7, value, ..
+                } if value & 1 != 0 => self.adpcm_owner = None,
+                Op::Write {
+                    register: 7, value, ..
+                } if value & 128 != 0 => {
+                    self.adpcm_owner = Some(self.lease(owner, voice, audition))
+                }
+                _ => {}
+            }
+        }
+    }
+    fn adpcm_batch(
+        &mut self,
+        commands: &[Op],
+        action: LeaseAction,
+        owner: Option<Owner>,
+        voice: Option<u64>,
+        audition: bool,
+    ) {
+        let current = self.adpcm_owner;
+        let allowed = match action {
+            LeaseAction::On => audition || current.is_none_or(|l| !l.audition),
+            LeaseAction::Off => current.is_some_and(|l| {
+                l.owner == owner
+                    && (self.current_group.is_none() || l.group == self.current_group)
+                    && (voice.is_none() || l.voice == voice)
+                    && (!l.audition || audition)
+            }),
+            LeaseAction::Edit => current
+                .is_none_or(|l| !l.audition || audition && (voice.is_none() || l.voice == voice)),
+        };
+        if !allowed {
+            return;
+        }
+        if action == LeaseAction::On {
+            self.adpcm_owner = Some(self.lease(owner, voice, audition));
+        }
+        for op in commands {
+            self.adpcm_op(op, owner, voice, audition, action == LeaseAction::Edit);
+        }
+        if action == LeaseAction::On {
+            self.adpcm_owner = Some(self.lease(owner, voice, audition));
+        } else if action == LeaseAction::Off {
+            self.adpcm_owner = None;
+        }
+    }
     fn release(&mut self, ch: usize) {
         unsafe { native_extra_opl_key_off_fm(self.ptr, ch as u8) }
         self.owners[ch] = None;
@@ -1150,6 +1286,13 @@ impl Renderer {
         preserve: bool,
         declared: Option<usize>,
     ) {
+        if matches!(
+            op,
+            Op::KeyOff { channel: 23 } | Op::AuditionKeyOn { channel: 23 }
+        ) {
+            self.adpcm_op(op, owner, voice, audition, preserve);
+            return;
+        }
         let s = self.state();
         let rhythm = if self.chip == Chip::Ymf262 {
             unsafe { native_extra_opl_effective_register(self.ptr, 0xbd) & 32 != 0 }
@@ -1225,6 +1368,16 @@ impl Renderer {
                 } else {
                     s.registers[register as usize]
                 };
+                if self.chip == Chip::Y8950 && register == 8 {
+                    if !audition && self.has_manual_fm() {
+                        value = (value & 0x3f) | (old & 0xc0);
+                    }
+                    if self.adpcm_owner.is_some_and(|l| {
+                        l.audition && (!audition || voice.is_some() && l.voice != voice)
+                    }) {
+                        value = (value & 0xc0) | (old & 0x3f);
+                    }
+                }
                 if self.chip == Chip::Ymf262
                     && register == 0x105
                     && (old ^ value) & 1 != 0
@@ -1256,16 +1409,19 @@ impl Renderer {
                 }
                 if self.chip == Chip::Y8950
                     && (7..=0x12).contains(&register)
-                    && self.adpcm_owner.is_some_and(|l| l.audition && !audition)
+                    && register != 8
+                    && self.adpcm_owner.is_some_and(|l| {
+                        l.audition && (!audition || voice.is_some() && l.voice != voice)
+                    })
                 {
                     return;
                 }
-                if register == 1 && !audition && self.has_manual() {
+                if register == 1 && !audition && self.has_manual_fm() {
                     value = (value & !32) | (old & 32)
                 }
                 if matches!(register, 2 | 3 | 4 | 8)
                     && !audition
-                    && self.has_manual()
+                    && self.has_manual_fm()
                     && !(self.chip == Chip::Y8950 && register == 8 && (old ^ value) & 0xc0 == 0)
                 {
                     return;
@@ -1351,7 +1507,7 @@ impl Renderer {
                     }
                 }
                 if register == 0xbd {
-                    if !audition && self.has_manual() {
+                    if !audition && self.has_manual_fm() {
                         value = (value & !0xc0) | (old & 0xc0)
                     }
                     if (value ^ old) & 32 != 0
@@ -1613,6 +1769,13 @@ impl Renderer {
                 voice,
                 action,
             } => {
+                if *channel == 23 {
+                    self.adpcm_batch(commands, *action, owner, *voice, c.audition);
+                    shared.publish(self, Some(c));
+                    self.current_group = None;
+                    return;
+                }
+
                 let ch = *channel as usize;
                 if !self.batch_targets_allowed(
                     commands,
