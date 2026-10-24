@@ -412,6 +412,10 @@ enum CommandAction {
         instance: u64,
         message: extra_ym2610::Message,
     },
+    ExtraYm2610b {
+        instance: u64,
+        message: extra_ym2610::Message,
+    },
     ExtraYm2151 {
         instance: u64,
         message: extra_ym2151::Message,
@@ -612,6 +616,7 @@ impl Command {
             | CommandAction::ExtraYm2203 { .. }
             | CommandAction::ExtraYm2608 { .. }
             | CommandAction::ExtraYm2610 { .. }
+            | CommandAction::ExtraYm2610b { .. }
             | CommandAction::ExtraYm2151 { .. }
             | CommandAction::ExtraAy8910 { .. }
             | CommandAction::ExtraY8950 { .. }
@@ -1140,7 +1145,8 @@ impl Shared {
                 CommandAction::ExtraYm2612 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm2203 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm2608 { message, .. } => Some(message.prepared_bytes()),
-                CommandAction::ExtraYm2610 { message, .. } => Some(message.prepared_bytes()),
+                CommandAction::ExtraYm2610 { message, .. }
+                | CommandAction::ExtraYm2610b { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraYm2151 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraAy8910 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraY8950 { message, .. } => Some(message.prepared_bytes()),
@@ -1176,7 +1182,9 @@ impl Shared {
         let ym2610_upload_bytes: usize = commands
             .iter()
             .map(|command| {
-                if let CommandAction::ExtraYm2610 { message, .. } = &command.action {
+                if let CommandAction::ExtraYm2610 { message, .. }
+                | CommandAction::ExtraYm2610b { message, .. } = &command.action
+                {
                     if let extra_ym2610::Method::Memory { data, .. } = &message.method {
                         data.len()
                     } else {
@@ -1254,14 +1262,14 @@ impl Shared {
                     let prepared = message.prepare()?;
                     prepared.set_start_frame(command.frame.max(self.frame.load(Ordering::Acquire)));
                     Action::ExtraYm2608(target, prepared)
-                } else if let CommandAction::ExtraYm2610 { instance, message } = &command.action {
+                } else if let CommandAction::ExtraYm2610 { instance, message } | CommandAction::ExtraYm2610b { instance, message } = &command.action {
                     if command.frame > MAX_SAFE_INTEGER {
                         return Err("Invalid native command frame".into());
                     }
                     let target = self
                         .extra_psg
                         .get(*instance, self.epoch.load(Ordering::Acquire))?;
-                    target.ym2610()?;
+                    target.ym2610()?.require_variant(matches!(&command.action, CommandAction::ExtraYm2610b { .. }))?;
                     let prepared =
                         target
                             .ym2610()?
@@ -2727,6 +2735,49 @@ impl Shared {
         *sequence = next_sequence;
         status
     }
+    fn create_extra_ym2610b(
+        &self,
+        instance: u64,
+        clock: Option<u32>,
+    ) -> Result<extra_ym2610::AdditionalBStatus, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self
+            .extra_psg
+            .create_ym2610b(instance, epoch, self.rate, clock)
+        {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target
+            .ym2610()?
+            .additional_status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional YM2610 install capacity"));
+        *sequence = next_sequence;
+        status.map(extra_ym2610::AdditionalStatus::into_b)
+    }
     fn create_extra_ym2151(
         &self,
         instance: u64,
@@ -3445,6 +3496,15 @@ impl Shared {
         self.invalidation.fetch_add(1, Ordering::Release);
         Ok(())
     }
+    fn dispose_extra_ym2610b(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose_ym2610b(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
     fn dispose_extra_ym2151(&self, instance: u64) -> Result<(), String> {
         let _producer = self
             .producer
@@ -3635,6 +3695,7 @@ impl Shared {
         let target = self
             .extra_psg
             .get(instance, self.epoch.load(Ordering::Acquire))?;
+        target.ym2610()?.require_variant(false)?;
         if let Some(id) = after {
             target.ym2610()?.wait_applied(id)?;
         }
@@ -3645,6 +3706,27 @@ impl Shared {
         target
             .ym2610()?
             .additional_status(self.frame.load(Ordering::Acquire))
+    }
+    fn extra_ym2610b_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+    ) -> Result<extra_ym2610::AdditionalBStatus, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        target.ym2610()?.require_variant(true)?;
+        if let Some(id) = after {
+            target.ym2610()?.wait_applied(id)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional YM2610 instance has expired".into());
+        }
+        target
+            .ym2610()?
+            .additional_status(self.frame.load(Ordering::Acquire))
+            .map(extra_ym2610::AdditionalStatus::into_b)
     }
     fn extra_ym2151_status(
         &self,
@@ -6769,6 +6851,19 @@ pub fn native_genesis_extra_ym2610_create(
     })
 }
 #[tauri::command]
+pub fn native_genesis_extra_ym2610b_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    clock: Option<u32>,
+) -> Result<extra_ym2610::AdditionalBStatus, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| {
+        shared.create_extra_ym2610b(instance, clock)
+    })
+}
+#[tauri::command]
 pub fn native_genesis_extra_ym2151_create(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, NativeGenesis>,
@@ -6836,6 +6931,16 @@ pub fn native_genesis_extra_ym2610_dispose(
 ) -> Result<(), String> {
     crate::allowed(&window)?;
     state.with_session(session, |shared| shared.dispose_extra_ym2610(instance))
+}
+#[tauri::command]
+pub fn native_genesis_extra_ym2610b_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_ym2610b(instance))
 }
 #[tauri::command]
 pub fn native_genesis_extra_ym2151_dispose(
@@ -6913,6 +7018,23 @@ pub async fn native_genesis_extra_ym2610_status(
     let shared = state.session_shared(session)?;
     let status =
         tauri::async_runtime::spawn_blocking(move || shared.extra_ym2610_status(instance, after))
+            .await
+            .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+#[tauri::command]
+pub async fn native_genesis_extra_ym2610b_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+) -> Result<extra_ym2610::AdditionalBStatus, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status =
+        tauri::async_runtime::spawn_blocking(move || shared.extra_ym2610b_status(instance, after))
             .await
             .map_err(|error| error.to_string())??;
     state.with_session(session, |_| Ok(()))?;

@@ -56,6 +56,7 @@ enum Kind {
     Ym2203,
     Ym2608,
     Ym2610,
+    Ym2610b,
     Ym2151,
     Ay8910,
     Y8950,
@@ -284,7 +285,13 @@ impl Instance {
             State::Ym2612(_) => Kind::Ym2612,
             State::Ym2203(_) => Kind::Ym2203,
             State::Ym2608(_) => Kind::Ym2608,
-            State::Ym2610(_) => Kind::Ym2610,
+            State::Ym2610(ref s) => {
+                if s.variant() {
+                    Kind::Ym2610b
+                } else {
+                    Kind::Ym2610
+                }
+            }
             State::Ym2151(_) => Kind::Ym2151,
             State::Ay8910(_) => Kind::Ay8910,
             State::Y8950(_) => Kind::Y8950,
@@ -818,6 +825,15 @@ impl Shared {
     ) -> Result<Arc<Instance>, String> {
         self.create_kind(id, epoch, rate, clock, Kind::Ym2610)
     }
+    pub fn create_ym2610b(
+        &self,
+        id: u64,
+        epoch: u64,
+        rate: u32,
+        clock: Option<u32>,
+    ) -> Result<Arc<Instance>, String> {
+        self.create_kind(id, epoch, rate, clock, Kind::Ym2610b)
+    }
     pub fn create_ym2608(
         &self,
         id: u64,
@@ -1086,9 +1102,10 @@ impl Shared {
             }
             core.publish(&state);
             (State::Ym2151(state), Core::Ym2151(core))
-        } else if kind == Kind::Ym2610 {
-            let state = extra_ym2610::Shared::with_budget(self.budget.clone());
-            let mut core = extra_ym2610::Renderer::new_additional(rate)?;
+        } else if matches!(kind, Kind::Ym2610 | Kind::Ym2610b) {
+            let variant = kind == Kind::Ym2610b;
+            let state = extra_ym2610::Shared::with_budget_variant(self.budget.clone(), variant);
+            let mut core = extra_ym2610::Renderer::new_additional_variant(rate, variant)?;
             if let Some(hz) = clock {
                 let cmd = extra_ym2610::Message {
                     id: None,
@@ -1246,6 +1263,9 @@ impl Shared {
     }
     pub fn dispose_ym2610(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Ym2610)
+    }
+    pub fn dispose_ym2610b(&self, id: u64) -> Result<(), String> {
+        self.dispose_kind(id, Kind::Ym2610b)
     }
     pub fn dispose_ym2608(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Ym2608)

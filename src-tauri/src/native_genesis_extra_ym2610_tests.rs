@@ -640,3 +640,263 @@ fn extra_ym2610_all_native_modes_use_common_mix_fx_and_isolated_core() {
 fn extra_ym2610_memory_layout_uses_fixed_sparse_tables() {
     eprintln!("extra-ym2610-memory-layout: instance={} shared={} renderer={} session={} fixed_instance={} retire_queue={} page=65536+64 metadata",std::mem::size_of::<extra_psg::Instance>(),std::mem::size_of::<extra_ym2610::Shared>(),std::mem::size_of::<extra_ym2610::Renderer>(),std::mem::size_of::<Shared>(),extra_budget::INSTANCE_BYTES,CAPACITY*16);
 }
+
+fn command_b(instance: u64, frame: u64, message: Value) -> Command {
+    serde_json::from_value(
+        json!({"type":"extra-ym2610b","instance":instance,"frame":frame,"message":message}),
+    )
+    .unwrap()
+}
+fn play_b(s: &Shared, id: u64, commands: Vec<Value>) {
+    s.enqueue(
+        1,
+        &commands
+            .into_iter()
+            .map(|v| command_b(id, 0, v))
+            .collect::<Vec<_>>(),
+    )
+    .unwrap()
+}
+fn snapshot_b(s: &Shared, id: u64) -> extra_ym2610::AdditionalChipStatus {
+    s.extra_ym2610b_status(id, None).unwrap().ym2610b
+}
+fn audition_b(s: &Shared, ch: u8, voice: u64, action: &str, commands: Vec<Value>) {
+    play_b(
+        s,
+        1,
+        vec![
+            json!({"method":"batch","channel":ch,"voice":voice,"action":action,"audition":true,"commands":commands}),
+        ],
+    );
+}
+#[test]
+fn extra_ym2610b_each_physical_fm_channel_sounds_and_variant_is_immutable() {
+    for ch in 0..6 {
+        let s = Shared::new(48000, 1);
+        let mut r = Renderer::new(48000).unwrap();
+        s.create_extra_ym2610b(1, Some(7987200)).unwrap();
+        play_b(&s, 1, fm(ch));
+        assert!(energy(&render(&mut r, &s, 1500)) > 1., "physical FM {ch}");
+        let state = snapshot_b(&s, 1);
+        assert_eq!(state.variant, "ym2610b");
+        assert_eq!(state.clock, 7987200);
+        assert_eq!(state.key_masks[ch as usize], 15);
+        play_b(&s, 1, vec![json!({"method":"reset"})]);
+        render(&mut r, &s, 1);
+        assert_eq!(snapshot_b(&s, 1).variant, "ym2610b");
+        assert_eq!(snapshot_b(&s, 1).key_masks, [0; 6]);
+    }
+}
+#[test]
+fn extra_ym2610b_six_manual_voices_protect_b_only_slots_and_stale_lease_offs() {
+    let s = Shared::new(48000, 1);
+    let mut r = Renderer::new(48000).unwrap();
+    s.create_extra_ym2610b(1, None).unwrap();
+    for ch in 0..6 {
+        audition_b(&s, ch, 10 + ch as u64, "on", fm(ch));
+    }
+    render(&mut r, &s, 1000);
+    assert_eq!(snapshot_b(&s, 1).held, [0, 1, 2, 3, 4, 5]);
+    assert_eq!(snapshot_b(&s, 1).key_masks, [15; 6]);
+    for ch in [0, 3] {
+        play_b(
+            &s,
+            1,
+            vec![
+                json!({"method":"key-off","channel":ch}),
+                write(ch / 3, 0x40 + ch % 3, 127),
+            ],
+        );
+        audition_b(&s, ch, 100 + ch as u64, "on", fm(ch));
+        audition_b(
+            &s,
+            ch,
+            10 + ch as u64,
+            "off",
+            vec![json!({"method":"key-off","channel":ch})],
+        );
+    }
+    play_b(
+        &s,
+        1,
+        vec![json!({"method":"reset"}), json!({"method":"stop-voices"})],
+    );
+    render(&mut r, &s, 1000);
+    assert_eq!(snapshot_b(&s, 1).held, [0, 1, 2, 3, 4, 5]);
+    assert_eq!(snapshot_b(&s, 1).key_masks, [15; 6]);
+    for ch in 0..6 {
+        audition_b(
+            &s,
+            ch,
+            if ch == 0 || ch == 3 {
+                100 + ch as u64
+            } else {
+                10 + ch as u64
+            },
+            "off",
+            vec![json!({"method":"key-off","channel":ch})],
+        );
+    }
+    render(&mut r, &s, 1);
+    assert!(snapshot_b(&s, 1).held.is_empty());
+    assert_eq!(snapshot_b(&s, 1).key_masks, [0; 6]);
+}
+#[test]
+fn extra_ym2610b_wrong_variant_commands_status_disposal_are_atomic_and_do_not_cross_instances() {
+    let s = Shared::new(48000, 1);
+    let mut r = Renderer::new(48000).unwrap();
+    s.create_extra_ym2610(1, None).unwrap();
+    s.create_extra_ym2610b(2, None).unwrap();
+    for (bad, good) in [
+        (
+            command(2, 0, write(0, 8, 7)),
+            command_b(2, 0, write(0, 9, 9)),
+        ),
+        (
+            command_b(1, 0, write(0, 8, 7)),
+            command(1, 0, write(0, 9, 9)),
+        ),
+    ] {
+        assert!(s.enqueue(1, &[good, bad]).unwrap_err().contains("match"));
+    }
+    render(&mut r, &s, 1);
+    assert_eq!(snapshot(&s, 1).registers[0][9], 0);
+    assert_eq!(snapshot_b(&s, 2).registers[0][9], 0);
+    assert!(s
+        .extra_ym2610_status(2, None)
+        .unwrap_err()
+        .contains("match"));
+    assert!(s
+        .extra_ym2610b_status(1, None)
+        .unwrap_err()
+        .contains("match"));
+    assert!(s.dispose_extra_ym2610(2).unwrap_err().contains("match"));
+    assert!(s.dispose_extra_ym2610b(1).unwrap_err().contains("match"));
+    play_b(&s, 2, fm(0));
+    play(&s, 1, ssg(0));
+    render(&mut r, &s, 1000);
+    assert_eq!(snapshot_b(&s, 2).key_masks[0], 15);
+    assert!(snapshot(&s, 1).ssg_gates[0]);
+    assert_eq!(snapshot(&s, 1).key_masks, [0; 6]);
+}
+#[test]
+fn extra_ym2610b_worker_cancel_b_only_fm_owners_preserves_replacements_and_manual_voice() {
+    let s = Shared::new(48000, 1);
+    let mut r = Renderer::new(48000).unwrap();
+    s.create_extra_ym2610b(1, None).unwrap();
+    s.performance("start", 7, None).unwrap();
+    for (ch, owner) in [(0, 1), (3, 2)] {
+        s.enqueue(
+            1,
+            &fm(ch)
+                .into_iter()
+                .map(|v| own(command_b(1, 0, v), owner))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+    }
+    render(&mut r, &s, 1000);
+    s.enqueue(
+        1,
+        &fm(0)
+            .into_iter()
+            .map(|v| own(command_b(1, 0, v), 3))
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    render(&mut r, &s, 128);
+    audition_b(&s, 3, 99, "on", fm(3));
+    render(&mut r, &s, 128);
+    s.performance("cancel-owner", 7, Some(1)).unwrap();
+    s.performance("cancel-owner", 7, Some(2)).unwrap();
+    render(&mut r, &s, 128);
+    assert_eq!(snapshot_b(&s, 1).key_masks[0], 15);
+    assert_eq!(snapshot_b(&s, 1).key_masks[3], 15);
+    assert_eq!(snapshot_b(&s, 1).held, [3]);
+    s.performance("cancel-owner", 7, Some(3)).unwrap();
+    render(&mut r, &s, 128);
+    assert_eq!(snapshot_b(&s, 1).key_masks[0], 0);
+    assert_eq!(snapshot_b(&s, 1).key_masks[3], 15);
+}
+#[test]
+fn extra_ym2610b_manual_new_slots_clock_race_waits_for_applied_failure_and_recovers() {
+    for ch in [0, 3] {
+        let s = Shared::new(48000, 1);
+        let mut r = Renderer::new(48000).unwrap();
+        s.create_extra_ym2610b(1, None).unwrap();
+        s.enqueue(
+            1,
+            &[command_b(
+                1,
+                1000,
+                json!({"method":"clock","hz":4000000,"id":1}),
+            )],
+        )
+        .unwrap();
+        audition_b(&s, ch, 9, "on", fm(ch));
+        render(&mut r, &s, 2000);
+        assert!(s
+            .extra_ym2610b_status(1, Some(1))
+            .unwrap_err()
+            .contains("manually held"));
+        assert_eq!(snapshot_b(&s, 1).clock, 8000000);
+        audition_b(
+            &s,
+            ch,
+            9,
+            "off",
+            vec![json!({"method":"key-off","channel":ch})],
+        );
+        render(&mut r, &s, 1);
+        play_b(&s, 1, vec![json!({"method":"clock","hz":4000000,"id":2})]);
+        render(&mut r, &s, 1);
+        assert_eq!(
+            s.extra_ym2610b_status(1, Some(2)).unwrap().ym2610b.clock,
+            4000000
+        );
+    }
+}
+#[test]
+fn extra_ym2610b_shared_rack_limit_sparse_rom_stop_and_control_reclamation() {
+    let s = Shared::new(48000, 1);
+    let mut r = Renderer::new(48000).unwrap();
+    for id in 1..=16 {
+        if id % 2 == 0 {
+            s.create_extra_ym2610b(id, None).unwrap();
+        } else {
+            s.create_extra_ym2610(id, None).unwrap();
+        }
+    }
+    assert!(s
+        .create_extra_ym2610b(17, None)
+        .unwrap_err()
+        .contains("limit"));
+    let mut memory = memory(2, 1, 0xffff00, vec![0x77; 256]);
+    if let CommandAction::ExtraYm2610 { instance, message } = memory.action {
+        memory.action = CommandAction::ExtraYm2610b { instance, message };
+    }
+    s.enqueue(1, &[memory]).unwrap();
+    play_b(&s, 2, fm(0));
+    render(&mut r, &s, 1000);
+    assert_eq!(snapshot_b(&s, 2).rom_bytes, [0, 16777216]);
+    assert_eq!(snapshot_b(&s, 2).rom_allocated_bytes, [0, 65536]);
+    let target = s.extra_psg.get(2, 0).unwrap();
+    let weak = Arc::downgrade(&target);
+    drop(target);
+    s.dispose_extra_ym2610b(2).unwrap();
+    assert!(s
+        .create_extra_ym2610b(17, None)
+        .unwrap_err()
+        .contains("limit"));
+    render(&mut r, &s, 1);
+    s.extra_psg.collect_retired().unwrap();
+    assert!(weak.upgrade().is_none());
+    s.create_extra_ym2610b(17, None).unwrap();
+    assert_eq!(snapshot_b(&s, 17).rom_bytes, [0, 0]);
+    s.extra_psg.deactivate_all().unwrap();
+    s.epoch.fetch_add(1, Ordering::AcqRel);
+    render(&mut r, &s, 1000);
+    s.extra_psg.collect_retired().unwrap();
+    assert_eq!(s.extra_psg.memory_used(), 0);
+    assert_eq!(s.pending.load(Ordering::Acquire), 0);
+}

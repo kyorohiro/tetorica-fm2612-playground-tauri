@@ -228,7 +228,26 @@ static int extra_self_test() {
     assert(!std::memcmp(old_version, data, sizeof data));
     audit = false; assert(!allocations && !frees);
     native_ym2610b_destroy(first); native_ym2610b_destroy(reference);
-    std::puts("Additional YM2610 immutable sparse pages/isolation/cancel/CSM/snapshot self-test passed; callback allocations 0, frees 0");
+    assert(!native_ym2610b_create_extra_variant(48000, 2));
+    for (uint8_t variant = 0; variant < 2; ++variant) for (uint8_t ch : {uint8_t(0), uint8_t(3)}) {
+        void *full = native_ym2610b_create_extra_variant(48000, variant); assert(full);
+        fm(full, ch);
+        audit = true;
+        assert(variant ? render(full, 1000) > 1 : render(full, 1000) == 0);
+        native_ym2610b_key_off_fm(full, ch);
+        native_ym2610b_audition_fm_key_on(full, ch, 15);
+        const double manual = render(full, 1000);
+        assert(variant ? manual > 1 : manual == 0);
+        NativeYm2610BExtraState state{}; native_ym2610b_get_extra_state(full, &state);
+        assert(state.variant == variant && (variant ? state.keys[ch] == 15 : !state.keys[ch]));
+        native_ym2610b_stop(full); assert(render(full, 100) == 0);
+        native_ym2610b_reset(full); native_ym2610b_get_extra_state(full, &state);
+        assert(state.variant == variant && !state.keys[ch]);
+        audit = false;
+        assert(!allocations && !frees);
+        native_ym2610b_destroy(full);
+    }
+    std::puts("Additional YM2610/YM2610B immutable sparse pages/isolation/cancel/CSM/snapshot self-test passed; callback allocations 0, frees 0");
     return 0;
 }
 struct Event { uint32_t frame = 0, a = 0, b = 0, c = 0; std::string op; std::vector<uint8_t> bytes; std::vector<PageVersion> pages; };
@@ -256,8 +275,7 @@ int main(int argc, char **argv) {
             events.push_back(std::move(event));
         }
         std::stable_sort(events.begin(), events.end(), [](const Event &a, const Event &b) { return a.frame < b.frame; });
-        if (extra && variant) return 2;
-        void *chip = extra ? native_ym2610b_create_extra(rate) : native_ym2610b_create(rate, variant); if (!chip) return 3;
+        void *chip = extra ? native_ym2610b_create_extra_variant(rate, variant) : native_ym2610b_create(rate, variant); if (!chip) return 3;
         Pages pages(chip);
         if (extra) for (auto &e : events) {
             if (e.op == "rom") e.pages = pages.prepare(e.a, e.b, e.bytes.data(), e.bytes.size());

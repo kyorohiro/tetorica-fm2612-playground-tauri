@@ -178,7 +178,7 @@ struct NativeYm2610B {
     void key_off_fm(uint8_t ch) { if (ch == 2 && (registers[0x27] & 0x81) == 0x81) write(0, 0x28, 2); else key_off(ch); }
     void cancel_csm() { write(0, 0x27, registers[0x27] & ~0x81); chip.clear_csm_key(); if (!keys[2] && !(pending & 4)) key_off(2); }
     void audition_fm(uint8_t ch, uint8_t mask) {
-        if (ch >= 6 || !(0x36 & (1u << ch)) || mask >= 16) return;
+        if (ch >= 6 || !((variant ? 0x3f : 0x36) & (1u << ch)) || mask >= 16) return;
         key_off(ch); if (mask) { pending_keys[ch] = mask; pending |= 1u << ch; }
     }
     void stop() {
@@ -240,9 +240,12 @@ void *native_ym2610b_create(uint32_t rate, uint8_t variant) {
     if (rate < 8000 || rate > 384000 || variant > 1) return nullptr;
     try { return new NativeYm2610B(rate, variant != 0); } catch (...) { return nullptr; }
 }
+void *native_ym2610b_create_extra_variant(uint32_t rate, uint8_t variant) {
+    if (rate < 8000 || rate > 384000 || variant > 1) return nullptr;
+    try { return new NativeYm2610B(rate, variant != 0, true); } catch (...) { return nullptr; }
+}
 void *native_ym2610b_create_extra(uint32_t rate) {
-    if (rate < 8000 || rate > 384000) return nullptr;
-    try { return new NativeYm2610B(rate, false, true); } catch (...) { return nullptr; }
+    return native_ym2610b_create_extra_variant(rate, 0);
 }
 void *native_ym2610b_alloc_rom_page() { try { return new uint8_t[PAGE_SIZE](); } catch (...) { return nullptr; } }
 void native_ym2610b_free_rom_page(void *page) { delete[] static_cast<uint8_t *>(page); }

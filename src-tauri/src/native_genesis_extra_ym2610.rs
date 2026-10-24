@@ -1,4 +1,4 @@
-//! Independent YM2610 with four active physical FM voices and sparse immutable ADPCM ROM.
+//! Independent YM2610 (four FM) / YM2610B (six FM), with sparse immutable ADPCM ROM.
 //! Allocation and reclamation stay on the control side of the event queue.
 use super::{extra_budget, Owner, CAPACITY, MAX_SAFE_INTEGER, OWNERS};
 use crossbeam_queue::ArrayQueue;
@@ -35,7 +35,7 @@ impl Default for CoreState {
     }
 }
 extern "C" {
-    fn native_ym2610b_create_extra(rate: u32) -> *mut c_void;
+    fn native_ym2610b_create_extra_variant(rate: u32, variant: u8) -> *mut c_void;
     fn native_ym2610b_destroy(p: *mut c_void);
     fn native_ym2610b_reset(p: *mut c_void);
     fn native_ym2610b_stop(p: *mut c_void);
@@ -232,13 +232,13 @@ fn register_low(op: &Op) -> u8 {
         _ => 3,
     }
 }
-fn validate_op(op: &Op) -> Result<(), String> {
+fn validate_op(op: &Op, variant: bool) -> Result<(), String> {
     match op {
         Op::Write { port, .. } if *port > 1 => Err("Native YM2610 port must be 0 or 1".into()),
         Op::KeyOff { channel } if *channel >= VOICES as u8 => {
             Err("Native YM2610 voice must be 0–15".into())
         }
-        Op::KeyOff { channel } if *channel == 0 || *channel == 3 => {
+        Op::KeyOff { channel } if !variant && (*channel == 0 || *channel == 3) => {
             Err("Native YM2610 FM voices 0 and 3 are unavailable".into())
         }
         Op::SetRetainedLevel { channel, level } if *channel >= 3 || *level > 31 => {
@@ -262,6 +262,9 @@ impl Message {
             }
     }
     pub fn prepare(&self) -> Result<Arc<Prepared>, String> {
+        self.prepare_variant(false)
+    }
+    fn prepare_variant(&self, variant: bool) -> Result<Arc<Prepared>, String> {
         if !valid_id(self.id) || !valid_id(self.group) {
             return Err("Invalid Native YM2610 command ID".into());
         }
@@ -270,17 +273,23 @@ impl Message {
                 port,
                 register,
                 value,
-            } => validate_op(&Op::Write {
-                port: *port,
-                register: *register,
-                value: *value,
-            })?,
-            Method::KeyOff { channel } => validate_op(&Op::KeyOff { channel: *channel })?,
-            Method::SetRetainedLevel { channel, level } => validate_op(&Op::SetRetainedLevel {
-                channel: *channel,
-                level: *level,
-            })?,
-            Method::Clock { hz } => validate_op(&Op::Clock { hz: *hz })?,
+            } => validate_op(
+                &Op::Write {
+                    port: *port,
+                    register: *register,
+                    value: *value,
+                },
+                variant,
+            )?,
+            Method::KeyOff { channel } => validate_op(&Op::KeyOff { channel: *channel }, variant)?,
+            Method::SetRetainedLevel { channel, level } => validate_op(
+                &Op::SetRetainedLevel {
+                    channel: *channel,
+                    level: *level,
+                },
+                variant,
+            )?,
+            Method::Clock { hz } => validate_op(&Op::Clock { hz: *hz }, variant)?,
             Method::Mix { volume, pan }
                 if !volume.is_finite()
                     || !(0.0..=4.).contains(volume)
@@ -314,8 +323,7 @@ impl Message {
                 action,
             } => {
                 if *channel >= 16
-                    || *channel == 0
-                    || *channel == 3
+                    || !variant && (*channel == 0 || *channel == 3)
                     || commands.is_empty()
                     || commands.len() > 512
                     || !valid_id(*voice)
@@ -324,7 +332,7 @@ impl Message {
                     return Err("Invalid Native YM2610 batch or voice lease".into());
                 }
                 for op in commands {
-                    validate_op(op)?;
+                    validate_op(op, variant)?;
                     if declared_channel(op).is_some_and(|ch| ch != *channel as usize) {
                         return Err(
                             "Native YM2610 batch must target its declared physical voice".into(),
@@ -448,6 +456,7 @@ impl Default for Control {
 }
 pub struct Shared {
     additional: bool,
+    variant: bool,
     revision: AtomicU64,
     registers: [AtomicU8; 512],
     keys: [AtomicU8; 6],
@@ -471,6 +480,7 @@ impl Default for Shared {
     fn default() -> Self {
         Self {
             additional: true,
+            variant: false,
             revision: AtomicU64::new(0),
             registers: std::array::from_fn(|_| AtomicU8::new(0)),
             keys: std::array::from_fn(|_| AtomicU8::new(0)),
@@ -523,6 +533,24 @@ pub struct AdditionalStatus {
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AdditionalBStatus {
+    pub ym2610b: AdditionalChipStatus,
+    pub frame: u64,
+    pub sample_rate: u32,
+    pub revision: u64,
+}
+impl AdditionalStatus {
+    pub fn into_b(self) -> AdditionalBStatus {
+        AdditionalBStatus {
+            ym2610b: self.ym2610,
+            frame: self.frame,
+            sample_rate: self.sample_rate,
+            revision: self.revision,
+        }
+    }
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AdditionalChipStatus {
     pub clock: u32,
     pub registers: Vec<Vec<u8>>,
@@ -540,8 +568,20 @@ pub struct AdditionalChipStatus {
     pub pending_commands: Vec<u64>,
 }
 impl Shared {
+    pub fn variant(&self) -> bool {
+        self.variant
+    }
+    pub fn require_variant(&self, variant: bool) -> Result<(), String> {
+        if self.variant == variant {
+            Ok(())
+        } else {
+            Err("Additional YM2610/YM2610B instance type does not match command".into())
+        }
+    }
     fn clock_held_error(&self) -> &'static str {
-        if self.additional {
+        if self.variant {
+            "Release the manually held additional YM2610B voices before changing the clock"
+        } else if self.additional {
             "Release the manually held additional YM2610 voices before changing the clock"
         } else {
             "Release the manually held YM2610 voices before changing the clock"
@@ -612,8 +652,12 @@ impl Shared {
         }
     }
     pub fn with_budget(budget: Arc<extra_budget::Budget>) -> Self {
+        Self::with_budget_variant(budget, false)
+    }
+    pub fn with_budget_variant(budget: Arc<extra_budget::Budget>, variant: bool) -> Self {
         Self {
             budget,
+            variant,
             ..Self::default()
         }
     }
@@ -623,7 +667,7 @@ impl Shared {
         instance: u64,
         plan: &mut PagePlan,
     ) -> Result<Arc<Prepared>, String> {
-        let command = message.prepare()?;
+        let command = message.prepare_variant(self.variant)?;
         if let Method::Memory {
             rom_type,
             offset,
@@ -890,7 +934,7 @@ impl Shared {
                 status: self.status.load(Ordering::Relaxed),
                 irq: self.irq.load(Ordering::Relaxed) != 0,
                 status_hi: self.status_hi.load(Ordering::Relaxed),
-                variant: "ym2610",
+                variant: if self.variant { "ym2610b" } else { "ym2610" },
                 rom_bytes: std::array::from_fn(|i| self.rom_bytes[i].load(Ordering::Relaxed)),
                 rom_allocated_bytes: std::array::from_fn(|bank| {
                     control
@@ -928,6 +972,7 @@ struct Lease {
 }
 pub struct Renderer {
     additional: bool,
+    variant: bool,
     current_group: Option<u64>,
     csm_owner: Option<Lease>,
     rom_bytes: [u32; 2],
@@ -947,15 +992,17 @@ impl Drop for Renderer {
 }
 impl Renderer {
     pub fn new_additional(rate: u32) -> Result<Self, String> {
-        Self::new_flavor(rate, true)
+        Self::new_additional_variant(rate, false)
     }
-    fn new_flavor(rate: u32, additional: bool) -> Result<Self, String> {
-        let ptr = unsafe { native_ym2610b_create_extra(rate) };
+    pub fn new_additional_variant(rate: u32, variant: bool) -> Result<Self, String> {
+        let additional = true;
+        let ptr = unsafe { native_ym2610b_create_extra_variant(rate, u8::from(variant)) };
         if ptr.is_null() {
             return Err("Could not allocate Native YM2610 core".into());
         }
         Ok(Self {
             additional,
+            variant,
             current_group: None,
             csm_owner: None,
             ptr,
@@ -978,7 +1025,7 @@ impl Renderer {
             || self.csm_owner.is_some_and(|l| l.audition)
     }
     fn protected(&self, ch: usize, voice: Option<u64>, audition: bool) -> bool {
-        if ch == 0 || ch == 3 {
+        if !self.variant && (ch == 0 || ch == 3) {
             return false;
         }
         let protected = |l: Lease| l.audition && (!audition || voice.is_some() && l.voice != voice);
@@ -1206,7 +1253,7 @@ impl Renderer {
             }
         }
         if !preserve {
-            if let Some(ch) = channel.filter(|ch| *ch != 0 && *ch != 3) {
+            if let Some(ch) = channel.filter(|ch| self.variant || (*ch != 0 && *ch != 3)) {
                 if off {
                     self.owners[ch] = None
                 } else if on {

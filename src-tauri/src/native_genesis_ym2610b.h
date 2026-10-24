@@ -25,7 +25,9 @@ struct NativeYm2610BExtraState {
 };
 
 extern "C" {
-// Independent YM2610 (four physical FM slots), with control-owned sparse ROM.
+// Independent YM2610 / YM2610B, with control-owned sparse ROM.
+// variant is immutable: 0 = four physical FM slots, 1 = all six.
+void *native_ym2610b_create_extra_variant(uint32_t output_rate, uint8_t variant);
 void *native_ym2610b_create_extra(uint32_t output_rate);
 void *native_ym2610b_alloc_rom_page();
 void native_ym2610b_free_rom_page(void *page);
