@@ -23,8 +23,10 @@ The independent YM2413 adapter and common OPL/PCM provider also use the SDK.
 Selected and independent YM3526/YM3812/YMF262/Y8950 adapters and their Y8950
 memory helper now also use the SDK. Y8950 borrows mutable 4 KiB RAM pages owned
 by Rust; ownership, lifetime, control-side copy-on-write, scheduling and budgets
-remain application responsibilities. Master System/MSX machine adapters and
-their `NativeOpllCore` helper, Sega PSG, AY and the RF5C164 adapter remain local;
+remain application responsibilities. The shared AY-3-8910 core and independent
+AY adapter also use the SDK, compiled once in the existing MSX archive.
+Master System/MSX machine adapters and their `NativeOpllCore` helper, selected
+MSX AY resampling, Sega PSG and the RF5C164 adapter remain local;
 shared OPL/PCM is compiled
 once with the existing archive order and common ADPCM support.
 Other application adapters retain their existing

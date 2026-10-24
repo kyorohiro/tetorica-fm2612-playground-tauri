@@ -1,7 +1,7 @@
-# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系
+# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413と
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910と
 OPL系4種類（YM3526／YM3812／YMF262／Y8950）をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
 この手順書は最初のYM2612移行時のファイル名を保持し、その後の音源の移行も記録しています。
@@ -43,6 +43,8 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | `createSoundChip('ym2151')`の独立Native接続 | `native/reference/tauri/native_genesis_ym2151.cpp` |
 | `createSoundChip('okim6258')`の独立Native接続 | `native/reference/tauri/native_genesis_extra_okim6258.cpp` |
 | `createSoundChip('ym2413')`の独立Native接続 | `native/reference/tauri/native_genesis_ym2413.cpp` |
+| `createSoundChip('ay8910')`の独立Native接続 | `native/reference/tauri/native_genesis_ay8910.cpp` |
+| MSXと追加AYに共通のAY-3-8910コア | `vendor/mame-ay8910/ay8910.cpp`と対応ヘッダー |
 | DOS PC／MSX Audioの選択中OPL系接続 | `native/reference/tauri/native_genesis_opl.cpp` |
 | OPL系4種類の独立追加接続 | `native/reference/tauri/native_genesis_extra_opl.cpp` |
 | 選択中／追加Y8950のメモリーinterface | `native/reference/tauri/native_genesis_y8950_memory.h` |
@@ -74,14 +76,20 @@ Master System／MSXの選択中音源は、Tauriの`src-tauri/src/native_genesis
 `NativeOpllCore`と機種用接続を引き続き使います。独立SDK接続には別のrendererがあり、
 この共通ヘッダーを置き換える変更ではありません。
 SDKのincludeを優先し、OPL provider／PCMは既存のarchive内で一度だけコンパイルします。
-Sega PSG、AYと機種用の補助処理はアプリ側に残ります。
+Sega PSGと機種用の補助処理はアプリ側に残ります。
 先行移行済みのOPL／PCMとADPCM実装への依存も維持します。
 
 OPL系4種類の選択中接続／追加接続と、対応するヘッダーもSDKからビルドします。
 DOS PCはYM3526／YM3812／YMF262、MSX AudioはY8950を選び、追加音源も生成時に4種類から選択します。
 SDKのcppは同じSDK内のC ABIヘッダーとY8950メモリーhelperを参照し、アプリ側の転送ヘッダーは作りません。
 OPL／PCM／ADPCM providerは既にSDKへ移行済みで、今回重複して追加しません。archiveの順序も維持します。
-同じarchiveにあるローカルRF5C164接続、PSG／AYと機種用補助処理、Rustの予約・owner制御と混合はそのままです。
+同じarchiveにあるローカルRF5C164接続、PSGと機種用補助処理、Rustの予約・owner制御と混合はそのままです。
+
+AY-3-8910の共通コア／ヘッダーと独立接続もSDKからビルドし、既存のMSX archive内でコアを一度だけ組み込みます。
+MSXの選択中音源はローカルの`src-tauri/src/native_genesis_msx.cpp`を使い、AYのレート変換と
+`NativeOpllCore`、Rustの予約・owner制御と混合を維持します。
+独立SDK接続は別のtick／レート変換を持つため、選択中音源の処理をその接続へ置き換える変更ではありません。
+AYの初期clock、tone／noise／envelope、明示的な音量0、Stop／resetの既存動作を引き継ぎます。
 
 Y8950は512個の可変4 KiBページを借用し、最大2 MiBのADPCM-B RAMを扱います。
 SDKメモリーhelperはポインター配列とinterfaceを保持し、RAMのバイト列自体は所有しません。
@@ -139,7 +147,10 @@ CargoはSDKの`vendor/mame-okim6258/`と追加接続の入力を監視します�
 機種用のローカルcpp／headerの監視は残し、実際のコンパイル入力がなくなった`native-x68000/`の監視は外します。
 YM2413の旧接続／providerと`src-tauri/native-master-system/`も由来の記録として保持し、
 SDKの接続・OPL／PCM入力を監視します。`native-master-system/`は原典だけになったため監視を外しますが、
-機種用接続とローカル`NativeOpllCore`の監視は継続します。`native-msx/`はAY実装を使うため監視を継続します。
+機種用接続とローカル`NativeOpllCore`の監視は継続します。
+AYの旧接続／コア／ヘッダーと`src-tauri/native-msx/`も原典・ライセンスの記録として保持します。
+実際のSDK AYコアのディレクトリと独立接続cpp／headerを監視し、従来の`native-msx/`のソース監視は外します。
+既存の同梱ライセンスの参照先は保持し、syncスクリプトだけではSDKの実行ソースを更新しません。
 OPL系の旧cpp／header／メモリーhelperと`src-tauri/native-opl/`も由来の記録として保持します。
 実際のSDK接続とヘッダー、Y8950メモリーhelperを監視し、原典だけになった`native-opl/`の監視は外します。
 
@@ -207,6 +218,7 @@ node scripts/check_native_extra_okim6258.mjs
 node scripts/check_native_master_system.mjs
 node scripts/check_native_msx.mjs
 node scripts/check_native_extra_ym2413.mjs
+node scripts/check_native_extra_ay8910.mjs
 node scripts/check_native_opl.mjs
 node scripts/check_native_extra_opl.mjs
 node scripts/check_native_msx_audio.mjs
@@ -429,3 +441,28 @@ clear、保持したRAMでのStop／reset、FMとの同時再生、KeyboardのAD
 
 先行するrun `40137093552`は共有OPL／PCM providerまでの移行を含みますが、今回の接続差分は含みません。
 新しい各OSのCIと、実機の音声出力・インストール後の起動は未確認です。
+
+## AY-3-8910移行の検証
+
+macOS ARM64／Clangで音声デバイスを開かずに検証しました。採用する独立接続cpp／headerと
+共通コアcpp／headerの4ファイルは旧コピーとbyte一致し、SDKの固定版も変更していません。
+
+| 対象 | 比較数 | フレーム数 |
+| --- | --- | --- |
+| 選択中MSXのAY／OPLL出力 | 93 | 571,392 |
+| 独立追加AYのPCM／公開状態 | 114 | 466,944 |
+
+44.1／48／96 kHzで、全207比較・1,038,336フレームの旧／SDK fixture出力がbyte一致し、
+続く実配布WASM比較も最大差0でした。全3音のtone／noise、16 envelope形状、period境界、
+clockのhold／平均化、明示的な音量0、Stop／reset／再試奏と独立したOPLL制御を含みます。
+既定ビルドのcheckerもSDK入力から成功し、実際のcppパスとSHA-256を記録しました。
+その再実行分は上表に二重加算しません。
+
+- Native間の別比較では6ケース・24,576フレームで、選択中104／独立24バイトの公開状態、PCM、毎フレーム16個のAY readがbyte一致しました。非公開のコア全メモリーやWASM内部状態のdumpではありません。
+- 共通fixtureの追加YM2413も558ケース・2,285,568フレーム、実WASM最大差0。AY移行の旧／SDK比較数とは別の回帰確認です。
+- 旧／SDKのfixture自己試験が成功し、callback操作中のallocation／freeは0でした。
+- Rust全試験は723成功・0失敗・明示実行用4件ignored。
+- 22 mode・604,032フレーム・88 Run／Stop、および3混合構成・7単独音源、受入れ／16台制限とStop後の予算回収が成功しました。MSX Audioを含む既存のRust機種構成を使い、両runnerのexit codeは0でした。
+
+実機の音声出力と今回のOPL接続／AY移行を含む5構成CIは未確認です。
+先行するrun `40137093552`の成功範囲と区別してください。

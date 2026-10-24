@@ -45,7 +45,7 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 
 ## Native音源SDK
 
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413とOPL系4種類
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910とOPL系4種類
 （YM3526／YM3812／YMF262／Y8950）は、自己完結した`tetorica-soundchip-native`のソース配布を
 `src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
 取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
@@ -59,6 +59,7 @@ OKI decoderは既存のスレッド安全な初期化を保持するため、SDK
 X68000の機種用接続とサンプルの管理はTauri側に残ります。
 YM2413の追加生成用接続と共有OPL／PCM providerもSDKを使い、Master System／MSXの機種用接続とOPLL補助処理はTauri側に残ります。
 DOS PC／MSX Audioの選択中OPL系接続と、4種類の独立追加接続もSDKを使います。Y8950のRAMページの所有と予約・予算管理はRust側に残ります。
+AY-3-8910の共有コアと独立追加接続もSDKを使い、MSXの機種用接続と選択中AYのレート変換はTauri側に残ります。
 既に固定しているSDK `0.1.0`を使い、共通providerは一度だけ組み込みます。
 PSG、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
 他の音源は従来の同梱スナップショットを使います。
@@ -150,7 +151,7 @@ OPLLはROM楽器・共有User音色・9 FM声、または6 FM声＋5 rhythm音�
 Stopは音色・PSGのperiod／noise設定・clockを保持し、発音と予約を止めます。
 由来・ハッシュは`src-tauri/native-master-system/`に保存し、ymfmとSegaPSGは共有providerを一度だけ組み込みます。
 共有OPL／PCMと`createSoundChip('ym2413')`の独立接続は固定SDKからビルドします。
-Master System／MSXのOPLL補助処理、機種用接続、PSG／AYは既存のTauri実装を使います。
+Master System／MSXのOPLL補助処理、機種用接続、PSGと選択中AYのレート変換は既存のTauri実装を使います。AYコアは固定SDKを共有します。
 
 PC-98（YM2203）では4 MHzのYM2203だけを生成し、FM 3CH＋SSG 3CHをモノラルで左右へ出力します。
 `fm`／`ssg`／`play`、Main／Worker、6声のKeyboard／音源タブに対応します。
@@ -163,6 +164,7 @@ MSXではYM2413（3,579,545 Hz）とAY-3-8910（1,789,773 Hz）をNative生成�
 AYのtone／noiseの混合、共有ノイズ・エンベロープ、明示的なエンベロープ再発音に対応します。
 Stopは音色・clock・共有設定と発音復元用の音量を保持します。設定音量0もそのまま保持します。
 YM2413はMaster Systemと共通の実装を使い、由来・ハッシュ・AYのBSDライセンスは`src-tauri/native-msx/`に保存しています。
+AYのコアと`createSoundChip('ay8910')`の独立接続は固定SDKからビルドし、MSXの機種用接続とRustの制御・混合は維持します。
 
 MSX Audioでは既存MSX構成にY8950（3,579,545 Hz）のFM 9CH／リズムを加えます。
 `opl`＝Y8950、`opll`＝YM2413、`ay`＝AY-3-8910として、Main／Worker、Keyboard／音源タブを使います。

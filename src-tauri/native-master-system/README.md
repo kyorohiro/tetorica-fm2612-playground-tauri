@@ -14,9 +14,9 @@ the SDK's `native/reference/tauri/native_genesis_ym2413.cpp` and matching header
 Selected Master System and MSX renderers still use the application's
 `src/native_genesis_opll.h` (`NativeOpllCore`) and local machine adapters.
 The independent SDK adapter has its own renderer; it does not replace that
-shared application helper. Sega PSG, AY and the OPL/Y8950 application wrappers
-remain local, while their existing common provider dependencies resolve through
-the SDK OPL/PCM sources and previously adopted ADPCM support. No whole-machine
+shared application helper. Sega PSG and selected MSX AY resampling remain local;
+the shared AY core, independent AY adapter and OPL/Y8950 adapters now use the
+pinned SDK alongside the shared OPL/PCM and ADPCM providers. No whole-machine
 adapter is imported from the SDK. See the
 [SDK adoption guide](../../docs/native-sdk-ym2612.md).
 

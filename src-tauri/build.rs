@@ -75,12 +75,12 @@ fn main() {
     println!("cargo:rerun-if-changed=src/native_genesis_game_gear.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_game_gear.h");
     println!("cargo:rerun-if-changed=src/native_genesis_opll.h");
-    println!("cargo:rerun-if-changed=native-msx");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/mame-ay8910");
     println!("cargo:rerun-if-changed=src/native_genesis_msx.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2413.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2413.h");
-    println!("cargo:rerun-if-changed=src/native_genesis_ay8910.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_ay8910.h");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ay8910.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ay8910.h");
     println!("cargo:rerun-if-changed=src/native_genesis_msx.h");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_opl.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_okim6258.cpp");
@@ -131,8 +131,9 @@ fn main() {
         .file("src/native_genesis_extra_rf5c164.cpp")
         .warnings(false)
         .compile("tetorica_native_opl");
-    // MSX references the same OPLL provider as Master System. GNU ld requires
-    // this dependent archive before that provider and the common ymfm archive.
+    // MSX retains its machine adapter and shares the SDK AY core with the
+    // independent SDK AY adapter. GNU ld requires this archive before the
+    // Master System OPLL provider and the common ymfm archive.
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
@@ -140,11 +141,11 @@ fn main() {
         .opt_level(2)
         .include("vendor/tetorica-soundchip-native/vendor/ymfm")
         .include("vendor/tetorica-soundchip-native/wasm")
-        .include("native-msx/snapshot/third_party/mame-ay8910")
+        .include("vendor/tetorica-soundchip-native/vendor/mame-ay8910")
         .include("native-genesis")
         .file("src/native_genesis_msx.cpp")
-        .file("src/native_genesis_ay8910.cpp")
-        .file("native-msx/snapshot/third_party/mame-ay8910/ay8910.cpp")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ay8910.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/mame-ay8910/ay8910.cpp")
         .warnings(false)
         .compile("tetorica_native_msx");
     // Machine adapters retain their local NativeOpllCore; independent YM2413
