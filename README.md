@@ -45,7 +45,7 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 
 ## Native音源SDK
 
-YM2612、YM2203、YM2608、YM2610／YM2610Bは、自己完結した`tetorica-soundchip-native`のソース配布を
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151は、自己完結した`tetorica-soundchip-native`のソース配布を
 `src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
 取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
 `python3 scripts/import_soundchip_sdk.py --check`で同梱ファイルを照合できます。
@@ -53,6 +53,7 @@ SDKのcheckout、submodule、ビルド時の音源ソース取得は不要です
 
 SDKから使うのはYM2612の既存低レベル接続、PC-98／追加生成のYM2203・YM2608接続、
 Neo Geo／追加生成のYM2610・YM2610B共通接続と共有OPN providerです。
+YM2151の追加生成用接続と共通OPM providerもSDKを使います。X68000の機種用接続とOKIM6258はTauri側に残ります。
 既に固定しているSDK `0.1.0`を使い、共通providerは一度だけ組み込みます。
 PSG、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
 他の音源は従来の同梱スナップショットを使います。
@@ -134,6 +135,8 @@ X68000ではYM2151（4 MHz・FM 8CH）とOKIM6258（8 MHz・ADPCM 1ストリー�
 Keyboard／Operatorsで音色・LFO・noiseを編集して試奏でき、OKIではサンプルの読込み・波形確認・試奏に対応します。
 2チップを別々にミキサーへ登録し、共通FX／liveFx・monitor・録音を通ります。
 StopはFM音色・KC/KF・clockとOKIのサンプル・pan／dividerを保持します。由来・ハッシュ・ライセンスは`src-tauri/native-x68000/`に保存します。
+FMのOPM providerと`createSoundChip('ym2151')`の独立接続は固定SDKからビルドします。
+X68000の機種用接続、OKIM6258と追加OKI、サンプルの管理や混合は引き続きTauri側です。
 
 Master SystemではSega PSG（3音＋noise）とYM2413 OPLLを、両方3,579,545 HzでNative生成します。
 `psg`／`opll`、Main／Worker、Keyboard／Operators、独立ミキサーに対応し、PSGは実機構成に合わせてモノラルです。
@@ -285,7 +288,7 @@ cargo test --offline --locked --manifest-path src-tauri/Cargo.toml native_genesi
 ```
 
 C++のスナップショットは各`src-tauri/native-*/`と同梱SDKに由来・ハッシュを記録しています。
-SDKへ移したOPN系音源の更新は[SDKの取り込み手順](docs/native-sdk-ym2612.md)で行い、
+SDKへ移した音源の更新は[SDKの取り込み手順](docs/native-sdk-ym2612.md)で行い、
 `sync_native_genesis.py`は残している従来スナップショットの照合・更新に使います。
 共有UI／Runtimeの変更は上流のPlayground ZIPを通常のimport手順で取り込みます。
 

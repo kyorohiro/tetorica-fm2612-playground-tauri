@@ -6,10 +6,22 @@ the same MAME-derived standalone decoder as the Browser WASM, with flags 12
 The X68000 pair defaults to a 4 MHz FM clock and an 8 MHz ADPCM clock.
 
 `snapshot/` preserves exact Browser source, output-rate / stream references,
-and BSD notices. The five common ymfm support files are compiled once from
-`native-genesis/`; their hashes are verified by `sources.json`. The OPM-specific
-source and OKI decoder are compiled into the X68000 archive, before the common
-provider on GNU static linkers.
+and BSD notices. YM2151 now uses the pinned SDK's
+`native/src/ymfm_opm_provider.cpp`; additional YM2151 instances compile its
+`native/reference/tauri/native_genesis_ym2151.cpp` and matching header.
+The selected X68000 still uses the local `src/native_genesis_x68000.cpp` machine
+adapter, with its YM2151 core supplied by the same SDK OPM provider.
+The provider is compiled once, with SDK include directories before the legacy
+snapshots. The existing archive order is retained for GNU static linkers.
+Common ymfm support, including ADPCM, continues to use the already pinned SDK.
+The SDK version and source bytes are unchanged. See the
+[SDK adoption guide](../../docs/native-sdk-ym2612.md).
+
+The machine adapter, OKIM6258 decoder, additional OKI adapter and sample handling
+remain local to Tauri. This directory still supplies the OKI implementation and
+remains a Cargo rebuild watch. Its Browser snapshots and hashes, and the old
+local YM2151 wrapper/provider sources, are retained as provenance; editing those
+reference copies or running the sync script alone does not update the SDK inputs.
 
 The generated `okim6258.cpp` differs from its pinned snapshot only by initializing
 the shared ADPCM difference table once, with C++ thread-safe static initialization.

@@ -19,7 +19,9 @@ fn main() {
     println!(
         "cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/src/ymfm_opn_provider.cpp"
     );
-    println!("cargo:rerun-if-changed=src/native_genesis_ymfm_opm.cpp");
+    println!(
+        "cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/src/ymfm_opm_provider.cpp"
+    );
     println!("cargo:rerun-if-changed=src/native_genesis_ymfm_opl.cpp");
     println!("cargo:rerun-if-changed=native-nuked");
     println!("cargo:rerun-if-changed=src/native_genesis_nuked.cpp");
@@ -40,8 +42,8 @@ fn main() {
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2610b.h");
     println!("cargo:rerun-if-changed=native-x68000");
     println!("cargo:rerun-if-changed=src/native_genesis_x68000.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_ym2151.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_ym2151.h");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2151.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2151.h");
     println!("cargo:rerun-if-changed=src/native_genesis_x68000.h");
     println!("cargo:rerun-if-changed=native-master-system");
     println!("cargo:rerun-if-changed=src/native_genesis_master_system.cpp");
@@ -134,19 +136,21 @@ fn main() {
         .file("native-master-system/snapshot/src/ymfm_pcm.cpp")
         .warnings(false)
         .compile("tetorica_native_master_system");
-    // OPM/OPN wrappers precede the one shared ymfm archive on GNU ld.
+    // X68000 mixing and OKI stay application-owned. Its FM and the independent
+    // YM2151 share the SDK's once-compiled OPM provider, before common ymfm on GNU ld.
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
-        .include("native-x68000/snapshot/src")
+        .include("vendor/tetorica-soundchip-native/vendor/ymfm")
+        .include("vendor/tetorica-soundchip-native/wasm")
         .include("native-x68000/snapshot/third_party/mame-okim6258")
         .include("native-genesis")
         .file("src/native_genesis_x68000.cpp")
         .file("src/native_genesis_extra_okim6258.cpp")
-        .file("src/native_genesis_ym2151.cpp")
-        .file("src/native_genesis_ymfm_opm.cpp")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2151.cpp")
+        .file("vendor/tetorica-soundchip-native/native/src/ymfm_opm_provider.cpp")
         .file("native-x68000/okim6258.cpp")
         .warnings(false)
         .compile("tetorica_native_x68000");

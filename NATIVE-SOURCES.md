@@ -11,7 +11,10 @@ under `src-tauri/vendor/tetorica-soundchip-native/`, together with the separate
 import receipt `src-tauri/soundchip-sdk.json`. Its source manifests, provenance,
 licenses and notices are preserved. YM2612, the selected/additional YM2203,
 YM2608 and shared YM2610/YM2610B adapters, and the common OPN/SSG/ADPCM provider
-build from that snapshot; the other application adapters retain their existing
+build from that snapshot. The additional YM2151 adapter and shared OPM provider
+also use the SDK. X68000's machine adapter, OKIM6258 and additional OKI adapter,
+sample ownership and mixing remain in Tauri; the selected machine's FM core
+uses the same SDK OPM provider. Other application adapters retain their existing
 source snapshots. The
 [SDK adoption guide](docs/native-sdk-ym2612.md) lists the
 consumed paths, pinned archive hash and deliberate offline update procedure.

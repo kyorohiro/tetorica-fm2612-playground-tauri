@@ -1,9 +1,9 @@
-# Native SDKの取り込み — YM2612／YM2203／YM2608／YM2610・YM2610B
+# Native SDKの取り込み — OPN系／YM2151
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
-YM2612、YM2203、YM2608、YM2610／YM2610Bをビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
-この手順書は最初のYM2612移行時のファイル名を保持し、その後のOPN系音源の移行も記録しています。
+この手順書は最初のYM2612移行時のファイル名を保持し、その後のOPN系音源とYM2151の移行も記録しています。
 
 ## 固定した配布物
 
@@ -39,7 +39,9 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | PC-98（YM2203）と`createSoundChip('ym2203')`のNative接続 | `native/reference/tauri/native_genesis_ym2203.cpp` |
 | PC-98（YM2608）と`createSoundChip('ym2608')`のNative接続 | `native/reference/tauri/native_genesis_ym2608.cpp` |
 | Neo GeoのYM2610／YM2610Bと、それぞれの追加音源のNative接続 | `native/reference/tauri/native_genesis_ym2610b.cpp` |
+| `createSoundChip('ym2151')`の独立Native接続 | `native/reference/tauri/native_genesis_ym2151.cpp` |
 | 共有OPN provider | `native/src/ymfm_opn_provider.cpp` |
+| X68000のFMと追加YM2151に共通のOPM provider | `native/src/ymfm_opm_provider.cpp` |
 | 共有SSG／ADPCM実装 | `vendor/ymfm/ymfm_ssg.cpp`、`vendor/ymfm/ymfm_adpcm.cpp` |
 
 `wasm/ym2612_wasm.cpp`は名前に`wasm`を含みますが、ここではC++としてNativeにコンパイルします。
@@ -52,8 +54,11 @@ Neo Geoも選択中／追加音源のYM2610（FM 4CH）とYM2610B（FM 6CH）が
 共有OPN／SSG／ADPCMはYM2612移行時からSDK側のものを一度だけ組み込んでおり、
 個別の移行用にもう一つ追加しません。既存のarchive順序を維持します。
 
-共通ADPCM実装は既存のOPM／OPL側からも参照します。
-それらの音源接続までSDKへ移したという意味ではありません。
+YM2151の追加生成用接続と、OPMの明示的なテンプレート実体化を提供するproviderもSDKからビルドします。
+X68000の選択中FMはTauriの`src-tauri/src/native_genesis_x68000.cpp`内に残り、同じSDKのOPM providerを使います。
+SDKのincludeを従来スナップショットより先に指定し、OPM providerは一度だけコンパイルします。
+既存のarchive順序と、先行移行でSDKへ切り替えた共有SSG／ADPCMも維持します。
+共通ADPCMを参照するOPL等の接続全体までSDKへ移したという意味ではありません。
 従来providerとSDK側ソースの同一性を確認し、共有ライブラリーの依存順序を保持します。
 
 Genesisのgain、DC除去、PSG混合と出力レート変換は`src-tauri/src/native_genesis_core.cpp`に残ります。
@@ -73,6 +78,9 @@ SDK接続はそのページを借用します。
 ページの所有権・寿命・予算・回収、転送の予約とサンプル素材の準備は引き続きTauri側の担当です。
 既存のROM素材やその読込み元をSDKへ移す変更ではありません。
 
+X68000の機種用接続、OKIM6258のdecoderと追加OKI接続、Rust側のサンプル所有・予約・予算管理、
+音源別の混合はTauri側に残ります。FMのOPM providerと独立YM2151接続を移す変更で、OKIの素材や管理は移しません。
+
 Sega PSGと、上記以外の音源の接続とソースは従来の同梱スナップショットを使います。
 ブラウザー／npmのWASM配布やPlaygroundの`dist/`は、このSDK取り込みで更新しません。
 
@@ -84,6 +92,9 @@ Browser比較用のコピーや`sync_native_ym2608.py`の更新と、実際に�
 YM2610／YM2610Bも従来の`src-tauri/src/native_genesis_ym2610b.cpp`／`.h`と
 `src-tauri/native-ym2610b/`を保持します。これらのコピーや`sync_native_ym2610b.py`の更新だけでは、
 SDK側の接続は更新されません。
+YM2151も従来の`src-tauri/src/native_genesis_ym2151.cpp`／`.h`とローカルOPM provider、
+`src-tauri/native-x68000/`のBrowserスナップショットを由来の記録として保持します。
+ただし`native-x68000/`には実際に使うOKI実装も残るため、Cargoの監視を継続します。
 
 ## 照合と更新
 
@@ -129,8 +140,9 @@ node scripts/check_native_extra_stability.mjs --out=native-validation/extra-stab
 node scripts/check_native_genesis_core.mjs /path/to/hello_ymfm --seconds=60 --out=native-validation/web-native.json
 ```
 
-他のOPN系音源の選択中音源／追加音源の比較は、Browser／WASM側の`hello_ymfm`ルートで実行します。
+各音源の選択中音源／追加音源の比較は、Browser／WASM側の`hello_ymfm`ルートで実行します。
 既定のビルドはTauriへ同梱したSDKの接続実装と共有providerを使用し、旧コピーをコンパイルしません。
+X68000の比較は、機種用接続とOKIをTauri側に残し、FMのSDK OPM providerを組み込んだ構成を使います。
 
 ```sh
 cd /path/to/hello_ymfm
@@ -140,6 +152,8 @@ node scripts/check_native_ym2608.mjs
 node scripts/check_native_extra_ym2608.mjs
 node scripts/check_native_ym2610b.mjs
 node scripts/check_native_extra_ym2610.mjs
+node scripts/check_native_x68000.mjs
+node scripts/check_native_extra_ym2151.mjs
 ```
 
 一致試験はデバイスを開かない生成結果の検証です。各OSのインストーラーや実機での音声出力は
@@ -232,3 +246,18 @@ run全体と全5ジョブが成功し、CIのためのコード修正は不要�
 タグを作らない手動実行で、アプリ版は`0.90.1`のまま。新しいドラフトリリースや一般公開は行っていません。
 先行する各移行節の「CI未実行」は、そのローカル作業を終えた時点の記録です。
 このCIはOS間のPCM bit一致や各OSでのWASM比較、インストール後の起動、実機の音声出力・ノイズ・UI操作を確認したものではありません。
+
+## YM2151移行の検証
+
+今回のYM2151参照切替は、macOSで次を確認しました。音声デバイスは開いていません。
+
+- 接続実装・機種用接続・コア・ヘッダーの11入力が旧コピーとbyte一致。OPM providerとの差は相対includeパスだけ。
+- X68000のFM／OKI構成は42ケース・258,048フレーム、追加YM2151は252ケース・1,548,288フレームで比較。旧接続と旧OPM provider、SDK接続とSDK OPM providerをそれぞれ別ビルドし、出力のbyte一致を確認してから実WASMと比較した。最大差分は0。
+- 合計は重複を除いて294ケース・1,806,336フレーム。既定checkerも実SDKからビルドして成功し、使用したソースのハッシュを記録した。この再実行分は合計に加えていない。
+- 別のNative間比較6ケース・49,152フレームで、272／292バイトの両snapshot全体、PCM、status、IRQ、read結果がbit一致。選択中のFMとOKIの両出力が無音でないことも確認した。WASM内部state全体の一致を確認したものではない。
+- 自己試験でcallback中の割当て／解放0を確認。
+- `cargo test --locked --offline`が723件成功、明示実行用4件ignored。
+- 再生ライフサイクルは22 mode、604,032フレーム、88回のRun／Stop遷移が成功。混合音源は3構成、7単独音源、追加生成の受入れと16台の制限の試験が成功。両runnerのexit codeは0、`deviceOpened: false`。
+
+上の全OPN移行CIはコミット`5280f83adebc542fdba1f49c5ff9bc8b51860734`に対するもので、
+今回のYM2151差分を検証した結果ではありません。新しい各OSのCIと実機の音声出力は未確認です。
