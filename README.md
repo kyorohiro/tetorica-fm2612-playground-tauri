@@ -46,7 +46,7 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 ## Native音源SDK
 
 YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、NES＋FDS、DX7、SNES／SPCとOPL系4種類
-（YM3526／YM3812／YMF262／Y8950）は、自己完結した`tetorica-soundchip-native`のソース配布を
+（YM3526／YM3812／YMF262／Y8950）、代替Nuked YM2612は、自己完結した`tetorica-soundchip-native`のソース配布を
 `src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
 取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
 `python3 scripts/import_soundchip_sdk.py --check`で同梱ファイルを照合できます。
@@ -68,9 +68,9 @@ Game Boyの選択中／独立追加接続と共通APUもSDKを使い、既存の
 NES＋FDSの選択中／独立追加接続と、その中のAPU／FDS移植実装もSDKを使い、既存の1翻訳単位とRustのDMC転送payload所有・予約・予算管理を維持します。
 DX7の選択中／独立追加接続とMSFAもSDKを使います。24共有ファイルと6 Native overrideをCargoの出力先へコピーして組み立て、Panic時は事前確保済みのnote状態とfeedback履歴を割当てなしで初期化します。
 SNESの選択中／独立追加S-DSP接続とSPC700ファイルプレーヤーもSDKを使います。2接続と4コアソースを既存の同一archiveへ組み込み、共有S-DSPを一度だけコンパイルします。RAM／timeline／SPCファイルの所有、準備・回収と予算管理はRust側に残ります。
-既に固定しているSDK `0.1.0`を使い、共通providerは一度だけ組み込みます。
+Nuked YM2612もSDKのNative接続・Browser共通C wrapperとコアを使います。SDK `0.1.1`を固定し、共通providerは一度だけ組み込みます。
 Genesisのgain・DC除去・PSG混合、機種用接続と`NativePsgCore`のレート変換、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
-これで通常の22音源IDのSDK参照が揃います。代替Nuked YM2612と、機種用の補助処理は従来のアプリ側実装を使います。
+通常の22音源IDに加えて、Genesis Nuked／32X Nukedと追加生成YM2612のNukedエンジンもSDK参照です。機種用の補助処理はアプリ側に残ります。
 固定した版と更新手順、共有providerの範囲は[Native SDKの取り込み](docs/native-sdk-ym2612.md)を参照してください。
 
 ## DX7
@@ -124,7 +124,7 @@ Native接続と`pwm32x_core.h`は固定SDKからビルドし、予約・owner管
 旧Genesis Nuked URLではNuked OPN2＋PSGを使います。通常のGenesis／32Xは引き続きymfmです。
 Main／Worker、Keyboard／Operators、DAC、共通ミキサー・FX／liveFx・monitor・録音へ接続します。
 レジスターのaddress／data書込み後に24内部clockを進めるWASM版の挙動を維持します。
-NukedはLGPL-2.1-or-laterで、由来・対応ソース・ライセンスを`src-tauri/native-nuked/`へ保存します。
+NukedはLGPL-2.1-or-laterです。実際の接続・C wrapper・コアは同梱SDKからビルドし、旧`src-tauri/native-nuked/`も比較用の原典・ハッシュ・ライセンスとして保持します。
 配布アプリには`native-sources/application-sources.zip`も同梱し、静的リンクしたNuked／SNESを
 変更して再ビルドできるようにします。手順と収録範囲は[NATIVE-SOURCES.md](NATIVE-SOURCES.md)を参照。
 

@@ -13,11 +13,11 @@
       "size": 55
     },
     "CHANGELOG.md": {
-      "sha256": "dc22228fd5c989827207009fff6f1a92a2efdaa7423886700a7d925d45b6a03b",
-      "size": 17204
+      "sha256": "98733f32c66f576dbf561bc7a024117f414986d720062826bd2e6a7c57c06673",
+      "size": 18288
     },
     "CMakeLists.txt": {
-      "sha256": "b928b7351fa79beab095dbd1e16652f71acf6f059eb568e0802da760faf794cf",
+      "sha256": "1aada8db32262df5523abb3ac804ae1d342731386f86d02c20fb65b7499edbdf",
       "size": 142
     },
     "LICENSE": {
@@ -33,48 +33,48 @@
       "size": 3774
     },
     "README.md": {
-      "sha256": "ca3244df5ba1a4bedef5e0e4177d7350d35e7be2cf4c6c71178ca4b240bf30bf",
-      "size": 22799
+      "sha256": "c75d265cc2a09ff4986d6315f122956aec77d5c7478f6393e601a0187f7b5645",
+      "size": 23114
     },
     "catalog/chips.json": {
-      "sha256": "1d77ed202ee604f821b3f8ba053acf6c91138e95036a0ce5397ca37bf158dcf9",
-      "size": 85284
+      "sha256": "379c9b80e27199543236d020cf4b692a54988dcbb9f50346704e52cc445c8ef0",
+      "size": 86721
     },
     "catalog/native_inventory.json": {
-      "sha256": "4fcce2e80a3715c7242373c44a610f3ba7081ede6a6fccfb3e08fc0afbd2b42b",
-      "size": 41273
+      "sha256": "98620dc9e5dd1f463ad929f4b13e9026f8956f942ec83367a72d7fa24ea553da",
+      "size": 42668
     },
     "catalog/source_inventory.json": {
       "sha256": "8bcf40201941ace79c571c9d69cfcf9b88ef8075804232bdc0adc3a22c131626",
       "size": 114652
     },
     "docs/architecture.md": {
-      "sha256": "24849a97238d90d3f8352b00d2d8776e81a0e02c3b7b60eb4beadf2494030c02",
-      "size": 20155
+      "sha256": "ac7b4ac21d2626c0b0bb17df995921aed0b23108bab968e7c57a8a6592ec922b",
+      "size": 20757
     },
     "docs/chip-differences.md": {
-      "sha256": "ac17509558d694386d7edecb93b72c21f106921843acc54c8df2e867e53d6ea2",
-      "size": 42548
+      "sha256": "6935e3f09cfa6df617f9876a0796e1f460185f6507b7de28b9cd60926d08b283",
+      "size": 43035
     },
     "docs/releases.md": {
-      "sha256": "a8ca5ea419a1a964fb7c00f69b6e1e496add2018d9328521c8bf272d369c233c",
-      "size": 16831
+      "sha256": "bb04e4eaa91784cffa1395a639f9069bbaade13e971dbc8652e292d55e8124c8",
+      "size": 17327
     },
     "docs/research.md": {
       "sha256": "a7a491f75a30d0bb57639d245fe2744b82b703076486e792ddbd090cd3bc672c",
       "size": 12695
     },
     "docs/verification.md": {
-      "sha256": "7310edb8c4f453cbf508bd627754c77deadf51486a3e3a92fab63b97f1d8ada4",
-      "size": 86733
+      "sha256": "9fd126007329b84dcbe0ad60e327fc47e14eb47e14a5335370b0a91ad7c9c94d",
+      "size": 90761
     },
     "native/CMakeLists.txt": {
-      "sha256": "21c8711a72450586154f690f8fab8b75d6417f415304a3d0ca747c442ca1e4cb",
-      "size": 29280
+      "sha256": "87a2a3c0550266ad33756557f1fd10efd31e5b86d449132f6f18c559ab8af8fb",
+      "size": 33086
     },
     "native/README.md": {
-      "sha256": "09244c60a35c531e1ec1e4d64838d6d93789feca75ac50ca789b63202bb7e630",
-      "size": 98648
+      "sha256": "ee767d850c7f8fa11f67bf69b2f7539da4023c7d0c53b7314de1377bc91d1515",
+      "size": 102270
     },
     "native/examples/dos_opl_wav.cpp": {
       "sha256": "4428515bf93f9644e5c32f793bf6c579f8765522f6ede2386a5ef8a780ab38a5",
@@ -115,6 +115,10 @@
     "native/examples/nes_fds_wav.cpp": {
       "sha256": "8a693c4e1d785271c10bed872e9e5968f0545556362ca6fd779dc5475b3e7c96",
       "size": 7642
+    },
+    "native/examples/nuked_genesis_wav.cpp": {
+      "sha256": "d8951d006cd084b4f1d09da6c072ff9379f48b278845e557f41ee5b81e09a39b",
+      "size": 7120
     },
     "native/examples/pc98_ym2203_wav.cpp": {
       "sha256": "d0ef799685d6ed68205aba6983645cf7bfa555bcf0536a307666fb2f871c7cbb",
@@ -163,6 +167,10 @@
     "native/include/tetorica/nes.hpp": {
       "sha256": "af1d0135d0b80bb3539bcdac677e813b99f4b9e4f205197db2119ecd9fbddc77",
       "size": 1120
+    },
+    "native/include/tetorica/nuked_ym2612.hpp": {
+      "sha256": "bc907448078e19286c9480512716ba37a4b58b41ae5f4745b038106a795eca19",
+      "size": 2308
     },
     "native/include/tetorica/okim6258.hpp": {
       "sha256": "50a265e5d34e7b3392c998a976bf639de47d281d8b7404e64e7655bdeb330338",
@@ -237,8 +245,8 @@
       "size": 108
     },
     "native/reference/SOURCES.json": {
-      "sha256": "f62375856a33578f35c2a21006b48ebc1ddbdecb27c648490db68aaff68c4af5",
-      "size": 45430
+      "sha256": "53f45a2f0fdb2e337d121a4c58bfc79b72bd3a088c26565cf0daed9d90786c02",
+      "size": 46271
     },
     "native/reference/overrides/msfa/dx7note.cc": {
       "sha256": "f4e6d96ebce3e2435d6f43b1311a3d9aca2cb96b5f5c52b001700df9e94a98ed",
@@ -512,6 +520,18 @@
       "sha256": "cab792c1380e8f893d8d7ef07e523e205bbff140dce422001affd0acb36201bd",
       "size": 33150
     },
+    "native/tests/nuked_audit.cpp": {
+      "sha256": "4cd23f7c6909b5ae95e1b24b80f5a87246e4044aabad589f1034a58a003e0fd5",
+      "size": 457
+    },
+    "native/tests/nuked_colink_fixture.cpp": {
+      "sha256": "20e51eb3e2102945c286d2873b4c90ce76ebc6d5bca4541f89117318ea44ab18",
+      "size": 3664
+    },
+    "native/tests/nuked_ym2612_fixture.cpp": {
+      "sha256": "7eaeb7f798a34de7b366b577d6646556f5c99f43675bc31e96c69dd023ca2673",
+      "size": 15691
+    },
     "native/tests/okim6258_fixture.cpp": {
       "sha256": "05cc429d155d1cb31efa1a47d695e3c03509a3dc739fbadc2e274f89009faef5",
       "size": 13626
@@ -725,24 +745,24 @@
       "size": 10185
     },
     "sdk.json": {
-      "sha256": "de7727db8aed12d5592ec065b97741e6cd0568319cf24ce510f8f5ed0a1d6842",
+      "sha256": "559e183ad480da9dd4f5685a798d54656b2297b1ec6cb3747889d9c835b60125",
       "size": 285
     },
     "tests/README.md": {
-      "sha256": "f9efc1ec919b56fc5f26b032112ee251ed39faa329d710dea9e7742848cdf9a5",
-      "size": 15390
+      "sha256": "be8f3266c8a9ac4809690aa0e4630d37a8160e6f148ef132a8c4802536f7be6e",
+      "size": 16221
     },
     "tests/check_standalone_release.py": {
-      "sha256": "e5fd375c1ede18f8a96a07c0be7f5dec936ac60b801687284a057f01e1b874f7",
-      "size": 34586
+      "sha256": "4fdc26279c664eb7d614015f124cfe01eec6bba6e9c1d7cc833dc2093711db28",
+      "size": 34699
     },
     "tests/javascript_reference_smoke.mjs": {
       "sha256": "ef97f7570de5b30233c84dcecc1d146185f6852756f8982ecc8cb43ef9d3bb02",
       "size": 9030
     },
     "tests/test_standalone_release.py": {
-      "sha256": "f123b515dba06b9c02ea92f6c44c2ea376c0c67b1294a128d983b1ef478df7ca",
-      "size": 53302
+      "sha256": "00f2c3e18002c64ead63b66693a7373cc78ff623061f3d6b9a63d5500efdc85c",
+      "size": 54144
     },
     "tests/wasm_smoke.mjs": {
       "sha256": "d4e04962cf013da5c52d8364c6cca170d324a7780d88df1d7845c07609055da6",
@@ -1496,5 +1516,5 @@
   "kind": "source",
   "name": "tetorica-soundchip-native",
   "schemaVersion": 1,
-  "version": "0.1.0"
+  "version": "0.1.1"
 }

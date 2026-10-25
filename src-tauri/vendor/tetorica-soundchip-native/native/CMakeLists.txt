@@ -33,6 +33,47 @@ if(MSVC)
   target_compile_options(tetorica_native_ym2612 PRIVATE /EHsc)
 endif()
 
+# Alternative YM2612 engine. The C++ wrapper includes the unchanged Browser
+# adapter and Native policy once. Compile the upstream provider as C, with all
+# external OPN2 names prefixed, so it can coexist with ymfm and other providers.
+set(TETORICA_NUKED_SYMBOLS
+  OPN2_Reset OPN2_SetChipType OPN2_Clock OPN2_Write OPN2_SetTestPin
+  OPN2_ReadTestPin OPN2_ReadIRQPin OPN2_Read
+)
+set(TETORICA_NUKED_PROVIDER "${TETORICA_SDK_ROOT}/vendor/nuked-opn2/ym3438.c")
+foreach(symbol IN LISTS TETORICA_NUKED_SYMBOLS)
+  set_property(SOURCE "${TETORICA_NUKED_PROVIDER}" APPEND PROPERTY
+    COMPILE_DEFINITIONS "${symbol}=tetorica_nuked_${symbol}")
+endforeach()
+# Retain the original Native C provider's signed-wrap semantics only for this
+# source; unrelated C/C++ cores and consumers keep their own compiler options.
+include(CheckCCompilerFlag)
+check_c_compiler_flag("-fwrapv" TETORICA_NUKED_C_SUPPORTS_WRAPV)
+if(TETORICA_NUKED_C_SUPPORTS_WRAPV)
+  set_property(SOURCE "${TETORICA_NUKED_PROVIDER}" APPEND PROPERTY COMPILE_OPTIONS -fwrapv)
+endif()
+add_library(tetorica_native_nuked_ym2612 STATIC
+  reference/tauri/native_genesis_nuked.cpp
+  "${TETORICA_NUKED_PROVIDER}"
+)
+add_library(tetorica::nuked_ym2612 ALIAS tetorica_native_nuked_ym2612)
+target_compile_features(tetorica_native_nuked_ym2612 PUBLIC cxx_std_14 PRIVATE c_std_11)
+target_include_directories(tetorica_native_nuked_ym2612
+  PUBLIC
+    "${CMAKE_CURRENT_LIST_DIR}/include"
+    "${CMAKE_CURRENT_LIST_DIR}/reference/tauri"
+  PRIVATE
+    "${TETORICA_SDK_ROOT}/vendor/nuked-opn2"
+    "${TETORICA_SDK_ROOT}/wasm"
+)
+# Nuked's upstream chip type is process-global. The Native wrapper selects
+# YM2612 once with std::call_once before publishing the first handle.
+find_package(Threads REQUIRED)
+target_link_libraries(tetorica_native_nuked_ym2612 PRIVATE Threads::Threads)
+if(MSVC)
+  target_compile_options(tetorica_native_nuked_ym2612 PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:/EHsc>")
+endif()
+
 add_library(tetorica_native_ym2151 STATIC
   reference/tauri/native_genesis_ym2151.cpp
   src/ymfm_opm_provider.cpp
@@ -431,6 +472,11 @@ foreach(flag IN ITEMS -fwrapv -fno-strict-aliasing -ffp-contract=off)
 endforeach()
 
 if(TETORICA_NATIVE_BUILD_EXAMPLES)
+  add_executable(tetorica_nuked_genesis_wav examples/nuked_genesis_wav.cpp)
+  target_link_libraries(tetorica_nuked_genesis_wav PRIVATE tetorica::nuked_ym2612 tetorica::segapsg)
+  if(MSVC)
+    target_compile_options(tetorica_nuked_genesis_wav PRIVATE /EHsc)
+  endif()
   add_executable(tetorica_spc_wav examples/spc_wav.cpp)
   target_link_libraries(tetorica_spc_wav PRIVATE tetorica::spc)
   if(MSVC)
@@ -519,6 +565,33 @@ if(TETORICA_NATIVE_BUILD_EXAMPLES)
 endif()
 
 if(TETORICA_NATIVE_BUILD_TESTS)
+  # Instrument only a test copy of the wrapper. Its symbols satisfy the
+  # fixture before the production archive is searched, so the archive supplies
+  # only its C provider. Production libraries never reference audit hooks.
+  add_library(tetorica_nuked_audit OBJECT tests/nuked_audit.cpp)
+  target_compile_features(tetorica_nuked_audit PRIVATE cxx_std_14)
+  target_compile_definitions(tetorica_nuked_audit PRIVATE TETORICA_NUKED_AUDIT_ALLOCATIONS)
+  target_include_directories(tetorica_nuked_audit PRIVATE
+    "${TETORICA_SDK_ROOT}/vendor/nuked-opn2" "${TETORICA_SDK_ROOT}/wasm")
+  add_executable(tetorica_nuked_ym2612_fixture tests/nuked_ym2612_fixture.cpp
+    $<TARGET_OBJECTS:tetorica_nuked_audit>)
+  target_link_libraries(tetorica_nuked_ym2612_fixture PRIVATE tetorica::nuked_ym2612)
+  add_executable(tetorica_nuked_colink_fixture tests/nuked_colink_fixture.cpp)
+  target_link_libraries(tetorica_nuked_colink_fixture PRIVATE
+    tetorica::ym2612 tetorica::nuked_ym2612 tetorica::segapsg Threads::Threads)
+  if(MSVC)
+    target_compile_options(tetorica_nuked_audit PRIVATE /EHsc)
+    target_compile_options(tetorica_nuked_ym2612_fixture PRIVATE /UNDEBUG /EHsc)
+    target_compile_options(tetorica_nuked_colink_fixture PRIVATE /UNDEBUG /EHsc)
+  else()
+    target_compile_options(tetorica_nuked_ym2612_fixture PRIVATE -UNDEBUG)
+    target_compile_options(tetorica_nuked_colink_fixture PRIVATE -UNDEBUG)
+  endif()
+  add_test(NAME tetorica.nuked_ym2612.self_test
+    COMMAND tetorica_nuked_ym2612_fixture --self-test)
+  add_test(NAME tetorica.nuked_colink.self_test
+    COMMAND tetorica_nuked_colink_fixture)
+
   # A Release configuration must execute the fixture's assertions as well.
   enable_testing()
   add_executable(tetorica_spc_fixture tests/spc_fixture.cpp)

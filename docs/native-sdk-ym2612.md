@@ -1,8 +1,8 @@
-# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280／Game Boy／NES＋FDS／DX7／SNES／SPC
+# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280／Game Boy／NES＋FDS／DX7／SNES／SPC／Nuked YM2612
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
 YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、NES＋FDS、DX7、SNES／SPCと
-OPL系4種類（YM3526／YM3812／YMF262／Y8950）をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
+OPL系4種類（YM3526／YM3812／YMF262／Y8950）、代替Nuked YM2612をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
 この手順書は最初のYM2612移行時のファイル名を保持し、その後の音源の移行も記録しています。
 
@@ -10,15 +10,15 @@ submodule、ビルド中のGitHub取得を必要としません。
 
 | 項目 | 値 |
 | --- | --- |
-| SDK版 | `0.1.0` |
-| ソース配布 | `tetorica-soundchip-native-0.1.0-sources.zip` |
-| 配布ZIPのSHA-256 | `26db7518a55465b1e4dc58c19eb425fc6ea1ab282bd85920b0249556f5d1f6ce` |
-| SDKの元コミット | `affd1059599f3c7598191c14f5a864b44963d4aa` |
+| SDK版 | `0.1.1` |
+| ソース配布 | `tetorica-soundchip-native-0.1.1-sources.zip` |
+| 配布ZIPのSHA-256 | `939fb035aef36c84cac3d1e058271ca3ddfc6ebd9ce5cfa4b3d04bc92876416b` |
+| SDKの元コミット | `e4b7d7ecef60e3927ac04815cd9f985f62c82f04` |
 | 同梱先 | `src-tauri/vendor/tetorica-soundchip-native/` |
 | Tauri側の取り込み記録 | `src-tauri/soundchip-sdk.json` |
 
 取り込み記録は`schemaVersion: 1`で、`name`、`version`、`sourceCommit`、`archiveName`、
-`archiveSha256`、`manifestSha256`、`fileCount`を保存します。現在の同梱数は374ファイルです。
+`archiveSha256`、`manifestSha256`、`fileCount`を保存します。現在の同梱数は379ファイルです。
 `sourceCommit`は取り込み時に指定する由来の記録で、コミット署名や配布物の署名を検証したものではありません。
 取り込み時に期待するZIPのSHA-256を検証し、SDKマニフェストと各ファイルのサイズ／SHA-256を照合します。
 `--check`は元ZIPやネットワークを使わず、同梱マニフェストのハッシュと全ファイルを記録に照合します。
@@ -36,6 +36,8 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | 用途 | SDK内のパス |
 | --- | --- |
 | Genesis主音源のYM2612接続 | `wasm/ym2612_wasm.cpp` |
+| Genesis Nuked／32X Nukedと独立追加Nuked YM2612の接続 | `native/reference/tauri/native_genesis_nuked.cpp`と`.inc`、`native_genesis_ym2612.h` |
+| NukedのBrowser共通C wrapperとコア | `wasm/nuked_opn2_wasm.c`、`vendor/nuked-opn2/ym3438.c`と対応ヘッダー |
 | `createSoundChip('ym2612')`の独立Native接続 | `native/reference/tauri/native_genesis_ym2612.cpp` |
 | PC-98（YM2203）と`createSoundChip('ym2203')`のNative接続 | `native/reference/tauri/native_genesis_ym2203.cpp` |
 | PC-98（YM2608）と`createSoundChip('ym2608')`のNative接続 | `native/reference/tauri/native_genesis_ym2608.cpp` |
@@ -79,7 +81,7 @@ SDKのOPN providerがymfmのOPN実装と明示的なテンプレート実体化�
 
 YM2203とYM2608は、それぞれ選択中のPC-98音源と追加生成の両方で、同じSDK側のNative接続を使います。
 Neo Geoも選択中／追加音源のYM2610（FM 4CH）とYM2610B（FM 6CH）が一つのSDK接続を共有し、生成時に変種を選択します。
-既に同梱済みのSDK `0.1.0`へビルド参照を切り替えるため、SDK配布物や固定値は更新しません。
+これらの先行移行は同梱済みのSDK `0.1.0`へ参照を切り替えました。現在はNuked単体ターゲットを追加した`0.1.1`を固定し、既存音源の実装を保持しています。
 共有OPN／SSG／ADPCMはYM2612移行時からSDK側のものを一度だけ組み込んでおり、
 個別の移行用にもう一つ追加しません。既存のarchive順序を維持します。
 
@@ -198,6 +200,15 @@ RustのArcによる所有、control側でのCOW準備、寿命・回収・予算
 公開済みページの読み書きは音声threadが行い、既存のmemory revision／upload revisionの規則を保持します。
 この参照切替では新しいRAM転送APIを追加しません。
 
+Nukedは既存のC++接続archiveと、全8個の`OPN2_*`を`tetorica_nuked_OPN2_*`へprefixしたCコアarchiveを使います。
+Genesisのconsumer、Nuked接続、C providerの順でリンクし、SDKのCMakeライブラリーを追加して重複させません。
+C++14／O2／MSVC `/EHsc`とC11／O2／`-fwrapv`、初回生成時の`std::call_once`によるglobal chip type選択を保持します。
+接続cppの差はwrapperのincludeパスだけで、`.inc`・共通state header・C wrapper・コア・ライセンスは旧コピーとbyte一致します。
+raw address／dataの各write後24内部clock、生成時24 clockの出力合計×11、clock／144のsource rateを保持します。
+選択中Genesis／32X Nukedは自然なreset時のDCを保持し、ymfmのcalibration frameを消費しません。
+独立追加Nukedは6CHの個別コアを持ち、機種用PSG・source gain・DC除去を含みません。
+周波数ラッチ、通常CH3とCSMの別取消し、DAC、mute、試奏とStop／resetは既存の動作を保持します。
+
 Genesisのgain、DC除去、PSG混合と出力レート変換は`src-tauri/src/native_genesis_core.cpp`に残ります。
 Rustの予約、owner、音源ラックと予算管理、CPAL、ミキサー、FX／liveFx、録音、WebViewとJS APIも
 アプリ側の担当です。YM2203のFM／SSG制御、Stop、レート変換も既存の接続動作を引き継ぎ、
@@ -228,7 +239,7 @@ X68000の機種用接続、Rust側のサンプル所有・予約・予算管理�
 追加OKI接続はサンプルをコピーせず借用し、Rustがその参照の所有・寿命を管理します。
 OKIの素材やサンプル転送の管理をSDKへ移す変更ではありません。
 
-これで通常の22音源IDのSDK参照が揃います。代替Nuked YM2612の別variantと、機種用の補助処理はアプリ側に残ります。
+通常の22音源IDに加え、代替Nuked YM2612も固定SDKへ参照を切り替えます。機種用の補助処理はアプリ側に残ります。
 ブラウザー／npmのWASM配布やPlaygroundの`dist/`は、このSDK取り込みで更新しません。
 
 従来の`src-tauri/src/native_genesis_ym2203.cpp`／`.h`と`src-tauri/native-ym2203/`は、
@@ -280,6 +291,9 @@ Rustの埋め込み消費元がない旧`native-dx7/`とローカル接続のソ
 SNES／SPCの旧接続と`src-tauri/native-snes/`の34件の固定記録、LGPLライセンス・由来・syncスクリプトも保持します。
 CargoはSDKの`vendor/snes-spc/`と2接続cpp／headerを監視し、Rustの埋め込み消費元がない旧`native-snes/`とローカル接続のソース監視を外します。
 旧コピーや`sync_native_snes.py`だけでは実際のSDK入力を更新しません。
+Nukedの旧接続cpp／`.inc`と`src-tauri/native-nuked/`の9件の固定記録、LGPLライセンス・由来も保持します。
+CargoはSDK接続cpp／`.inc`、共通state header、SDKの`vendor/nuked-opn2/`と`wasm/`を監視し、旧コピーのソース監視を外します。
+`sync_native_nuked.py`だけでは実際のSDK入力を更新しません。元の`README.md`や固定ハッシュは変更しません。
 配布物を改変して再リンクする場合の実入力と手順は[NATIVE-SOURCES.md](../NATIVE-SOURCES.md)を参照してください。
 
 ## 照合と更新
@@ -295,9 +309,9 @@ SDKを更新するときだけ、検証したソースZIPを明示して取り�
 
 ```sh
 python3 scripts/import_soundchip_sdk.py \
-  --archive /path/to/tetorica-soundchip-native-0.1.0-sources.zip \
-  --sha256 26db7518a55465b1e4dc58c19eb425fc6ea1ab282bd85920b0249556f5d1f6ce \
-  --source-commit affd1059599f3c7598191c14f5a864b44963d4aa
+  --archive /path/to/tetorica-soundchip-native-0.1.1-sources.zip \
+  --sha256 939fb035aef36c84cac3d1e058271ca3ddfc6ebd9ce5cfa4b3d04bc92876416b \
+  --source-commit e4b7d7ecef60e3927ac04815cd9f985f62c82f04
 python3 scripts/import_soundchip_sdk.py --check
 ```
 
@@ -353,6 +367,7 @@ node scripts/check_native_extra_okim6258.mjs
 node scripts/check_native_master_system.mjs
 node scripts/check_native_game_gear.mjs
 node scripts/check_native_nuked.mjs
+node scripts/check_native_extra_ym2612_nuked.mjs
 node scripts/check_native_megacd.mjs
 node scripts/check_native_extra_rf5c164.mjs
 node scripts/check_native_extra_pwm.mjs
@@ -1056,3 +1071,46 @@ Windowsが`f3ac24c3a08277ebcdf3651dce8f2620ebae6dc05bc149fac4de48cb89fb19e3`で�
 CI後の変更は結果記録だけで、製品・試験入力は同じです。
 上記のローカル273比較／519比較は各OSのCIで実行した比較ではありません。
 検証レポートだけを取得し、インストーラーや対応ソースZIP自体の取得・独立照合・起動、OS間のPCM一致、実機聴音・UI操作は行っていません。
+
+## Nuked YM2612移行の検証
+
+2026-10-25。代替Nukedエンジンも固定SDK参照に切り替えました。
+SDK `0.1.1`は`tetorica::nuked_ym2612`と`<tetorica/nuked_ym2612.hpp>`を提供し、
+通常ymfm／Sega PSGと同一実行ファイルへリンクできます。TauriはそのCMakeターゲットを追加リンクせず、
+上記のSDKソースを既存の2 archiveへ組み込んでいます。
+新しい379ファイルの固定配布物を取り込み、ソース・manifest・取り込み記録のハッシュを照合しました。
+従来のSDK `0.1.0`の374ファイルを使った検証は、各先行節の当時の結果として残しています。
+
+macOS ARM64／Clang・Nodeで選択中222入力・1,363,968フレーム、独立追加198入力・1,216,512フレームを比較し、
+旧／SDK stdoutは全入力でbyte一致しました。機種混合とraw独立接続は異なるAPI profileなので、
+同一符号化命令列39件を同一入力へまとめず、合計420入力・2,580,480フレームです。
+実配布WASMとの比較も420回で、独立追加の差は0、選択中は既存のFloat32 ramp差
+`2.9802322387695312e-8`を保持しました。意図したDSP変更はありません。
+既存fixtureの自己試験はStop無音・再発音、6CH・CSM／DAC・mute・公開状態とcallback allocation／free 0を確認し、
+prefix済みコア8 exportの各1回の定義と非prefix定義0も確認しました。
+毎frameのprivate全状態のdump比較ではありません。
+
+SDKのソースZIPを独立した一時ディレクトリへ展開し、全24 CTest・18 WAV exampleとJavaScript参照10試験が成功しました。
+これはローカルの独立ビルドで、音声デバイスや元checkoutを必要としません。
+Tauriの`npm test`もPython 22件・Node 31件成功しました。このツール試験はSDK最終取り込み前に実行し、
+合成fixtureを使うため実際の同梱receiptには依存しません。
+2本の既定checkerも初回取り込み後のSDK入力から成功し、選択中12入力／独立追加8入力のハッシュを記録しました。
+実Cargo archive各1 objectのDWARFはSDK接続cpp／コアCを指し、10 raw C ABI・16独立C ABI・8 prefix済みOPN2 exportは各1回、非prefix定義は0でした。
+独立した依存preprocessで6音源入力がSDK内だけに解決され、実入力監視と既存リンク順序も確認しました。
+
+Rust全試験は723成功・0失敗・明示実行用4件ignored。MCPのローカルTCP bindのため初めから制限外で実行し、sandbox内の失敗はない。
+再生ライフサイクルは22 mode・604,032フレーム・88 Run／Stopが成功した。
+既存の追加音源3混合構成・7単独音源、受入れ／16台制限と17台目拒否も成功し、両制限試験のStop後予約予算は0へ戻った。
+再生／混合runnerはともにexit code 0、`deviceOpened: false`。
+この既存混合表に独立追加Nukedは含まれず、Nukedは別のPCM比較・同時リンクfixture・Rust試験と選択中modeの再生試験で確認した。
+これらのホスト試験はSDK `60f06e629395b65f1777e7e28c80be9eefca2381`／378ファイルの初回取り込み後に実行した。
+初回取り込みから最終配布への差は`RELEASE-MANIFEST.json`、`docs/verification.md`、`native/CMakeLists.txt`と新しい試験用`native/tests/nuked_audit.cpp`の4ファイルだけだった。
+実際にTauriが使うコア・接続入力の全バイト列が一致することを`final-import-audit.json`で確認したため、完了済みのホスト試験を再実行していない。
+最終ソースZIPを独立展開した全24 CTest・18 WAV exampleとJavaScript参照10試験は改めて成功し、検証scriptのexit codeは0だった。
+
+SDKの初回CI run `40174420834`はLinux 2構成で試験用allocation macroと標準ヘッダーのinclude順によりコンパイルが失敗しました。
+SDKの試験専用shimで標準ヘッダーを先に読み、製品コア・接続を変えずに修正しました。
+修正コミット`e4b7d7ecef60e3927ac04815cd9f985f62c82f04`のSDK CI run `40175263453`を開始しました。この記録時点では成否を確認していません。
+新しいTauri 5構成CIは、このローカルチェックポイント後に実行して結果を追記します。
+直前の全5構成成功run `40171879716`は今回のNuked移行を含みません。
+実機聴音・UI操作、インストール後の起動、OS間PCM一致、各OSのWASM比較は別の確認です。

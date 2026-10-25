@@ -1598,6 +1598,32 @@
         "vendor/ymfm/LICENSE"
       ],
       "native": {
+        "alternativeEngines": [
+          {
+            "alias": "tetorica::nuked_ym2612",
+            "header": "native/include/tetorica/nuked_ym2612.hpp",
+            "id": "nuked-opn2",
+            "licenseFiles": [
+              "LICENSE",
+              "vendor/nuked-opn2/LICENSE"
+            ],
+            "sourceFiles": [
+              "native/reference/tauri/native_genesis_nuked.cpp",
+              "native/reference/tauri/native_genesis_nuked_ym2612.inc",
+              "native/reference/tauri/native_genesis_ym2612.h",
+              "vendor/nuked-opn2/ym3438.c",
+              "vendor/nuked-opn2/ym3438.h",
+              "wasm/nuked_opn2_wasm.c"
+            ],
+            "status": "verified",
+            "target": "tetorica_native_nuked_ym2612",
+            "tests": [
+              "tetorica.nuked_ym2612.self_test",
+              "tetorica.nuked_colink.self_test"
+            ],
+            "verificationScope": "Unchanged pinned wrapper and C provider, per-TU OPN2 symbol prefixes, process-global YM2612 initialization via call_once, synchronous raw and Native output/control contracts, allocation-free callback paths, concurrent independent first constructions and coexistence with ymfm/PSG."
+          }
+        ],
         "buildFiles": [
           "CMakeLists.txt",
           "native/CMakeLists.txt"
@@ -1610,7 +1636,8 @@
           "native/reference/tauri/native_genesis_ym2612.cpp",
           "native/reference/tauri/native_genesis_ym2612.h",
           "native/include/tetorica/ym2612.hpp",
-          "native/src/ymfm_opn_provider.cpp"
+          "native/src/ymfm_opn_provider.cpp",
+          "native/include/tetorica/nuked_ym2612.hpp"
         ],
         "id": "ym2612",
         "licenseFiles": [
@@ -1626,7 +1653,8 @@
           "native/reference/tauri/native_genesis_nuked.cpp",
           "native/reference/tauri/native_genesis_nuked_ym2612.inc",
           "native/include/tetorica/ym2612.hpp",
-          "native/src/ymfm_opn_provider.cpp"
+          "native/src/ymfm_opn_provider.cpp",
+          "native/include/tetorica/nuked_ym2612.hpp"
         ],
         "status": "verified",
         "target": "tetorica_native_ym2612",
@@ -1634,9 +1662,10 @@
           "tetorica.ym2612.self_test"
         ],
         "tetoricaOriginalDefaultLicense": "BSD-3-Clause",
-        "verificationScope": "ymfm only, with explicit Native OPN template definitions; Nuked reference sources are not built by this target"
+        "verificationScope": "Default ymfm engine with explicit Native OPN template definitions; alternative Nuked engine has its own independently linked target and raw/native ABIs."
       },
       "sourceFiles": [
+        "native/include/tetorica/nuked_ym2612.hpp",
         "native/include/tetorica/ym2612.hpp",
         "native/reference/tauri/native_genesis_nuked.cpp",
         "native/reference/tauri/native_genesis_nuked_ym2612.inc",

@@ -613,6 +613,14 @@
       "originSha256": "2e36e829e90844f2b1c53a08f475cbcb0610798fe008625c49a7ef5d8e68620d",
       "sha256": "5c0ef0614ad24cfb8770f3e7856ba205b812bb07d08e299e7aa20e394ca2dc4b",
       "adaptation": "Include the public SDK header; preserve the original synthetic/optional-file self-test and PCM event/diagnostic CLI. Extend constructor/rate limits, copied file lifetime and malformed-load error/reload behavior, bounded incremental control seeking and prefetched CPU position, pause/resume and cached mute continuity, observer capacity/borrowed storage/clear/overflow contracts, DSP and analysis snapshot purity/size/lifetime, independent instances and zero callback C++ allocation/free. Native wrapper and vendor synthesis bytes remain unchanged."
+    },
+    {
+      "file": "native/tests/nuked_ym2612_fixture.cpp",
+      "origin": "w/tetorica-fm2612-playground-tauri/src-tauri/src/native_genesis_nuked_ym2612_fixture.cpp",
+      "originCommit": "baec0b9a6beebe8ba914607c90b13243eb6ef0c4",
+      "originSha256": "77b0c0e879f5f86d4f05019f563ffb3585f67cba046ceb8fecb001e827f4fe1b",
+      "sha256": "7eaeb7f798a34de7b366b577d6646556f5c99f43675bc31e96c69dd023ca2673",
+      "adaptation": "Include the public SDK header before compatibility aliases; preserve the original PCM/status/IRQ event CLI and Native self-tests. Add synchronous raw ABI sample-rate, zero-length generation, one-frame/block continuity, zero envelope outputs, reset/read equivalence and C/C++ allocation/free auditing. The test-only wrapper is instrumented separately; production provider/wrapper bytes remain unchanged."
     }
   ]
 }

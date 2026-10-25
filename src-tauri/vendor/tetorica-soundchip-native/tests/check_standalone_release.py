@@ -35,7 +35,7 @@ REQUIRED_NATIVE_FIXTURES = frozenset(("tetorica_ym2612_fixture", "tetorica_ym215
                                       "tetorica_okim6258_fixture", "tetorica_rf5c164_fixture",
                                       "tetorica_opl_fixture", "tetorica_extra_opl_fixture", "tetorica_y8950_memory_fixture",
                                       "tetorica_gameboy_fixture", "tetorica_huc6280_fixture", "tetorica_nes_fixture",
-                                      "tetorica_pwm_fixture", "tetorica_extra_pwm_fixture", "tetorica_dx7_fixture", "tetorica_snes_fixture", "tetorica_spc_fixture"))
+                                      "tetorica_pwm_fixture", "tetorica_extra_pwm_fixture", "tetorica_dx7_fixture", "tetorica_snes_fixture", "tetorica_spc_fixture", "tetorica_nuked_ym2612_fixture", "tetorica_nuked_colink_fixture"))
 REQUIRED_NATIVE_EXAMPLES = {"tetorica_genesis_wav": "Genesis", "tetorica_master_system_wav": "Master System",
                             "tetorica_msx_wav": "MSX", "tetorica_pc98_ym2203_wav": "PC-98 YM2203",
                             "tetorica_pc98_ym2608_wav": "PC-98 YM2608", "tetorica_neogeo_wav": "NeoGeo",
@@ -43,7 +43,7 @@ REQUIRED_NATIVE_EXAMPLES = {"tetorica_genesis_wav": "Genesis", "tetorica_master_
                             "tetorica_dos_opl_wav": "DOS PC OPL", "tetorica_msx_audio_wav": "MSX-AUDIO",
                             "tetorica_gameboy_wav": "Game Boy", "tetorica_pcengine_wav": "PC Engine",
                             "tetorica_nes_fds_wav": "NES with FDS", "tetorica_32x_wav": "32X",
-                            "tetorica_dx7_wav": "DX7", "tetorica_snes_wav": "SNES", "tetorica_spc_wav": "SPC"}
+                            "tetorica_dx7_wav": "DX7", "tetorica_snes_wav": "SNES", "tetorica_spc_wav": "SPC", "tetorica_nuked_genesis_wav": "Nuked Genesis"}
 REQUIRED_NATIVE_EXECUTABLES = REQUIRED_NATIVE_FIXTURES | frozenset(REQUIRED_NATIVE_EXAMPLES)
 REQUIRED_UPSTREAM_REFERENCES = frozenset((
     "libvgm-msm5205-upstream", "libvgm-okim6295-upstream", "mame-okim6295-upstream",

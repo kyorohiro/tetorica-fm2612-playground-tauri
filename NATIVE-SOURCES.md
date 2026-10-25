@@ -104,9 +104,20 @@ MSX AY resampling, the local `NativePsgCore` helper and Genesis mixing/DC/gains
 remain local;
 shared OPL/PCM is compiled
 once with the existing archive order and common ADPCM support.
-All twenty-two ordinary sound-chip IDs now consume the SDK at these boundaries;
-the alternative Nuked YM2612 implementation and machine-specific helpers retain
-their application sources. The
+The optional Nuked YM2612 engine also builds from the SDK: its
+`native/reference/tauri/native_genesis_nuked.cpp` includes the shared
+`wasm/nuked_opn2_wasm.c` and the independent-engine `.inc`, with the matching
+`native_genesis_ym2612.h`. The upstream `vendor/nuked-opn2/ym3438.c` remains
+a separate C11 translation unit with all eight OPN2 symbols prefixed. The
+existing C++14/O2 adapter archive and C11/O2 provider archive retain their
+consumer-before-provider link order, so the ymfm engine and one Nuked provider
+can coexist without duplicate symbols. The process-global chip type is selected
+once before the first core is published. Genesis/32X mixing, natural Nuked idle
+DC, source gain/ramp policy and host ownership remain application behavior.
+The old nine-file Nuked snapshot and its licenses remain provenance and
+comparison references; refreshing it alone does not update SDK build inputs.
+All twenty-two ordinary sound-chip IDs and the alternative Nuked YM2612 engine
+now consume the SDK at these boundaries; machine-specific helpers remain local. The
 [SDK adoption guide](docs/native-sdk-ym2612.md) lists the
 consumed paths, pinned archive hash and deliberate offline update procedure.
 A separate SDK checkout or sound-core download is not required to rebuild this
@@ -119,7 +130,7 @@ by the Rust host. ROM data preparation and ownership remain in the application.
 
 Nuked OPN2 and SNES-SPC are **LGPL-2.1-or-later**. Their licenses, copyright
 notices and provenance are retained under `src-tauri/native-nuked/` and
-`src-tauri/native-snes/`; the consumed SNES/SPC core and adapters are under
+`src-tauri/native-snes/`; the consumed Nuked and SNES/SPC sources are under
 `src-tauri/vendor/tetorica-soundchip-native/` as described above. These components are
 statically linked. SNES-SPC supplies both the CPU-free S-DSP instruments and the
 full SPC700 file player. The application sources and build material are provided so
@@ -134,7 +145,10 @@ engineering to debug those modifications as permitted by LGPL 2.1 section 6.
 2. Install Node.js 22 or later, Python 3, Rust (CI uses 1.91.1), a C/C++17
    compiler and the platform dependencies listed below.
 3. Modify the actual source consumed by `src-tauri/build.rs`:
-   Nuked sources under `src-tauri/native-nuked/`; for SNES/SPC, the core under
+   Nuked sources under the SDK
+   `src-tauri/vendor/tetorica-soundchip-native/vendor/nuked-opn2/`,
+   `wasm/nuked_opn2_wasm.c` and `native/reference/tauri/native_genesis_nuked.cpp` /
+   `native_genesis_nuked_ym2612.inc` and matching state header; for SNES/SPC, the core under
    `src-tauri/vendor/tetorica-soundchip-native/vendor/snes-spc/snes_spc/`
    and, when needed, `native/reference/tauri/native_genesis_snes.cpp` /
    `native_genesis_spc.cpp` and matching headers within that same SDK directory.
@@ -144,9 +158,11 @@ engineering to debug those modifications as permitted by LGPL 2.1 section 6.
    `npm run dev` runs a development build. An unsigned local build can be used
    to test the modified sound core without the distributor's signing key.
 
-The exact Nuked source paths and its build recipe are documented in
-`src-tauri/native-nuked/README.md`. `src-tauri/native-snes/rebuild.sh` rebuilds the
-legacy reference snapshot; it does not select the current application's SDK
+The consumed Nuked paths and archive order are listed in the
+[SDK adoption guide](docs/native-sdk-ym2612.md) and `src-tauri/build.rs`.
+`src-tauri/native-nuked/README.md` describes the legacy reference and its Browser
+semantics. Its refresh script and `src-tauri/native-snes/rebuild.sh` operate on
+legacy snapshots; they do not select the current application's SDK
 inputs. Cargo compiles the modified consumed sources directly, and the normal
 pre-build step captures them in a newly generated corresponding-source ZIP.
 Fixed-distribution verification (`import_soundchip_sdk.py --check` and

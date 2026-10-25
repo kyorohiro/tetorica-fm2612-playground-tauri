@@ -27,13 +27,13 @@ translation-unit constraints.
 
 ## Build support
 
-Requirements: CMake 3.20 or newer and a C++17 compiler.
+Requirements: CMake 3.20 or newer, a C++17 compiler and a C compiler (C11 or newer for Nuked).
 
 The independently buildable Native components are **ymfm YM2612, YM2151,
 YM2413, YM2203, YM2608 and YM2610/YM2610B, plus Sega PSG, AY-3-8910, OKIM6258, RF5C164, Game Boy, HuC6280, NES with optional FDS, 32X PWM, MSFA DX7, SNES S-DSP, SPC700/S-DSP playback and YM3526/YM3812/YMF262/Y8950**.
-These twenty-two chip IDs use eighteen static libraries; YM2610/YM2610B share one
+These twenty-two chip IDs, including the alternative Nuked YM2612 engine, use nineteen static libraries; YM2610/YM2610B share one
 library, and four OPL-family chips share another. Constructors explicitly select
-the per-handle variant/kind. Twenty-three aliases/headers include the generic OPL entry:
+the per-handle variant/kind. Twenty-four aliases/headers include generic OPL and the alternative Nuked engine:
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -47,6 +47,7 @@ build/native`. Neither build downloads dependencies.
 | CMake target | Static library target | Public C++ header | Existing C ABI |
 | --- | --- | --- | --- |
 | `tetorica::ym2612` | `tetorica_native_ym2612` | `<tetorica/ym2612.hpp>` | `native_ym2612_*`, `NativeYm2612State` |
+| `tetorica::nuked_ym2612` | `tetorica_native_nuked_ym2612` | `<tetorica/nuked_ym2612.hpp>` | `native_nuked_ym2612_*`, `tetorica_nuked_*`, `NativeYm2612State` |
 | `tetorica::ym2151` | `tetorica_native_ym2151` | `<tetorica/ym2151.hpp>` | `native_ym2151_*`, `NativeYm2151State` |
 | `tetorica::ym2413` | `tetorica_native_ym2413` | `<tetorica/ym2413.hpp>` | `native_ym2413_*`, `NativeYm2413State` |
 | `tetorica::segapsg` | `tetorica_native_segapsg` | `<tetorica/segapsg.hpp>` | `native_game_gear_*`, `NativeGameGearState` |
@@ -101,7 +102,7 @@ clock/divider guards, pan, repeat, retained Stop/reset and observation.
 The RF5C164 fixture covers both profiles, eight voices, sign-magnitude PCM,
 loop markers, RAM/bank access, clock conversion, reset retention and the
 additional profile's immediate source cancellation and observation.
-Twenty-one fixture executables supply twenty-two CTest tests, with assertions enabled
+Twenty-three fixture executables supply twenty-four CTest tests, with assertions enabled
 in Release builds. The SNES executable supplies two entries.
 The three OPL-family fixtures exercise primary controls/PCM, additional source
 ownership/held output, and Y8950 writable-page memory separately. The shared OPL
@@ -145,9 +146,7 @@ independent instances, non-advancing analysis and bounded observer/overflow
 semantics. Tested callback paths reject allocation/free; original SPC bytes
 and replacement-handle handoff remain host responsibilities.
 See the [verification record](../docs/verification.md)
-for completed checks and platform results. These targets cover all 22 cataloged Playground chip IDs. The optional Nuked
-YM2612 engine and separate Analyzer-only chip references remain outside this
-standalone target set.
+for completed checks and platform results. These targets cover all 22 cataloged Playground chip IDs and the alternative Nuked YM2612 engine. Separate Analyzer-only chip references remain outside this standalone target set.
 
 `src/ymfm_opn_provider.cpp` includes the unchanged shared ymfm provider and explicitly instantiates the Native OPN engine/channel/operator templates. The adapter declares those templates `extern`; optimized providers must emit their callable definitions even when the provider's own calls are inlined. This incorporates the Tauri link fix without changing DSP behavior or the exported ABI. The provider's origin and include relocation are recorded in the source inventories.
 
@@ -167,6 +166,56 @@ template definitions. YM2413 and the shared OPL-family target link the unchanged
 ADPCM/PCM support translation units required by that provider. YM2413 constructs
 only OPLL; the separate OPL-family constructors select YM3526, YM3812, YMF262 or
 Y8950. Shared vendor bytes and WASM recipes are unchanged.
+
+## Alternative Nuked YM2612
+
+Link `tetorica::nuked_ym2612` and include `<tetorica/nuked_ym2612.hpp>`.
+This separate LGPL-2.1-or-later target keeps the vendor core, Browser bridge,
+Native wrapper and source-policy include unchanged. CMake compiles the provider
+as C and the wrapper as C++, renaming all eight exported `OPN2_*` provider
+symbols on the C translation unit. The provider privately retains supported
+`-fwrapv` signed-wrap semantics from the original Native build. The prefixed exports coexist with the
+ordinary `tetorica::ym2612` / ymfm target; do not compile either provider twice.
+The target links the platform thread dependency needed by `std::call_once`.
+
+Two existing synchronous ABIs are available:
+
+- `tetorica_nuked_*` creates a raw handle without an output-rate argument.
+  `sample_rate(handle, clock)` returns integer `clock / 144`; `generate` writes
+  planar source-rate PCM into caller arrays. Raw offsets 0/2 latch an address
+  and offsets 1/3 write data. Each raw write clocks a full 24-slot rotation,
+  and each generated frame sums 24 internal samples with the retained ×11
+  reconstruction. Reads/status/IRQ are synchronous. The internal-envelope
+  variant produces identical PCM and fills its four envelope arrays with zero.
+- `native_nuked_ym2612_*` owns one raw handle and averages/holds frames to an
+  immutable 8–384 kHz output rate, with an editable 100 kHz–100 MHz master clock.
+  It retains the existing 528-byte observational `NativeYm2612State`, authored
+  register/frequency-latch shadows, six channel mutes, timer/IRQ/status reads,
+  ordinary release, immediate source cancellation, separate FM/CSM leases and
+  deferred audition. Stop silences output immediately but retains authored
+  controls, clock and mute; reset clears register/gate/phase history while
+  retaining clock and mute. Valid key-on, CSM and DAC activity can reopen Stop.
+
+The upstream chip type is process-global. The Native wrapper chooses YM2612
+once before publishing the first handle; callers must not call the private
+`OPN2_SetChipType` provider or mix another chip type into this provider instance.
+Hosts must serialize all access to each handle, including raw and Native
+control, observation, rendering and destruction. Separate independently owned
+handles may be created/rendered concurrently; the cold-construction fixture
+checks this without sharing a handle. Create/destroy outside the audio callback.
+No sample memory is borrowed and no machine-level PSG mix, source gain, DC
+filter or audio output device is supplied. Raw reset retains the model's DC
+output; do not assume reset means numerical zero. Buffer sizes, valid handles
+and raw register offsets are caller responsibilities, matching the existing ABI.
+
+The Nuked fixture retains the original event CLI and Native state/ownership
+checks, then checks raw block/single-frame continuity, zero-length rendering,
+zero envelope output, reset and C/C++ allocation-free tested callbacks. A
+separate fixture links ordinary YM2612, Nuked and Sega PSG together and checks
+cold concurrent construction and cross-engine independence. The original
+`tetorica_nuked_genesis_wav <output.wav>` example renders three seconds of
+48 kHz stereo PCM16 using Nuked FM plus PSG with fixed gain and edge fades.
+These tests do not establish hard real-time deadlines or hardware fidelity.
 
 ## Embed YM2151
 
@@ -1521,7 +1570,7 @@ controlled separately by `TETORICA_NATIVE_BUILD_TESTS`.
 | Public component | Reference wrapper or support | Native CMake build |
 | --- | --- | --- |
 | Sega PSG | `native_genesis_psg.h`, independent `native_genesis_game_gear.cpp` wrapper | Standalone PSG target and fixture; no OPLL core |
-| YM2612 | `native_genesis_ym2612.cpp`; Nuked alternative in `native_genesis_nuked.cpp` and `.inc` | ymfm built and tested; Nuked reference only |
+| YM2612 | `native_genesis_ym2612.cpp`; Nuked alternative in `native_genesis_nuked.cpp` and `.inc` | ymfm and alternative Nuked built and tested |
 | YM2203 | `native_genesis_ym2203.cpp` | Standalone OPN+SSG target and fixture; both constructor profiles |
 | YM2608 | `native_genesis_ym2608.cpp` | Standalone OPNA target and fixture; both constructor profiles |
 | YM2610 / YM2610B | `native_genesis_ym2610b.cpp`, selected immutable variant | One standalone OPNB library and fixture; both constructor profiles |

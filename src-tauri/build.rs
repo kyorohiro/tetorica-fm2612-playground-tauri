@@ -109,9 +109,9 @@ fn main() {
     println!(
         "cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/src/ymfm_opl_provider.cpp"
     );
-    println!("cargo:rerun-if-changed=native-nuked");
-    println!("cargo:rerun-if-changed=src/native_genesis_nuked.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_nuked_ym2612.inc");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/nuked-opn2");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_nuked.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_nuked_ym2612.inc");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/mame-rf5c164");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_rf5c164.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_rf5c164.h");
@@ -316,8 +316,9 @@ fn main() {
         .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
-        .include("native-nuked/snapshot/third_party/nuked-opn2")
-        .file("src/native_genesis_nuked.cpp")
+        .include("vendor/tetorica-soundchip-native/vendor/nuked-opn2")
+        .include("vendor/tetorica-soundchip-native/wasm")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_nuked.cpp")
         .warnings(false)
         .compile("tetorica_native_nuked");
     cc::Build::new()
@@ -332,8 +333,8 @@ fn main() {
         .define("OPN2_ReadTestPin", "tetorica_nuked_OPN2_ReadTestPin")
         .define("OPN2_ReadIRQPin", "tetorica_nuked_OPN2_ReadIRQPin")
         .define("OPN2_Read", "tetorica_nuked_OPN2_Read")
-        .include("native-nuked/snapshot/third_party/nuked-opn2")
-        .file("native-nuked/snapshot/third_party/nuked-opn2/ym3438.c")
+        .include("vendor/tetorica-soundchip-native/vendor/nuked-opn2")
+        .file("vendor/tetorica-soundchip-native/vendor/nuked-opn2/ym3438.c")
         .warnings(false)
         .compile("tetorica_native_nuked_opn2");
     // Selected Mega-CD RF5C164 and the raw C ABI share one SDK decoder. The

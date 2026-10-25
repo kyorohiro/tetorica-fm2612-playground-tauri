@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "notes": [
     "Reference C++/C ABI sources and standalone targets are included for all 22 public chip IDs; each verificationScope records supported APIs and tested configurations.",
-    "Standalone CMake targets build eighteen static libraries covering all twenty-two chip IDs: YM2612, YM2203, YM2608, YM2610/YM2610B, YM2151, YM2413, Sega PSG, AY-3-8910, OKIM6258, RF5C164, the shared YM3526/YM3812/YMF262/Y8950 OPL family, Game Boy, HuC6280, NES with optional FDS, 32X PWM, DX7, SNES S-DSP and the SPC700/SPC-file player. The alternative YM2612 Nuked sources remain reference-only.",
+    "Standalone CMake targets build eighteen static libraries covering all twenty-two chip IDs: YM2612, YM2203, YM2608, YM2610/YM2610B, YM2151, YM2413, Sega PSG, AY-3-8910, OKIM6258, RF5C164, the shared YM3526/YM3812/YMF262/Y8950 OPL family, Game Boy, HuC6280, NES with optional FDS, 32X PWM, DX7, SNES S-DSP and the SPC700/SPC-file player. A nineteenth standalone library builds the alternative Nuked YM2612 engine; the twenty-two chip identifiers remain unchanged.",
     "Vendor component origins and license files are recorded by the shared source inventory, rather than copied again here."
   ],
   "chips": [
@@ -14,11 +14,12 @@
         "native/reference/tauri/native_genesis_nuked.cpp",
         "native/reference/tauri/native_genesis_nuked_ym2612.inc",
         "native/include/tetorica/ym2612.hpp",
-        "native/src/ymfm_opn_provider.cpp"
+        "native/src/ymfm_opn_provider.cpp",
+        "native/include/tetorica/nuked_ym2612.hpp"
       ],
       "status": "verified",
       "target": "tetorica_native_ym2612",
-      "verificationScope": "ymfm only, with explicit Native OPN template definitions; Nuked reference sources are not built by this target",
+      "verificationScope": "Default ymfm engine with explicit Native OPN template definitions; alternative Nuked engine has its own independently linked target and raw/native ABIs.",
       "tests": [
         "tetorica.ym2612.self_test"
       ],
@@ -38,11 +39,38 @@
         "native/reference/tauri/native_genesis_ym2612.cpp",
         "native/reference/tauri/native_genesis_ym2612.h",
         "native/include/tetorica/ym2612.hpp",
-        "native/src/ymfm_opn_provider.cpp"
+        "native/src/ymfm_opn_provider.cpp",
+        "native/include/tetorica/nuked_ym2612.hpp"
       ],
       "buildFiles": [
         "CMakeLists.txt",
         "native/CMakeLists.txt"
+      ],
+      "alternativeEngines": [
+        {
+          "id": "nuked-opn2",
+          "status": "verified",
+          "target": "tetorica_native_nuked_ym2612",
+          "alias": "tetorica::nuked_ym2612",
+          "header": "native/include/tetorica/nuked_ym2612.hpp",
+          "sourceFiles": [
+            "native/reference/tauri/native_genesis_nuked.cpp",
+            "native/reference/tauri/native_genesis_nuked_ym2612.inc",
+            "native/reference/tauri/native_genesis_ym2612.h",
+            "vendor/nuked-opn2/ym3438.c",
+            "vendor/nuked-opn2/ym3438.h",
+            "wasm/nuked_opn2_wasm.c"
+          ],
+          "licenseFiles": [
+            "LICENSE",
+            "vendor/nuked-opn2/LICENSE"
+          ],
+          "tests": [
+            "tetorica.nuked_ym2612.self_test",
+            "tetorica.nuked_colink.self_test"
+          ],
+          "verificationScope": "Unchanged pinned wrapper and C provider, per-TU OPN2 symbol prefixes, process-global YM2612 initialization via call_once, synchronous raw and Native output/control contracts, allocation-free callback paths, concurrent independent first constructions and coexistence with ymfm/PSG."
+        }
       ]
     },
     {

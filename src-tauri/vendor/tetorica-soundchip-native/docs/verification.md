@@ -263,7 +263,7 @@ This addition renders an S-DSP instrument; the separate `spc` file player was co
 - An independently extracted source ZIP built all eighteen libraries, twenty-one fixture executables and seventeen examples in Release mode. CTest passed 22/22. Every example produced 144,000 frames of 48 kHz stereo PCM16 without clipping; the SPC WAV matched the independent render exactly. The ten JavaScript reference checks and existing YM2612 WASM ABI smoke passed against the extracted releases, without a sibling checkout or chip-source download.
 - All 51 Python regression tests passed. Extended subtests require the SPC fixture and seventeenth example under Windows single-/multi-configuration layouts, reject missing/unbuilt artifacts and reject silent SPC output after execution. Source validation checked 275 snapshot records. Final source/WASM archive audits retained matching manifests, provenance and the exact companion source ZIP embedded with the existing YM2612 WASM artifact.
 
-All 22 Playground chip IDs now have standalone Native targets in their documented profiles. The alternative Nuked YM2612 engine and additional Analyzer/upstream sources retain their separate reference status. Existing WASM recipes and the YM2612-only compiled WASM release are unchanged by this Native addition.
+At this SPC verification stage, all 22 Playground chip IDs had standalone Native targets in their documented profiles; the alternative Nuked YM2612 engine was still a reference. Its subsequent standalone target is recorded below. Additional Analyzer/upstream sources retain their separate reference status. Existing WASM recipes and the YM2612-only compiled WASM release are unchanged by this Native addition.
 
 ## MSM5205 and OKIM6295 JavaScript references
 
@@ -293,3 +293,64 @@ These snapshots have not been compiled as SDK targets. They deliberately omit MA
 A standalone DX7 WASM build also succeeded. Its generated `msfa.wasm` SHA-256 matched the existing reference artifact. The initial WASM release still contains YM2612 only.
 
 The sections above record standalone Native builds and comparisons for all 22 Playground IDs; that does not establish execution of every collected WASM recipe or a Native port of every additional reference artifact. Source files, component licenses, build recipes and origin hashes remain audited separately. See [chip-specific differences](chip-differences.md) for backend behavior and integration prerequisites, including the Game Boy Native header adaptation and the remaining Nuked/Analyzer reference scope.
+
+
+## Alternative Nuked YM2612 Native target — SDK 0.1.1
+
+The 0.1.1 extension adds `tetorica::nuked_ym2612` and
+`<tetorica/nuked_ym2612.hpp>` without adding a Playground chip identifier.
+Nineteen product static libraries and twenty-four public aliases now cover the
+same twenty-two chip IDs plus this alternative engine. The Native wrapper,
+policy include, shared ABI header, Browser bridge, C provider/header and LGPL
+license are byte-identical to the preceding SDK snapshot.
+
+The production target has exactly two translation units: the unchanged C++14
+wrapper and upstream C provider (C11 minimum). The eight `OPN2_*` provider
+symbols receive per-source prefixes, and supported `-fwrapv` applies only to
+that C source. Compiler records and the linked archive verified the C/C++
+selection, one definition of each prefixed symbol, no unprefixed OPN2 symbols,
+and no production allocation-audit hooks. Platform threads support the
+wrapper's existing process-global `std::call_once` YM2612 initialization.
+
+Local macOS Apple Silicon / Apple Clang 17 Release validation built all nineteen
+libraries and passed all twenty-four CTest entries from twenty-three fixture
+executables, with assertions enabled. The imported Nuked fixture preserves its
+PCM/status/IRQ event CLI and Native six-channel/DAC/CSM, retained Stop/reset,
+clock/mute, authored latch/state and independent-instance checks. Added checks
+cover rate boundaries and the shared 528-byte ABI offsets, raw source-rate
+calculation, zero-length generation, one-frame/block continuity, zero-valued
+internal-envelope arrays, non-advancing raw observations and reset equivalence.
+A test-only wrapper object audits C malloc/free as well as C++ new/delete;
+tested rendering/control paths recorded no allocation or free.
+
+The separate coexistence fixture links the ordinary ymfm YM2612, Nuked and
+Sega PSG providers together. Eight workers concurrently perform the first raw
+and Native constructions using independently owned handles and obtain identical
+raw PCM. Subsequent Nuked writes/reset/Stop preserve an independently compared
+regular YM2612 output while PSG also renders audible PCM. This tests cold
+construction and per-handle isolation, not concurrent access to one handle.
+
+All eighteen offline WAV examples produced 144,000 frames of 48 kHz stereo
+PCM16 without clipping. The new `tetorica_nuked_genesis_wav` renders the same
+original melody, bass and PSG noise sketch through Nuked FM plus separate PSG;
+its channel peaks were approximately 0.152985. Fixed gains and edge fades are
+example policy, not SDK-wide normalization or a motherboard mix model.
+
+All fifty-one Python release-audit regression tests passed. Their existing
+single-/multi-configuration and Windows path subtests now require both Nuked
+fixtures and the eighteenth example, reject missing/unbuilt targets and reject
+silent example output after execution. Source validation checked 276 snapshot
+records, retaining every vendor byte and license. This record is local SDK
+validation; source-archive extraction, application adoption, multi-platform CI,
+real-device listening and hard real-time deadlines are separate checks. Existing
+WASM source recipes and the previously compiled YM2612 artifact are unchanged.
+
+The first SDK 0.1.1 matrix run, `40174420834`, exposed a test-only portability
+failure on Linux x64 and ARM64: the allocation macros were active while
+libstdc++'s `<stdlib.h>` declared its `using std::malloc/free` forwards. The
+production library compiled; the instrumented test object failed. A small
+test-only `nuked_audit.cpp` now includes `<stdlib.h>` before the unchanged Native
+wrapper, keeping the standard declarations outside the audit macros. The
+production source selection, vendor/core bytes and exported APIs are unchanged.
+Local Release rebuild and all twenty-four CTest entries pass with this shim;
+the corrected multi-platform run is recorded separately after completion.
