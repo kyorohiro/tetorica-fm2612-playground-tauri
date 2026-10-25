@@ -390,9 +390,11 @@ fn main() {
         .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_nes.cpp")
         .warnings(false)
         .compile("tetorica_native_nes");
-    println!("cargo:rerun-if-changed=native-snes");
-    println!("cargo:rerun-if-changed=src/native_genesis_snes.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_snes.h");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/snes-spc");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_snes.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_snes.h");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_spc.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_spc.h");
     // Selected and independent Game Boy instances use the same SDK adapter
     // and APU core, compiled once in the existing archive.
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/mame-gameboy");
@@ -428,6 +430,9 @@ fn main() {
         .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_huc6280.cpp")
         .warnings(false)
         .compile("tetorica_native_huc6280");
+    // SNES instruments and complete SPC700 playback share one SDK S-DSP.
+    // Keep both adapters and the four core files in the existing archive;
+    // compiling two standalone SDK targets here would duplicate the DSP.
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
@@ -436,17 +441,15 @@ fn main() {
         .flag_if_supported("-fwrapv")
         .flag_if_supported("-fno-strict-aliasing")
         .flag_if_supported("-ffp-contract=off")
-        .include("native-snes/snapshot/third_party/snes-spc/snes_spc")
-        .file("src/native_genesis_snes.cpp")
-        .file("src/native_genesis_spc.cpp")
-        .file("native-snes/snapshot/third_party/snes-spc/snes_spc/SNES_SPC.cpp")
-        .file("native-snes/snapshot/third_party/snes-spc/snes_spc/SNES_SPC_misc.cpp")
-        .file("native-snes/snapshot/third_party/snes-spc/snes_spc/SNES_SPC_state.cpp")
-        .file("native-snes/snapshot/third_party/snes-spc/snes_spc/SPC_DSP.cpp")
+        .include("vendor/tetorica-soundchip-native/vendor/snes-spc/snes_spc")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_snes.cpp")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_spc.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/snes-spc/snes_spc/SNES_SPC.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/snes-spc/snes_spc/SNES_SPC_misc.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/snes-spc/snes_spc/SNES_SPC_state.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/snes-spc/snes_spc/SPC_DSP.cpp")
         .warnings(false)
         .compile("tetorica_native_snes");
-    println!("cargo:rerun-if-changed=src/native_genesis_spc.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_spc.h");
     // The selected 32X and independent extra PWM instances share this SDK
     // wrapper/core. Keep their existing archive and host-side ownership.
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_pwm.cpp");

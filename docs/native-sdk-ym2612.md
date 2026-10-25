@@ -1,7 +1,7 @@
-# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280／Game Boy／NES＋FDS／DX7
+# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280／Game Boy／NES＋FDS／DX7／SNES／SPC
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、NES＋FDS、DX7と
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、NES＋FDS、DX7、SNES／SPCと
 OPL系4種類（YM3526／YM3812／YMF262／Y8950）をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
 この手順書は最初のYM2612移行時のファイル名を保持し、その後の音源の移行も記録しています。
@@ -60,6 +60,9 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | 選択中NES＋FDS／追加生成NESの共通接続とAPU／FDS移植実装 | `native/reference/tauri/native_genesis_nes.cpp`と対応ヘッダー |
 | 選択中／追加生成DX7の共通Native接続 | `native/reference/tauri/native_genesis_dx7.cpp`と対応ヘッダー |
 | 共通MSFAの24入力と6 Native override | `vendor/msfa/`と`native/reference/overrides/msfa/`からCargoの出力先へコピーして組み立て |
+| 選択中／追加生成SNES S-DSPの共通接続 | `native/reference/tauri/native_genesis_snes.cpp`と対応ヘッダー |
+| 独立追加SPC700ファイルプレーヤーの接続 | `native/reference/tauri/native_genesis_spc.cpp`と対応ヘッダー |
+| SNES／SPC共通S-DSPとSPC700コア | `vendor/snes-spc/snes_spc/`の`SPC_DSP.cpp`、`SNES_SPC.cpp`、`SNES_SPC_misc.cpp`、`SNES_SPC_state.cpp`と対応ヘッダー |
 | DOS PC／MSX Audioの選択中OPL系接続 | `native/reference/tauri/native_genesis_opl.cpp` |
 | OPL系4種類の独立追加接続 | `native/reference/tauri/native_genesis_extra_opl.cpp` |
 | 選択中／追加Y8950のメモリーinterface | `native/reference/tauri/native_genesis_y8950_memory.h` |
@@ -173,6 +176,22 @@ note状態とfeedback履歴を初期化する修正があります。オブジ�
 155バイト音色のコピー、16音のslot制御と内部44.1 kHzの生成・device rate変換は既存接続のままです。
 Rustの音色所有・転送予約、Keyboard lease・owner、16 slotの受入れ制御、PCM、Stop、Mixer／FXと機種APIはアプリ側に残ります。
 
+SNES S-DSPの選択中／独立追加接続とSPC700ファイルプレーヤーも、同じ固定SDKからビルドします。
+2つの接続cppと2 ABI header、SNES-SPCの24ファイルは旧コピーとbyte一致します。
+既存の`tetorica_native_snes` archiveに接続2個とコア4個の計6翻訳単位を維持し、
+共有`SPC_DSP.cpp`は一度だけコンパイルします。SDK CMakeの2つの独立ライブラリーを追加せず、
+`SPC_Filter.cpp`や別C ABIの`spc.cpp`／`dsp.cpp`も組み込みません。
+既存のarchive順序、C++17・O2・MSVC `/EHsc`・`-fwrapv`・`-fno-strict-aliasing`・`-ffp-contract=off`を保持します。
+
+SNESのRAMアップロードは各コア所有の64 KiBへ即時コピーします。timelineは初期RAM／DSPとイベント列を借用し、
+Rustが検証済みの不変`Arc<Timeline>`を再生・pause・完了後も保持し、置換／global Stop／破棄時にcallback外で回収します。
+Native StopはRAM・設定を保持してgate／履歴を消すため、保持したecho RAMが鳴る場合があります。resetはRAMも消します。
+SPCは読込みでCPU／RAM／DSP状態をコア内へコピーし、Rustが元ファイル全体を保持してStop／絶対seek用のコアを再構築します。
+生成・load・最大16,000 Nativeフレーム単位のseek・破棄はcontrol側で行い、準備済みのコアを単一の音声ownerへ公開・回収します。
+pauseは巻き戻さず、mute後も128フレームの既存PCMやechoが残り得る従来の動作です。
+観測用snapshotは保存状態ではなく、DSPイベントの借用領域はコア変更を除外して読み出します。
+Rustの所有・予約・予算・owner／group・Mixer／FXとJS APIは変更しません。
+
 Y8950は512個の可変4 KiBページを借用し、最大2 MiBのADPCM-B RAMを扱います。
 SDKメモリーhelperはポインター配列とinterfaceを保持し、RAMのバイト列自体は所有しません。
 RustのArcによる所有、control側でのCOW準備、寿命・回収・予算管理を引き継ぎます。
@@ -209,7 +228,7 @@ X68000の機種用接続、Rust側のサンプル所有・予約・予算管理�
 追加OKI接続はサンプルをコピーせず借用し、Rustがその参照の所有・寿命を管理します。
 OKIの素材やサンプル転送の管理をSDKへ移す変更ではありません。
 
-上記以外の音源の接続とソースは従来の同梱スナップショットを使います。
+これで通常の22音源IDのSDK参照が揃います。代替Nuked YM2612の別variantと、機種用の補助処理はアプリ側に残ります。
 ブラウザー／npmのWASM配布やPlaygroundの`dist/`は、このSDK取り込みで更新しません。
 
 従来の`src-tauri/src/native_genesis_ym2203.cpp`／`.h`と`src-tauri/native-ym2203/`は、
@@ -258,6 +277,10 @@ DX7の旧接続と`src-tauri/native-dx7/`の32ファイルのスナップショ�
 CargoはSDKの`vendor/msfa/`と6 Native overrideのディレクトリ、接続cpp／headerを監視し、
 Rustの埋め込み消費元がない旧`native-dx7/`とローカル接続のソース監視を外します。
 旧コピーや`sync_native_dx7.py`だけでは実際のSDK入力を更新しません。SDKの固定配布物へ直接変更を加えません。
+SNES／SPCの旧接続と`src-tauri/native-snes/`の34件の固定記録、LGPLライセンス・由来・syncスクリプトも保持します。
+CargoはSDKの`vendor/snes-spc/`と2接続cpp／headerを監視し、Rustの埋め込み消費元がない旧`native-snes/`とローカル接続のソース監視を外します。
+旧コピーや`sync_native_snes.py`だけでは実際のSDK入力を更新しません。
+配布物を改変して再リンクする場合の実入力と手順は[NATIVE-SOURCES.md](../NATIVE-SOURCES.md)を参照してください。
 
 ## 照合と更新
 
@@ -963,3 +986,37 @@ MCPのローカルTCP bindのため初めから制限外で実行し、sandbox�
 直前の全5構成成功run `40168462256`はこのDX7移行を含みません。
 今回のcommit／push、新しいCI、sanitizer、実機の音声出力・ノイズ・UI操作やインストール後の起動は未実施です。
 リアルタイム期限や処理速度の保証もこの確認範囲に含まれません。
+
+## SNES／SPC移行の検証
+
+2026-10-25。選択中／独立追加SNES S-DSPと独立追加SPC700ファイルプレーヤーの接続・共通コアを固定SDKへ切り替えました。
+着手前のTauriは`469200109298ad3ba80ca1f0dca7ee0063b0eaa5`でclean、直前のDX7移行までコミット済みです。
+接続cpp／headerの4ファイルとSNES-SPC 24ファイルはbyte一致し、旧34件のsnapshot pinとライセンスは保持しています。
+SDKの版・374ファイル・取り込み記録とBrowser／npmのWASMは変更していません。
+
+macOS ARM64／Clang・Nodeで、音声デバイスを開かずに旧／SDKと実配布WASM／Workletへ比較しました。
+
+| 対象 | 固有Native入力数 | Nativeフレーム | 実WASM比較回数 | 比較フレーム |
+| --- | ---: | ---: | ---: | ---: |
+| SNES（選択中と追加生成の重複を除く） | 75 | 761,856 | 267 | 2,727,936 |
+| 独立追加SPC | 84 | 688,128 | 252 | 2,064,384 |
+| 合計 | 159 | 1,449,984 | 519 | 4,792,320 |
+
+選択中SNESの42入力・442,368フレームは追加側75入力の部分集合です。追加側は1入力を3通りのblock分割へ比較し、
+Native入力数とWASM比較回数を区別します。全入力の旧／SDK stdout／stderrはbyte一致し、実WASM比較の最大差は0でした。
+既定checkerの再実行、fixture指定と自己試験は集計へ加算しません。
+実配布WASM SHA-256は`cbbe06819574249217f35da16eebd45a53274e53251f31242e7dd407b03d0d70`です。
+
+- SNESの既存／SDK fixtureを旧／SDKで2種類の自己試験へ実行し、8回とも成功しました。公開state ABIは152バイト、ローカルの確保量は67,280バイト。コピーRAM・全体reset・境界・安定したread-only view、8声と保護gate、保持Stop・独立性と借用timelineのpause／完了／再開を確認し、render／制御中allocation／freeは0でした。
+- SPCの28シナリオを3出力rateで確認し、実WASMでPCMと810 snapshot・358,056件の順序付きDSP書込みを照合しました。SDK強化fixtureも旧／SDKで成功し、56バイトのstate ABI・16バイトのevent ABI、ローカルの確保量204,624バイト、コピーload・control側seek・pause・独立mute・非進行観測・bounded observer／overflow・失敗／reloadとrender中allocation／free 0を確認しました。
+- 毎フレームのCPU／DSP／resamplerのprivate全状態のdump比較ではありません。合成SPC／BRR素材を使い、外部ROMやゲーム音源を追加していません。
+- 3本の既定checkerが固定SDKから成功し、SNESの10入力／SPCの15入力のハッシュをコンパイラー依存列と実ファイルへ照合しました。inline fixture／out指定は成功し、不正18形式をコンパイル前に拒否。指定fixtureを保持しました。
+- 実Cargo archiveの6 object、35個のC ABI exportの各1回の定義、SDK側headerの解決と実入力の監視を確認しました。共有S-DSPを追加せず、旧スナップショットの個別license／対応ソースresource監視は保持しました。
+
+`npm test`はPython 22件・Node 31件成功、Rustは723成功・0失敗・4件ignoredでした。
+MCPのTCP bindのため初めから制限外で実行し、sandbox内失敗はありません。
+22 mode・604,032フレーム・88 Run／Stop、3混合構成・7単独音源と受入れ／16台制限も成功し、
+17台目を拒否して両制限試験のStop後予約予算が0へ戻りました。両runnerはexit code 0、`deviceOpened: false`です。
+直前の全5構成成功run `40168462256`はDX7も今回のSNES／SPC移行も含みません。
+対応ソースZIPの照合後にcommit／pushし、DX7を含む5構成CIで確認する予定です。
+新しいタグやreleaseは作成しません。実機聴音・UI操作、インストール後の起動とリアルタイム期限は別の確認です。

@@ -84,13 +84,29 @@ is retained; post-Panic replay is an intentional correction, not blanket
 byte-equivalence with the old snapshot. Rust retains patch ownership, leases,
 slot admission, scheduling, mixing and FX. Legacy source pins, licenses and
 refresh scripts remain intact; updating them alone does not update the SDK.
+Selected and independent SNES S-DSP instruments and the independent SPC700
+file player use the SDK's `native/reference/tauri/native_genesis_snes.cpp`,
+`native_genesis_spc.cpp` and matching headers, with
+`vendor/snes-spc/snes_spc/`. Both adapters and the four existing core translation
+units (`SNES_SPC.cpp`, `SNES_SPC_misc.cpp`, `SNES_SPC_state.cpp`, `SPC_DSP.cpp`)
+are byte-identical to the legacy copies. They remain six translation units in
+the single existing `tetorica_native_snes` archive; `SPC_DSP.cpp` is compiled
+once, without adding the SDK's separate CMake libraries. C++17/O2, MSVC
+`/EHsc`, `-fwrapv`, `-fno-strict-aliasing` and `-ffp-contract=off` are retained.
+Each instrument owns copied 64 KiB RAM; its timeline borrows immutable storage
+retained by the Rust host. SPC loading copies CPU/RAM/DSP state from the file
+into the core, while Rust
+retains the original bytes for Stop/seek reconstruction, control-side preparation
+and callback handoff/retirement. Legacy snapshots, source pins and licenses stay
+intact; refreshing those snapshots alone does not change the SDK build inputs.
 Master System/MSX machine adapters and their `NativeOpllCore` helper, selected
 MSX AY resampling, the local `NativePsgCore` helper and Genesis mixing/DC/gains
 remain local;
 shared OPL/PCM is compiled
 once with the existing archive order and common ADPCM support.
-Other application adapters retain their existing
-source snapshots. The
+All twenty-two ordinary sound-chip IDs now consume the SDK at these boundaries;
+the alternative Nuked YM2612 implementation and machine-specific helpers retain
+their application sources. The
 [SDK adoption guide](docs/native-sdk-ym2612.md) lists the
 consumed paths, pinned archive hash and deliberate offline update procedure.
 A separate SDK checkout or sound-core download is not required to rebuild this
@@ -102,8 +118,9 @@ additional instances borrow immutable sparse ROM pages prepared and retained
 by the Rust host. ROM data preparation and ownership remain in the application.
 
 Nuked OPN2 and SNES-SPC are **LGPL-2.1-or-later**. Their licenses, copyright
-notices, provenance and corresponding modified sources are under
-`src-tauri/native-nuked/` and `src-tauri/native-snes/`. These components are
+notices and provenance are retained under `src-tauri/native-nuked/` and
+`src-tauri/native-snes/`; the consumed SNES/SPC core and adapters are under
+`src-tauri/vendor/tetorica-soundchip-native/` as described above. These components are
 statically linked. SNES-SPC supplies both the CPU-free S-DSP instruments and the
 full SPC700 file player. The application sources and build material are provided so
 that you can modify either library and rebuild/relink the application with it.
@@ -117,8 +134,10 @@ engineering to debug those modifications as permitted by LGPL 2.1 section 6.
 2. Install Node.js 22 or later, Python 3, Rust (CI uses 1.91.1), a C/C++17
    compiler and the platform dependencies listed below.
 3. Modify the actual source consumed by `src-tauri/build.rs`:
-   Nuked sources under `src-tauri/native-nuked/`, or
-   `src-tauri/native-snes/snapshot/third_party/snes-spc/snes_spc/` for SNES.
+   Nuked sources under `src-tauri/native-nuked/`; for SNES/SPC, the core under
+   `src-tauri/vendor/tetorica-soundchip-native/vendor/snes-spc/snes_spc/`
+   and, when needed, `native/reference/tauri/native_genesis_snes.cpp` /
+   `native_genesis_spc.cpp` and matching headers within that same SDK directory.
    Do not run a source refresh command after editing; it would replace your edits.
 4. Run `npm ci`, then `npm run build -- -- --locked` to create the application
    bundle. This prepares the optional Audify runtime and matching source ZIP.
@@ -126,9 +145,15 @@ engineering to debug those modifications as permitted by LGPL 2.1 section 6.
    to test the modified sound core without the distributor's signing key.
 
 The exact Nuked source paths and its build recipe are documented in
-`src-tauri/native-nuked/README.md`; the standalone SNES rebuild recipe is
-`src-tauri/native-snes/rebuild.sh`. Snapshot verification checks the distributed
-sources; a deliberate modification will of course change the recorded hashes.
+`src-tauri/native-nuked/README.md`. `src-tauri/native-snes/rebuild.sh` rebuilds the
+legacy reference snapshot; it does not select the current application's SDK
+inputs. Cargo compiles the modified consumed sources directly, and the normal
+pre-build step captures them in a newly generated corresponding-source ZIP.
+Fixed-distribution verification (`import_soundchip_sdk.py --check` and
+`check_native_sources.py`) will report a deliberate SDK modification as a hash
+mismatch. The normal build does not require those verification commands; retain
+the original source pins and import receipt instead of rewriting provenance to
+make a modified tree appear identical to the distributed SDK.
 
 Windows uses the Visual Studio C++ Build Tools and WebView2. macOS uses Xcode
 Command Line Tools. Ubuntu 24.04 uses `libwebkit2gtk-4.1-dev`,

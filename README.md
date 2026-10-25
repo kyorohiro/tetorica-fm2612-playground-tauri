@@ -45,7 +45,7 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 
 ## Native音源SDK
 
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、NES＋FDS、DX7とOPL系4種類
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、NES＋FDS、DX7、SNES／SPCとOPL系4種類
 （YM3526／YM3812／YMF262／Y8950）は、自己完結した`tetorica-soundchip-native`のソース配布を
 `src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
 取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
@@ -67,9 +67,10 @@ PC Engineの選択中HuC6280と独立追加接続もSDKを使い、コアの直�
 Game Boyの選択中／独立追加接続と共通APUもSDKを使い、既存のarchive・Rustの予約・PCM・Stop制御を維持します。
 NES＋FDSの選択中／独立追加接続と、その中のAPU／FDS移植実装もSDKを使い、既存の1翻訳単位とRustのDMC転送payload所有・予約・予算管理を維持します。
 DX7の選択中／独立追加接続とMSFAもSDKを使います。24共有ファイルと6 Native overrideをCargoの出力先へコピーして組み立て、Panic時は事前確保済みのnote状態とfeedback履歴を割当てなしで初期化します。
+SNESの選択中／独立追加S-DSP接続とSPC700ファイルプレーヤーもSDKを使います。2接続と4コアソースを既存の同一archiveへ組み込み、共有S-DSPを一度だけコンパイルします。RAM／timeline／SPCファイルの所有、準備・回収と予算管理はRust側に残ります。
 既に固定しているSDK `0.1.0`を使い、共通providerは一度だけ組み込みます。
 Genesisのgain・DC除去・PSG混合、機種用接続と`NativePsgCore`のレート変換、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
-他の音源は従来の同梱スナップショットを使います。
+これで通常の22音源IDのSDK参照が揃います。代替Nuked YM2612と、機種用の補助処理は従来のアプリ側実装を使います。
 固定した版と更新手順、共有providerの範囲は[Native SDKの取り込み](docs/native-sdk-ym2612.md)を参照してください。
 
 ## DX7
@@ -223,6 +224,7 @@ SNESではS-DSPをNativeで動かし、8声のBRR楽器・サンプルRAM・ADSR
 `snes`／`useSoundChip('snes')`、BRRアップロード、Main／Worker、Keyboard／Operators、
 キャプチャ済みDSP／RAM timelineの準備・再生・停止・状態取得に対応します。
 StopはBRR・RAMと設定を保持して発音を止めます。SPC700 CPUを実行するファイルプレーヤーは、別の`createSoundChip('spc')`で追加できます。
+両接続とSNES-SPCコアは固定SDKからビルドします。SPCの読込み・seek・生成／破棄はcontrol側で準備し、音声threadへ渡す既存の所有・回収方式を維持します。
 3モードとも共通ミキサー・FX／liveFx・最終出力monitor／録音へ接続し、Genesis音源は生成しません。
 Game Boy／HuC6280のBSDライセンス、SNES_SPCのLGPL-2.1とソース・ビルド手順を同梱しています。
 
