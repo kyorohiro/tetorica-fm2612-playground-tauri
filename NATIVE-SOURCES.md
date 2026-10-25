@@ -58,6 +58,16 @@ the existing `tetorica_native_gameboy` archive with C++17/O2, MSVC `/EHsc`,
 `-fwrapv`, `-fno-strict-aliasing` and `-ffp-contract=off`; Rust scheduling, PCM,
 Stop controls and mixing remain in the application. Legacy snapshots, source
 pins and license resources are retained.
+Selected NES+FDS and independent NES instances use the SDK's
+`native/reference/tauri/native_genesis_nes.cpp` and matching header. These two
+inputs are byte-identical to the old copies; the adapter already contains the
+ported APU/FDS implementation. It remains one translation unit in the existing
+`tetorica_native_nes` archive, with C++17/O2, MSVC `/EHsc`, `-fwrapv`,
+`-fno-strict-aliasing` and `-ffp-contract=off`. The separate
+`vendor/tetorica-nes/nes_core.cpp` is not additionally linked. Each instance
+retains its own 64 KiB DMC RAM; Rust retains upload-payload ownership,
+scheduling, lifetime, budgets and mixing. Legacy JS snapshots, source pins and
+license resources remain intact.
 Master System/MSX machine adapters and their `NativeOpllCore` helper, selected
 MSX AY resampling, the local `NativePsgCore` helper and Genesis mixing/DC/gains
 remain local;

@@ -1,7 +1,7 @@
-# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280／Game Boy
+# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280／Game Boy／NES＋FDS
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boyと
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、NES＋FDSと
 OPL系4種類（YM3526／YM3812／YMF262／Y8950）をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
 この手順書は最初のYM2612移行時のファイル名を保持し、その後の音源の移行も記録しています。
@@ -57,6 +57,7 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | 接続が直接includeするHuC6280コア | `vendor/mame-huc6280/huc6280.cpp`と対応ヘッダー |
 | 選択中／追加生成Game Boyの共通Native接続 | `native/reference/tauri/native_genesis_gameboy.cpp`と対応ヘッダー |
 | 共通Game Boy APU | `vendor/mame-gameboy/gameboy_apu.cpp`と対応ヘッダー |
+| 選択中NES＋FDS／追加生成NESの共通接続とAPU／FDS移植実装 | `native/reference/tauri/native_genesis_nes.cpp`と対応ヘッダー |
 | DOS PC／MSX Audioの選択中OPL系接続 | `native/reference/tauri/native_genesis_opl.cpp` |
 | OPL系4種類の独立追加接続 | `native/reference/tauri/native_genesis_extra_opl.cpp` |
 | 選択中／追加Y8950のメモリーinterface | `native/reference/tauri/native_genesis_y8950_memory.h` |
@@ -148,6 +149,13 @@ APU headerは従来Native版の状態観測用`NativeGameboyAccess` friendを含
 C++17・O2・MSVC `/EHsc`・`-fwrapv`・`-fno-strict-aliasing`・`-ffp-contract=off`とリンク順序を維持します。
 Rustの予約・owner・寿命・予算、PCM、Stop／reset・試奏、Mixer／FXとWebView／JS APIはアプリ側に残ります。
 
+選択中NES＋FDSと独立追加NESの共通Native接続も固定SDKを使います。
+接続cpp／headerは旧コピーとbyte一致し、cpp内に従来のJSNES／FDSからのC++移植実装を含みます。
+既存の`tetorica_native_nes` archive内の1翻訳単位、C++17・O2・MSVC `/EHsc`・`-fwrapv`・`-fno-strict-aliasing`・`-ffp-contract=off`とリンク順序を維持します。
+SDKの`vendor/tetorica-nes/nes_core.cpp`を追加でコンパイルする変更ではありません。
+各インスタンスの64 KiB DMC RAMとFDS波形・変調表を維持し、アップロードをRAMへコピーします。
+RustのDMC転送payload所有・予約、owner・寿命・台数・予算と回収、PCM、Stop／reset・試奏、Mixer／FXと機種APIはアプリ側に残ります。
+
 Y8950は512個の可変4 KiBページを借用し、最大2 MiBのADPCM-B RAMを扱います。
 SDKメモリーhelperはポインター配列とinterfaceを保持し、RAMのバイト列自体は所有しません。
 RustのArcによる所有、control側でのCOW準備、寿命・回収・予算管理を引き継ぎます。
@@ -226,6 +234,9 @@ HuC6280の旧接続・スナップショット・固定原典も比較用に保�
 Game Boyの旧接続・スナップショット・固定原典とライセンスの同梱先も保持します。
 Cargoは実際のSDK接続cpp／headerと`vendor/mame-gameboy/`を監視し、実消費元のない旧スナップショットのソース監視を外します。
 旧コピーや`sync_native_gameboy.py`だけでは実際のSDK入力を更新しません。READMEや`PINNED`等の固定原典は変更しません。
+NESの旧接続とJS原典スナップショット、`core.json`／`sources.json`、READMEとライセンスの同梱先も保持します。
+CargoはSDK接続cpp／headerを監視し、実消費元のない旧スナップショットのソース監視を外します。
+旧コピーや`sync_native_nes.py`だけでは実際のSDK入力を更新しません。
 
 ## 照合と更新
 
@@ -305,6 +316,8 @@ node scripts/check_native_huc6280.mjs
 node scripts/check_native_extra_huc6280.mjs
 node scripts/check_native_gameboy.mjs
 node scripts/check_native_extra_gameboy.mjs
+node scripts/check_native_nes.mjs --wasm
+node scripts/check_native_extra_nes.mjs
 node scripts/check_native_msx.mjs
 node scripts/check_native_extra_ym2413.mjs
 node scripts/check_native_extra_ay8910.mjs
@@ -831,4 +844,33 @@ MCPのローカルTCP bindのため、今回は初めから制限外で実行し
 追加音源混合試験も3混合構成・7単独音源、受入れ／16台制限で17台目の拒否が成功し、
 受入れ・台数制限の双方でStop後の予約予算が0へ戻りました。runnerはexit code 0、`deviceOpened: false`でした。
 直前の全5構成成功run `40162092207`は、今回のGame Boy参照切替を含みません。
-今回はローカル実装・検証までで、Game Boy差分のcommit／push、新しいCIとsanitizerは未実施です。実機の音声出力も別の確認です。
+このGame Boyローカル検証終了時点ではcommit／push、新しいCIとsanitizerは未実施でした。
+その後、Game Boy差分は`407a75b3...`へcommit済みです。Game Boyを含む新しいCIと実機の音声出力は別の確認です。
+
+## NES＋FDS移行の検証
+
+共通Native接続とAPU／FDS移植実装を含むcpp、およびC ABI headerは旧コピーとbyte一致します。
+macOS ARM64／Clang・Nodeで旧／SDKを別々にコンパイルし、同じ入力のstdoutのbyte一致を確認してから実配布WASMとJS参照を比較しました。
+
+| 対象 | Native入力数（suite内） | Nativeフレーム | 実WASM比較回数 | 比較フレーム |
+| --- | ---: | ---: | ---: | ---: |
+| 選択中NES＋FDS | 72 | 710,784 | 72 | 710,784 |
+| 追加NES | 81 | 784,512 | 243 | 2,353,536 |
+
+選択中の72入力は追加側81入力の部分集合で、output rate・base clock・frame数・FDS設定・命令列SHAとPCMのSHAで重複を確認しています。
+延べ153入力・1,495,296フレームに対し、重複を除いた固有Native入力は81件・784,512フレームです。
+追加側の各入力を3通りのWorklet block分割で比較し、実WASM比較は計315回・3,064,320フレームで差0でした。JS参照との差も0です。
+比較回数や既定コンパイル経路の再確認を、固有Native入力の数へ加算していません。
+
+- Tauriの既存fixtureとSDK既存の検証fixtureを旧／SDKへ実行し、rate／base clock／region境界、64 KiB入力コピーと不正RAM転送のrollback、DMCのwrap／IRQ、他声のgate操作による最終バイトのPCM・寿命保護、FDS波形／変調／I/O gate、6声のmute中の進行と声別gate分離が成功しました。
+- 公開state ABIは400バイト、Native本体の確保量は81,584バイト。StopのRAM／波形／clock保持、reset後の64 KiB全RAMの0読出しとclock／mute保持、観測readと独立インスタンスを確認し、render中のallocation／freeは0でした。これらは別の自己試験で、毎フレームのprivate全状態・全RAMやWASM内部状態を比較したものではありません。
+- 既定のSDKコンパイル経路2本と実行ファイルをinline指定する経路が成功し、選択中の比較は`--wasm`を明示しました。不正な`--fixture`の6形式をコンパイル前に拒否し、入力のパスとハッシュも記録しました。
+- 既存のメモリーコピー診断は旧／SDKの双方で転送条件とallocation／free 0を確認しました。時間値の一致や速度同等は主張せず、PCM比較数へ加算していません。
+
+`npm test`は31／31成功。Rust全試験は723成功・0失敗・明示実行用4件ignoredでした。
+MCPのローカルTCP bindのため、今回は初めから制限外で実行し、sandbox内の失敗や製品修正はありません。
+再生ライフサイクルは22 mode、604,032フレーム、88 Run／Stopが成功し、runnerはexit code 0、`deviceOpened: false`でした。
+追加音源混合試験も3混合構成・7単独音源、受入れ／16台制限で17台目の拒否が成功し、
+受入れ・台数制限の双方でStop後の予約予算が0へ戻りました。runnerはexit code 0、`deviceOpened: false`でした。
+直前の全5構成成功run `40162092207`は、Game Boyと今回のNES参照切替を含みません。
+今回はローカル実装・検証までで、NES差分のcommit／push、新しいCIとsanitizerは未実施です。実機の音声出力も別の確認です。

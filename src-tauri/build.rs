@@ -322,9 +322,10 @@ fn main() {
         dx7.file(format!("native-dx7/{source}.cc"));
     }
     dx7.warnings(false).compile("tetorica_native_dx7");
-    println!("cargo:rerun-if-changed=native-nes");
-    println!("cargo:rerun-if-changed=src/native_genesis_nes.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_nes.h");
+    // The SDK adapter contains the ported APU/FDS core. Selected and
+    // independent instances share this one compilation unit and archive.
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_nes.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_nes.h");
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
@@ -333,7 +334,7 @@ fn main() {
         .flag_if_supported("-fwrapv")
         .flag_if_supported("-fno-strict-aliasing")
         .flag_if_supported("-ffp-contract=off")
-        .file("src/native_genesis_nes.cpp")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_nes.cpp")
         .warnings(false)
         .compile("tetorica_native_nes");
     println!("cargo:rerun-if-changed=native-snes");
