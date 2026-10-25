@@ -845,7 +845,7 @@ MCPのローカルTCP bindのため、今回は初めから制限外で実行し
 受入れ・台数制限の双方でStop後の予約予算が0へ戻りました。runnerはexit code 0、`deviceOpened: false`でした。
 直前の全5構成成功run `40162092207`は、今回のGame Boy参照切替を含みません。
 このGame Boyローカル検証終了時点ではcommit／push、新しいCIとsanitizerは未実施でした。
-その後、Game Boy差分は`407a75b3...`へcommit済みです。Game Boyを含む新しいCIと実機の音声出力は別の確認です。
+その後、Game Boy差分は`407a75b3...`へcommit済みです。NES＋FDSと合わせた後続CIの結果は末尾に記録します。実機の音声出力は別の確認です。
 
 ## NES＋FDS移行の検証
 
@@ -873,4 +873,35 @@ MCPのローカルTCP bindのため、今回は初めから制限外で実行し
 追加音源混合試験も3混合構成・7単独音源、受入れ／16台制限で17台目の拒否が成功し、
 受入れ・台数制限の双方でStop後の予約予算が0へ戻りました。runnerはexit code 0、`deviceOpened: false`でした。
 直前の全5構成成功run `40162092207`は、Game Boyと今回のNES参照切替を含みません。
-今回はローカル実装・検証までで、NES差分のcommit／push、新しいCIとsanitizerは未実施です。実機の音声出力も別の確認です。
+このNESローカル検証終了時点ではcommit／push、新しいCIとsanitizerは未実施でした。
+その後、NES差分は`a70e86d2061349a396de7e4816a5438fea5dcb4f`へcommit／push済みです。Game Boyと合わせた後続CIの結果は次節に記録します。実機の音声出力は別の確認です。
+
+## Game Boy／NES＋FDS移行後の5環境CI — 全5構成成功
+
+[Build Desktop — run 40168462256](https://github.com/kyorohiro/tetorica-fm2612-playground-tauri/actions/runs/40168462256)を、
+mainのコミット`a70e86d2061349a396de7e4816a5438fea5dcb4f`から`workflow_dispatch`で手動実行しました。
+Game Boyの共通Native接続／APUと、NES＋FDSの共通接続／APU／FDS実装のSDK参照切替を含みます。
+attempt 1は`completed`／`success`で終了し、全5ジョブの検証とインストーラービルドが成功しました。CIのためのコード修正は不要でした。
+アプリ版は`0.90.1`のままで、新しいタグやドラフトリリース・一般公開は作成していません。
+
+| 構成 | ソース照合・npm・Cargo・再生／混合の検証 | インストーラービルド |
+| --- | --- | --- |
+| macOS ARM64 | 成功 | 成功（DMG） |
+| macOS x86_64 | 成功 | 成功（DMG） |
+| Windows x86_64 | 成功 | 成功（NSIS） |
+| Linux ARM64 | 成功 | 成功（DEB／AppImage） |
+| Linux x86_64 | 成功 | 成功（DEB／AppImage） |
+
+全5構成の検証JSONを取得・監査し、検証アーティファクトZIPのdigestもGitHubの記録と照合しました。
+
+- `npm test`のPython 22件とNode 31件が全5構成で成功。CargoはWindowsが726成功・0失敗・3件ignored、ほか4構成が723成功・0失敗・4件ignoredでした。
+- SDK374ファイルを含む22件の固定記録と、対応ソースZIP1,796ファイルの照合が成功しました。
+- Game Boy／NESを含む22 mode、604,032フレーム、88回のRun／Stop遷移が成功しました。
+- 既存の3混合構成・7単独音源、受入れ／16台制限で17台目の拒否と、Stop後の予約予算0への回収が成功しました。両runnerはexit code 0、`deviceOpened: false`です。
+- この混合構成はGame Boy／NES専用の組合せを追加したものではありません。
+
+検証レポート5件とインストーラー5件の計10アーティファクトをGitHub APIで確認しました。
+すべて対象run／commitと一致し、有効期限内で、サイズは0より大きいものです。全5ジョブのドラフトリリース添付stepはskippedでした。
+取得したのは検証レポートZIPだけで、インストーラーや対応ソースZIPのダウンロード・起動・独立照合は行っていません。
+今回のCI開始後に製品コードや試験は変更せず、記録だけを更新しています。追加のcommit／pushは行っていません。
+OS間のPCM bit一致や各OSでのWASM比較、実機の音声出力・ノイズ・UI操作・インストール後の起動は別の確認です。先行するローカル比較結果と区別してください。
