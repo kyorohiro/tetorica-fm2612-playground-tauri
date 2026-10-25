@@ -1,7 +1,7 @@
-# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM
+# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWMと
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280と
 OPL系4種類（YM3526／YM3812／YMF262／Y8950）をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
 この手順書は最初のYM2612移行時のファイル名を保持し、その後の音源の移行も記録しています。
@@ -53,6 +53,8 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | RF5C164のraw C ABI | `wasm/rf5c164_wasm.cpp`と`vendor/ymfm/chip_state.h` |
 | 選択中／追加生成32X PWMに共通のNative接続 | `native/reference/tauri/native_genesis_pwm.cpp`と対応ヘッダー |
 | 32X PWMのFIFO・routing・timer・PCM生成 | `wasm/pwm32x_core.h` |
+| 選択中／追加生成HuC6280の共通Native接続 | `native/reference/tauri/native_genesis_huc6280.cpp`と対応ヘッダー |
+| 接続が直接includeするHuC6280コア | `vendor/mame-huc6280/huc6280.cpp`と対応ヘッダー |
 | DOS PC／MSX Audioの選択中OPL系接続 | `native/reference/tauri/native_genesis_opl.cpp` |
 | OPL系4種類の独立追加接続 | `native/reference/tauri/native_genesis_extra_opl.cpp` |
 | 選択中／追加Y8950のメモリーinterface | `native/reference/tauri/native_genesis_y8950_memory.h` |
@@ -130,6 +132,13 @@ SDKの固定版とバイト列、既存のarchive順序・C++14・O2・MSVC `/EH
 SDK接続のFIFO・保持出力のsource tagと取り消しを引き継ぎ、Rustの書込み予約、owner・寿命・予算、
 Stop／resetと試奏の制御、Mixer／FXや機種APIはアプリ側に残ります。SDKの版や同梱バイト列は変更しません。
 
+HuC6280も選択中PC Engine／独立追加生成の共通Native接続とコアを固定SDKから使います。
+接続cppの差はinclude先の2行だけで、従来スナップショットの相対参照をSDKのコアへ切り替えます。
+接続ヘッダーとコアcpp／headerは旧コピーとbyte一致します。接続cppが`huc6280.cpp`を直接includeするため、
+コアを別にコンパイルせず、既存の`tetorica_native_huc6280`内の1翻訳単位を維持します。
+C++17・O2・MSVC `/EHsc`・`-fwrapv`・`-fno-strict-aliasing`・`-ffp-contract=off`とリンク順序も維持します。
+Rustの予約・owner・寿命・予算、PCM経路、Stop／reset・試奏と機種API、共通Mixer／FXはアプリ側に残ります。
+
 Y8950は512個の可変4 KiBページを借用し、最大2 MiBのADPCM-B RAMを扱います。
 SDKメモリーhelperはポインター配列とinterfaceを保持し、RAMのバイト列自体は所有しません。
 RustのArcによる所有、control側でのCOW準備、寿命・回収・予算管理を引き継ぎます。
@@ -203,6 +212,8 @@ CargoはSDKのRFコアディレクトリと2組の接続cpp／header、既存の
 PWMの旧接続と`src-tauri/native-pwm/`も原典・比較用として保持します。
 実際のSDK接続cpp／headerとSDK wasmディレクトリを監視し、旧スナップショットのソース監視は外します。
 `sources.json`が固定するスナップショットのREADME等の原典・ハッシュ記録は変更せず、旧コピーやsyncスクリプトだけではSDKの入力を更新しません。
+HuC6280の旧接続・スナップショット・固定原典も比較用に保持し、READMEや`PINNED`、ライセンスの参照先は変更しません。
+実際のSDK接続cpp／headerと`vendor/mame-huc6280/`を監視し、旧スナップショットのソース監視は外します。
 
 ## 照合と更新
 
@@ -277,6 +288,8 @@ node scripts/check_native_nuked.mjs
 node scripts/check_native_megacd.mjs
 node scripts/check_native_extra_rf5c164.mjs
 node scripts/check_native_extra_pwm.mjs
+node scripts/check_native_huc6280.mjs
+node scripts/check_native_extra_huc6280.mjs
 node scripts/check_native_msx.mjs
 node scripts/check_native_extra_ym2413.mjs
 node scripts/check_native_extra_ay8910.mjs
@@ -717,4 +730,32 @@ Native接続cpp／headerとコアヘッダーの3入力は旧コピーとbyte一
 - 既存の追加音源混合試験は3混合構成・7単独音源、受入れ／16台制限で17台目の拒否、Stop後の予約予算0への回収が成功。両runnerはexit code 0、`deviceOpened: false`でした。
 
 直前の全5構成成功run `40148943609`は今回のPWM移行を含みません。
-今回はローカル検証までで、PWM差分のcommit／push、新しいCIとsanitizerは未実施です。実機の音声出力も別の確認です。
+このPWMローカル検証終了時点ではcommit／push、新しいCIとsanitizerは未実施でした。
+その後、PWM差分は`39a02786...`へcommit済みです。PWMを含む新しいCIと実機の音声出力は別の確認です。
+
+## HuC6280移行の検証
+
+Native接続cppの差はinclude先の2行だけで、接続headerとコアcpp／headerは旧コピーとbyte一致します。
+macOS ARM64／Clang・Nodeで旧／SDKを別々にコンパイルし、同じ入力のstdoutのbyte一致を確認してから実配布WASMと比較しました。
+
+| 対象 | Native入力数（suite内） | Nativeフレーム | 実WASM比較回数 | 比較フレーム |
+| --- | ---: | ---: | ---: | ---: |
+| 選択中HuC6280 | 39 | 239,616 | 39 | 239,616 |
+| 追加HuC6280 | 51 | 438,912 | 153 | 1,316,736 |
+
+選択中の39入力は追加側51入力の部分集合で、sample rate・frame数・命令列SHAとPCMのSHAで重複を確認しています。
+両suiteの延べ90入力・678,528フレームに対し、重複を除いた固有Native入力は51件・438,912フレームです。
+追加側の各入力を3通りのWorklet block分割で比較し、実WASM比較は計192回・1,556,352フレームで差0でした。
+比較回数や既定コンパイル経路の再確認を、固有Native入力の数へ加算していません。
+
+- Tauriの既存fixtureとSDK既存の検証fixtureを旧／SDKへ実行し、constructor境界、不正入力、5 rate×4 clock×6 voice、32バイト波形コピー、stereo／LFO／noise、held PCM、Stop／reset、独立インスタンスと観測readが成功しました。
+- 公開state ABIは352バイト、Native本体の確保量は704バイトで、render中のallocation／freeは0。状態・callbackの自己試験はPCM比較と別で、毎フレームのprivate全状態dumpやWASM内部状態の比較ではありません。
+- 既定のSDKコンパイル経路2本と実行ファイルをinline指定する経路が成功し、不正な`--fixture`の6形式をコンパイル前に拒否しました。入力のパスとハッシュも記録しました。
+
+`npm test`は31／31成功。Rust全試験は723成功・0失敗・明示実行用4件ignoredでした。
+MCPのローカルTCP bindのため、今回は初めから制限外で実行し、sandbox内の失敗や製品修正はありません。
+再生ライフサイクルは22 mode、604,032フレーム、88 Run／Stopが成功しました。
+追加音源混合試験も3混合構成・7単独音源、受入れ／16台制限で17台目の拒否が成功し、
+受入れ・台数制限の双方でStop後の予約予算が0へ戻りました。両runnerはexit code 0、`deviceOpened: false`でした。
+直近の全5構成成功run `40148943609`は、PWMと今回のHuC6280移行を含みません。
+今回はローカル実装・検証までで、HuC6280差分のcommit／pushと新しいCIは未実施です。実機の音声出力も別の確認です。

@@ -42,6 +42,14 @@ Selected and independent 32X PWM instances use the SDK's
 They retain the existing `tetorica_native_pwm` archive, C++17/O2, MSVC `/EHsc`
 and `-ffp-contract=off`; Rust scheduling, owner/lifetime controls and mixing stay
 in the application. Legacy PWM snapshots and pinned provenance remain intact.
+Selected and independent HuC6280 instances use the SDK's
+`native/reference/tauri/native_genesis_huc6280.cpp` and matching header.
+Its two core includes now resolve the SDK's `vendor/mame-huc6280/` files;
+the remaining wrapper code is unchanged, and the header/core copies are
+byte-identical. The wrapper directly includes `huc6280.cpp`, so the core remains
+in one translation unit in `tetorica_native_huc6280`, with the existing C++17/O2,
+MSVC `/EHsc`, `-fwrapv`, `-fno-strict-aliasing` and `-ffp-contract=off` settings.
+Rust scheduling, PCM, Stop controls and machine APIs remain application-owned.
 Master System/MSX machine adapters and their `NativeOpllCore` helper, selected
 MSX AY resampling, the local `NativePsgCore` helper and Genesis mixing/DC/gains
 remain local;
