@@ -45,7 +45,7 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 
 ## Native音源SDK
 
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164とOPL系4種類
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWMとOPL系4種類
 （YM3526／YM3812／YMF262／Y8950）は、自己完結した`tetorica-soundchip-native`のソース配布を
 `src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
 取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
@@ -62,6 +62,7 @@ DOS PC／MSX Audioの選択中OPL系接続と、4種類の独立追加接続もS
 AY-3-8910の共有コアと独立追加接続もSDKを使い、MSXの機種用接続と選択中AYのレート変換はTauri側に残ります。
 Sega PSGの共有コアと低レベルC ABIもSDKから一度だけ組み込み、Genesis／Nuked、Master System、Game Gearと追加生成で共有します。
 RF5C164の選択中接続とコア／低レベルC ABI、独立追加接続もSDKを使います。選択中音源と追加音源は別々に64 KiBのRAMを所有し、Rustのアップロード予約・寿命・予算管理は維持します。
+32X PWMの選択中／追加生成に共通のNative接続とコアヘッダーもSDKを使い、既存のPWM archiveとホストの制御・混合は維持します。
 既に固定しているSDK `0.1.0`を使い、共通providerは一度だけ組み込みます。
 Genesisのgain・DC除去・PSG混合、機種用接続と`NativePsgCore`のレート変換、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
 他の音源は従来の同梱スナップショットを使います。
@@ -112,6 +113,7 @@ Main／Workerのレジスター操作・frame指定の予約書込み・clock変
 PWMも共通ミキサー・FX／liveFx・monitor・録音へ入ります。Stopは予約と保持中の出力を消し、
 clock・routing・cycleを保持します。resetはレジスターも初期化します。
 PWMの由来とBSD-3-Clauseライセンスは`src-tauri/native-pwm/`に保存しています。
+Native接続と`pwm32x_core.h`は固定SDKからビルドし、予約・owner管理と機種APIは既存のRust実装を使います。
 
 32X NukedはYM2612部分をBrowser版と同じNuked OPN2でNative生成し、PSG／RF5C164／PWMは32Xと共通です。
 旧Genesis Nuked URLではNuked OPN2＋PSGを使います。通常のGenesis／32Xは引き続きymfmです。

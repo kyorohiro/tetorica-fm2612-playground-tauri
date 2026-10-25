@@ -36,6 +36,12 @@ adapter builds from the SDK in `tetorica_native_opl` and retains its own rendere
 64 KiB RAM and per-voice held-output history. Selected and independent instances
 each own their RAM and copy uploads into it. Rust retains immutable upload
 payload ownership, scheduling, admission, lifetime and memory budgets.
+Selected and independent 32X PWM instances use the SDK's
+`native/reference/tauri/native_genesis_pwm.cpp` and matching header, with
+`wasm/pwm32x_core.h`. These three inputs are byte-identical to the old copies.
+They retain the existing `tetorica_native_pwm` archive, C++17/O2, MSVC `/EHsc`
+and `-ffp-contract=off`; Rust scheduling, owner/lifetime controls and mixing stay
+in the application. Legacy PWM snapshots and pinned provenance remain intact.
 Master System/MSX machine adapters and their `NativeOpllCore` helper, selected
 MSX AY resampling, the local `NativePsgCore` helper and Genesis mixing/DC/gains
 remain local;

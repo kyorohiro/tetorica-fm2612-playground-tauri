@@ -384,17 +384,18 @@ fn main() {
         .compile("tetorica_native_snes");
     println!("cargo:rerun-if-changed=src/native_genesis_spc.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_spc.h");
-    println!("cargo:rerun-if-changed=native-pwm");
-    println!("cargo:rerun-if-changed=src/native_genesis_pwm.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_pwm.h");
+    // The selected 32X and independent extra PWM instances share this SDK
+    // wrapper/core. Keep their existing archive and host-side ownership.
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_pwm.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_pwm.h");
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
         .std("c++17")
         .opt_level(2)
         .flag_if_supported("-ffp-contract=off")
-        .include("native-pwm/snapshot/wasm")
-        .file("src/native_genesis_pwm.cpp")
+        .include("vendor/tetorica-soundchip-native/wasm")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_pwm.cpp")
         .warnings(false)
         .compile("tetorica_native_pwm");
     // LiveFX executes only on its generation/probe owner thread, never the

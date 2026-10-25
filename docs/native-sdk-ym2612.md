@@ -1,7 +1,7 @@
-# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164
+# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164と
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWMと
 OPL系4種類（YM3526／YM3812／YMF262／Y8950）をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
 この手順書は最初のYM2612移行時のファイル名を保持し、その後の音源の移行も記録しています。
@@ -51,6 +51,8 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | RF5C164の独立追加接続 | `native/reference/tauri/native_genesis_extra_rf5c164.cpp`と対応ヘッダー |
 | 選択中RF5C164とraw C ABIに共通のコア | `vendor/mame-rf5c164/rf5c164.cpp`と対応ヘッダー |
 | RF5C164のraw C ABI | `wasm/rf5c164_wasm.cpp`と`vendor/ymfm/chip_state.h` |
+| 選択中／追加生成32X PWMに共通のNative接続 | `native/reference/tauri/native_genesis_pwm.cpp`と対応ヘッダー |
+| 32X PWMのFIFO・routing・timer・PCM生成 | `wasm/pwm32x_core.h` |
 | DOS PC／MSX Audioの選択中OPL系接続 | `native/reference/tauri/native_genesis_opl.cpp` |
 | OPL系4種類の独立追加接続 | `native/reference/tauri/native_genesis_extra_opl.cpp` |
 | 選択中／追加Y8950のメモリーinterface | `native/reference/tauri/native_genesis_y8950_memory.h` |
@@ -122,6 +124,12 @@ SDKの固定版とバイト列、既存のarchive順序・C++14・O2・MSVC `/EH
 寿命・回収・メモリー予算、既存のStop／resetやKeyboard試奏の制御と混合はホスト側に残ります。
 サンプル素材の準備や録音・ファイル入力をSDKへ移す変更でもありません。
 
+32X PWMのNative接続cpp／headerと、ヘッダー実装の`wasm/pwm32x_core.h`も固定SDKから使います。
+3入力は旧コピーとbyte一致し、選択中32X／32X Nukedと独立追加生成が同じ接続を使います。
+既存の`tetorica_native_pwm` archive、C++17・O2・MSVC `/EHsc`・`-ffp-contract=off`とリンク順序を維持します。
+SDK接続のFIFO・保持出力のsource tagと取り消しを引き継ぎ、Rustの書込み予約、owner・寿命・予算、
+Stop／resetと試奏の制御、Mixer／FXや機種APIはアプリ側に残ります。SDKの版や同梱バイト列は変更しません。
+
 Y8950は512個の可変4 KiBページを借用し、最大2 MiBのADPCM-B RAMを扱います。
 SDKメモリーhelperはポインター配列とinterfaceを保持し、RAMのバイト列自体は所有しません。
 RustのArcによる所有、control側でのCOW準備、寿命・回収・予算管理を引き継ぎます。
@@ -192,6 +200,9 @@ RF5C164の旧接続／コア／raw C ABIと`src-tauri/native-megacd/`も原典�
 CargoはSDKのRFコアディレクトリと2組の接続cpp／header、既存のSDK共通ヘッダー／wasm入力を監視します。
 旧`native-megacd/`は実行ソースや埋め込み音声素材の参照がなくなったためソース監視を外しますが、ライセンスの同梱先は保持します。
 旧コピーや`sync_native_megacd.py`の更新だけでは、実際にコンパイルするSDKは変わりません。
+PWMの旧接続と`src-tauri/native-pwm/`も原典・比較用として保持します。
+実際のSDK接続cpp／headerとSDK wasmディレクトリを監視し、旧スナップショットのソース監視は外します。
+`sources.json`が固定するスナップショットのREADME等の原典・ハッシュ記録は変更せず、旧コピーやsyncスクリプトだけではSDKの入力を更新しません。
 
 ## 照合と更新
 
@@ -237,6 +248,12 @@ node scripts/check_native_extra_stability.mjs --out=native-validation/extra-stab
 node scripts/check_native_genesis_core.mjs /path/to/hello_ymfm --seconds=60 --out=native-validation/web-native.json
 ```
 
+PWMの選択中接続もTauriルートから比較できます。
+
+```sh
+node scripts/check_native_pwm.mjs --source /path/to/hello_ymfm
+```
+
 各音源の選択中音源／追加音源の比較は、Browser／WASM側の`hello_ymfm`ルートで実行します。
 既定のビルドはTauriへ同梱したSDKの接続実装と共有providerを使用し、旧コピーをコンパイルしません。
 X68000の比較は、機種用接続をTauri側に残し、SDKのOPM providerとSDK入力から生成したOKI decoderを組み込んだ構成を使います。
@@ -259,6 +276,7 @@ node scripts/check_native_game_gear.mjs
 node scripts/check_native_nuked.mjs
 node scripts/check_native_megacd.mjs
 node scripts/check_native_extra_rf5c164.mjs
+node scripts/check_native_extra_pwm.mjs
 node scripts/check_native_msx.mjs
 node scripts/check_native_extra_ym2413.mjs
 node scripts/check_native_extra_ay8910.mjs
@@ -674,3 +692,29 @@ attempt 1は`completed`／`success`で終了し、全5ジョブの検証とイ�
 インストーラーや対応ソースZIPのダウンロード・起動・独立照合は行っていません。
 今回のCI開始後に製品コードや試験は変更せず、記録だけを更新しています。
 OS間のPCM bit一致や各OSでのWASM比較、実機の音声出力・ノイズ・UI操作・インストール後の起動は別の確認です。
+
+## 32X PWM移行の検証
+
+macOS ARM64／Clang・Nodeで音声デバイスを開かずに検証しました。
+Native接続cpp／headerとコアヘッダーの3入力は旧コピーとbyte一致し、SDKの固定版は変更していません。
+旧／SDKを別々にコンパイルし、同じ命令列のstdoutのbyte一致を確認してから実配布WASMとJS参照を比較しました。
+
+| 対象 | 固有Native命令列 | Nativeフレーム | 実WASM比較回数 | 比較フレーム |
+| --- | ---: | ---: | ---: | ---: |
+| 選択中PWM | 57 | 466,944 | 57 | 466,944 |
+| 追加PWMとコア単体 | 75 | 444,672 | 225 | 1,334,016 |
+| 合計 | 132 | 911,616 | 282 | 1,800,960 |
+
+追加側の同じ75命令列を3通りのWorklet block分割で比較しており、282回を固有命令列の数へ加算しません。
+132件のうち129件は公開C ABI、3件・18,432フレームは従来コア単体のDAC／mute設定の確認です。
+公開Native接続の設定を追加したという意味ではありません。旧／SDKはbyte一致し、実WASM／JSとの差はすべて0でした。
+2つの既定SDKコンパイル経路も成功し、使用した入力のパスとハッシュを記録しました。この再確認分も集計に加えていません。
+
+- Tauriの既存fixtureと、境界・tag試験を含むSDK既存の検証fixtureを旧／SDKの両方へ実行し、constructorの境界・初期値、不正FIFO状態のrollback、64ビットsource tagの寿命・取り消し、独立インスタンスと観測read、Stop／resetが成功しました。
+- 追加側の公開state ABIは96バイト、coreの確保量は168バイトで、render中のallocation／freeは0。状態・tagの自己試験はPCM比較と別で、毎フレームのprivate全状態dumpやWASM内部状態の比較ではありません。
+- `npm test`は31／31成功。Rust全試験は723成功・0失敗・明示実行用4件ignoredでした。初回sandbox内の2件の失敗はMCPのローカルTCP bind制限で、製品を修正せず制限外で再実行しました。
+- 再生ライフサイクルは22 mode、604,032フレーム、88 Run／Stopが成功。
+- 既存の追加音源混合試験は3混合構成・7単独音源、受入れ／16台制限で17台目の拒否、Stop後の予約予算0への回収が成功。両runnerはexit code 0、`deviceOpened: false`でした。
+
+直前の全5構成成功run `40148943609`は今回のPWM移行を含みません。
+今回はローカル検証までで、PWM差分のcommit／push、新しいCIとsanitizerは未実施です。実機の音声出力も別の確認です。
