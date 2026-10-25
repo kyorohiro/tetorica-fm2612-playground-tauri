@@ -103,12 +103,14 @@ fn main() {
         .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2612.cpp")
         .warnings(false)
         .compile("tetorica_native_ym2612");
-    // Standalone Game Gear consumes the once-compiled common Sega PSG below.
+    // Standalone Game Gear keeps its application-owned NativePsgCore adapter
+    // and consumes the pinned, once-compiled common Sega PSG below.
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
+        .include("vendor/tetorica-soundchip-native/vendor/ymfm")
         .include("native-genesis")
         .file("src/native_genesis_game_gear.cpp")
         .warnings(false)
@@ -220,10 +222,11 @@ fn main() {
         .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2608.cpp")
         .warnings(false)
         .compile("tetorica_native_ym2608");
-    // Keep the application's Genesis mixing, DC centering, gains and Sega PSG
-    // path. Only its YM2612 adapter and shared OPN/SSG/ADPCM provider come from
-    // the pinned SDK. Existing OPN, OPM and OPL consumers use identical ymfm
-    // types, so do not add a second provider archive or change GNU ld ordering.
+    // Keep the application's Genesis mixing, DC centering and gains. Its
+    // YM2612 and shared Sega PSG C ABI/decoder consume the pinned SDK, together
+    // with the common OPN/SSG/ADPCM provider. Existing OPN, OPM and OPL consumers
+    // use identical ymfm types; preserve this once-compiled archive and GNU ld
+    // ordering for Master System, Game Gear and additional PSG consumers.
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
@@ -236,11 +239,11 @@ fn main() {
         .file("src/native_genesis_fx.cpp")
         .file("src/native_genesis_noise.cpp")
         .file("vendor/tetorica-soundchip-native/wasm/ym2612_wasm.cpp")
-        .file("native-genesis/segapsg_wasm.cpp")
+        .file("vendor/tetorica-soundchip-native/wasm/segapsg_wasm.cpp")
         .file("vendor/tetorica-soundchip-native/native/src/ymfm_opn_provider.cpp")
         .file("vendor/tetorica-soundchip-native/vendor/ymfm/ymfm_adpcm.cpp")
         .file("vendor/tetorica-soundchip-native/vendor/ymfm/ymfm_ssg.cpp")
-        .file("native-genesis/segapsg.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/ymfm/segapsg.cpp")
         .warnings(false)
         .compile("tetorica_native_genesis");
     // GNU ld sees the common-core consumer, then the prefixed adapter, then

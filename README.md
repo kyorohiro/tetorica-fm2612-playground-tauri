@@ -45,7 +45,7 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 
 ## Native音源SDK
 
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910とOPL系4種類
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSGとOPL系4種類
 （YM3526／YM3812／YMF262／Y8950）は、自己完結した`tetorica-soundchip-native`のソース配布を
 `src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
 取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
@@ -60,8 +60,9 @@ X68000の機種用接続とサンプルの管理はTauri側に残ります。
 YM2413の追加生成用接続と共有OPL／PCM providerもSDKを使い、Master System／MSXの機種用接続とOPLL補助処理はTauri側に残ります。
 DOS PC／MSX Audioの選択中OPL系接続と、4種類の独立追加接続もSDKを使います。Y8950のRAMページの所有と予約・予算管理はRust側に残ります。
 AY-3-8910の共有コアと独立追加接続もSDKを使い、MSXの機種用接続と選択中AYのレート変換はTauri側に残ります。
+Sega PSGの共有コアと低レベルC ABIもSDKから一度だけ組み込み、Genesis／Nuked、Master System、Game Gearと追加生成で共有します。
 既に固定しているSDK `0.1.0`を使い、共通providerは一度だけ組み込みます。
-PSG、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
+Genesisのgain・DC除去・PSG混合、機種用接続と`NativePsgCore`のレート変換、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
 他の音源は従来の同梱スナップショットを使います。
 固定した版と更新手順、共有providerの範囲は[Native SDKの取り込み](docs/native-sdk-ym2612.md)を参照してください。
 
@@ -151,7 +152,7 @@ OPLLはROM楽器・共有User音色・9 FM声、または6 FM声＋5 rhythm音�
 Stopは音色・PSGのperiod／noise設定・clockを保持し、発音と予約を止めます。
 由来・ハッシュは`src-tauri/native-master-system/`に保存し、ymfmとSegaPSGは共有providerを一度だけ組み込みます。
 共有OPL／PCMと`createSoundChip('ym2413')`の独立接続は固定SDKからビルドします。
-Master System／MSXのOPLL補助処理、機種用接続、PSGと選択中AYのレート変換は既存のTauri実装を使います。AYコアは固定SDKを共有します。
+Master System／MSXのOPLL補助処理、機種用接続、`NativePsgCore`のPSGレート変換と選択中AYのレート変換は既存のTauri実装を使います。PSGとAYのコアは固定SDKを共有します。
 
 PC-98（YM2203）では4 MHzのYM2203だけを生成し、FM 3CH＋SSG 3CHをモノラルで左右へ出力します。
 `fm`／`ssg`／`play`、Main／Worker、6声のKeyboard／音源タブに対応します。
@@ -177,6 +178,7 @@ Game GearではSega PSGだけをNative生成し、3 tone＋noiseの4チャンネ
 `psg.setStereo()`、Main／Worker、Keyboard／音源タブに対応します。
 Stopはperiod・noise・clock・最後の可聴音量・左右マスクを保持し、resetで左右マスクを`0xff`へ戻します。
 PSG処理はMaster Systemと共有し、原典・ハッシュは`src-tauri/native-game-gear/`に保存します。
+共有PSGコアは固定SDKからビルドし、機種用接続とステレオ・clock・Stopの制御は既存のTauri実装を維持します。
 
 DOS PCではYM3526／YM3812（3,579,545 Hz）またはYMF262（14,318,180 Hz）を1チップだけNative生成します。
 `opl`、Main／Worker、Keyboard／Operators、9／18 FMチャンネル、OPL3の6組の4オペレーター音色に対応します。

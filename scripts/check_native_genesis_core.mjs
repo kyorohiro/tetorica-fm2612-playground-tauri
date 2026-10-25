@@ -13,13 +13,13 @@ const options = {}; let sourceArgument;
 for (let i = 2; i < process.argv.length; i++) {
   const argument = process.argv[i];
   if (argument === '--help') {
-    console.log('Usage: node scripts/check_native_genesis_core.mjs [hello_ymfm-path] [--seconds=60] [--rate=48000] [--out=report.json]');
+    console.log('Usage: node scripts/check_native_genesis_core.mjs [hello_ymfm-path] [--seconds=60] [--rate=48000] [--out=report.json] [--fixture=executable]');
     console.log('Without --seconds the original six short PCM checks run. Continuous mode accepts 1–80 seconds and streams PCM without retaining a full recording.');
     process.exit(0);
   }
   if (argument.startsWith('--')) {
     const [key, inline] = argument.slice(2).split(/=(.*)/s, 2);
-    assert(['seconds', 'rate', 'out'].includes(key), `Unknown option --${key}`);
+    assert(['seconds', 'rate', 'out', 'fixture'].includes(key), `Unknown option --${key}`);
     const value = inline ?? process.argv[++i];
     assert(value && !value.startsWith('--'), `--${key} needs a value`); options[key] = value;
   } else { assert(sourceArgument === undefined, 'Only one parent checkout path is accepted'); sourceArgument = argument; }
@@ -38,26 +38,28 @@ try {
   const native = join(repo, 'src-tauri/native-genesis');
   const sdk = 'vendor/tetorica-soundchip-native';
   const sdkRoot = join(repo, 'src-tauri', sdk);
-  const executable = join(directory, 'render');
+  const executable = options.fixture ? resolve(options.fixture) : join(directory, 'render');
   const nuked = join(repo, 'src-tauri/native-nuked/snapshot/third_party/nuked-opn2');
   const provider = join(directory, 'nuked.o');
   const symbols = ['Reset', 'SetChipType', 'Clock', 'Write', 'SetTestPin', 'ReadTestPin', 'ReadIRQPin', 'Read'];
   const compileStart = performance.now();
-  const c = spawnSync(process.env.CC ?? 'cc', ['-std=c11', '-O2', '-fwrapv', ...symbols.map(name => `-DOPN2_${name}=tetorica_nuked_OPN2_${name}`), '-I', nuked, '-c', join(nuked, 'ym3438.c'), '-o', provider], {encoding: 'utf8'});
-  assert.equal(c.status, 0, c.stderr);
-  // Match build.rs: the app retains Genesis gain/DC/mixing and PSG, while its
-  // primary YM2612 adapter and once-compiled OPN/SSG/ADPCM provider use the SDK.
+  // Match build.rs: the app retains Genesis gain/DC/mixing. The primary
+  // YM2612/PSG adapters and once-compiled OPN/SSG/ADPCM/PSG providers use the SDK.
   const files = ['src/native_genesis_fixture.cpp', 'src/native_genesis_core.cpp', 'src/native_genesis_nuked.cpp',
     `${sdk}/wasm/ym2612_wasm.cpp`, `${sdk}/native/src/ymfm_opn_provider.cpp`,
     `${sdk}/vendor/ymfm/ymfm_adpcm.cpp`, `${sdk}/vendor/ymfm/ymfm_ssg.cpp`,
-    'native-genesis/segapsg_wasm.cpp', 'native-genesis/segapsg.cpp'];
-  report.nativeSources = files.map(file => ({file: `src-tauri/${file}`,
-    sha256: createHash('sha256').update(readFileSync(join(repo, 'src-tauri', file))).digest('hex')}));
-  const compiled = spawnSync(process.env.CXX ?? 'c++', ['-std=c++14', '-O2',
-    '-I', join(sdkRoot, 'vendor/ymfm'), '-I', join(sdkRoot, 'wasm'), '-I', native, '-I', nuked,
-    ...files.map(file => join(repo, 'src-tauri', file)), provider, '-o', executable], {encoding: 'utf8'});
-  assert.equal(compiled.status, 0, compiled.stderr);
-  report.compilerMilliseconds = performance.now() - compileStart;
+    `${sdk}/wasm/segapsg_wasm.cpp`, `${sdk}/vendor/ymfm/segapsg.cpp`];
+  if (!options.fixture) {
+    const c = spawnSync(process.env.CC ?? 'cc', ['-std=c11', '-O2', '-fwrapv', ...symbols.map(name => `-DOPN2_${name}=tetorica_nuked_OPN2_${name}`), '-I', nuked, '-c', join(nuked, 'ym3438.c'), '-o', provider], {encoding: 'utf8'});
+    assert.equal(c.status, 0, c.stderr);
+    report.nativeSources = files.map(file => ({file: `src-tauri/${file}`,
+      sha256: createHash('sha256').update(readFileSync(join(repo, 'src-tauri', file))).digest('hex')}));
+    const compiled = spawnSync(process.env.CXX ?? 'c++', ['-std=c++14', '-O2',
+      '-I', join(sdkRoot, 'vendor/ymfm'), '-I', join(sdkRoot, 'wasm'), '-I', native, '-I', nuked,
+      ...files.map(file => join(repo, 'src-tauri', file)), provider, '-o', executable], {encoding: 'utf8'});
+    assert.equal(compiled.status, 0, compiled.stderr);
+    report.compilerMilliseconds = performance.now() - compileStart;
+  } else report.fixtureProvided = true;
   const [fmFactory, psgFactory, fmApi, psgApi] = await Promise.all([
     import(pathToFileURL(join(source, 'docs/generated/ym2612_wasm.js'))),
     import(pathToFileURL(join(source, 'docs/generated/segapsg_wasm.js'))),

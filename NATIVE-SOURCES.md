@@ -25,8 +25,13 @@ memory helper now also use the SDK. Y8950 borrows mutable 4 KiB RAM pages owned
 by Rust; ownership, lifetime, control-side copy-on-write, scheduling and budgets
 remain application responsibilities. The shared AY-3-8910 core and independent
 AY adapter also use the SDK, compiled once in the existing MSX archive.
+The shared Sega PSG core/header and raw C ABI now use the SDK's
+`vendor/ymfm/segapsg.cpp` and `wasm/segapsg_wasm.cpp`, compiled once in the existing
+`tetorica_native_genesis` archive for Genesis/Nuked, Master System, Game Gear and
+additional PSG instances. The SDK wrapper uses its own `wasm/chip_state.h`.
 Master System/MSX machine adapters and their `NativeOpllCore` helper, selected
-MSX AY resampling, Sega PSG and the RF5C164 adapter remain local;
+MSX AY resampling, the local `NativePsgCore` helper, Genesis mixing/DC/gains and
+the RF5C164 adapter remain local;
 shared OPL/PCM is compiled
 once with the existing archive order and common ADPCM support.
 Other application adapters retain their existing

@@ -14,7 +14,8 @@ the SDK's `native/reference/tauri/native_genesis_ym2413.cpp` and matching header
 Selected Master System and MSX renderers still use the application's
 `src/native_genesis_opll.h` (`NativeOpllCore`) and local machine adapters.
 The independent SDK adapter has its own renderer; it does not replace that
-shared application helper. Sega PSG and selected MSX AY resampling remain local;
+shared application helper. The local `NativePsgCore` helper, machine controls and
+selected MSX AY resampling remain application responsibilities;
 the shared AY core, independent AY adapter and OPL/Y8950 adapters now use the
 pinned SDK alongside the shared OPL/PCM and ADPCM providers. No whole-machine
 adapter is imported from the SDK. See the
@@ -26,7 +27,11 @@ verifies the pinned sources and the common ymfm/PSG references. The legacy
 directory is provenance-only and no longer a Cargo rebuild watch; active SDK
 inputs and local machine/helper sources are watched instead. Updating these
 snapshots or the old local YM2413 wrapper/provider does not update the SDK build.
-The common Sega PSG core continues to compile once through `native-genesis`.
+The common Sega PSG core now compiles from the pinned SDK's
+`vendor/ymfm/segapsg.cpp`, once in the existing `tetorica_native_genesis` archive.
+Genesis uses the SDK's raw C ABI wrapper; Master System and Game Gear retain
+their local machine wrappers and `NativePsgCore` rate conversion. Updating the
+old PSG snapshot does not update that SDK build.
 
 The adapter mirrors Browser PSG clock-resampling phase and OPLL source-rate
 averaging/hold, including clocks changed during playback. Stop retains patches,

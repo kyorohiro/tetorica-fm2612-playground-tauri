@@ -1,11 +1,17 @@
 # Native Game Gear
 
-One standalone Sega PSG core, using the same unmodified synthesis provider
-already compiled by `native-genesis`. No Genesis, YM2612 or OPLL instance is
-created. The shared `NativePsgCore` adapter is also used by Master System.
+One standalone Sega PSG core, using the pinned SDK's `vendor/ymfm/segapsg.cpp`
+compiled once in the shared `tetorica_native_genesis` archive. No Genesis,
+YM2612 or OPLL instance is created. The local machine adapter and shared
+`src/native_genesis_psg.h` (`NativePsgCore`) retain rate conversion and controls;
+Master System and additional PSG instances use the same application helper.
+The SDK version and source bytes are unchanged. See the
+[SDK adoption guide](../../docs/native-sdk-ym2612.md).
 
 `scripts/sync_native_game_gear.py --source PATH --check` verifies the pinned
 Browser API, inspector, Worklet and resampler against their shared PSG provider.
+These snapshots remain provenance/comparison inputs. Refreshing them or the
+old `native-genesis/segapsg.cpp` does not update the active SDK core.
 
 The eight stereo register bits route each of the four channels independently:
 bits 0..3 to right and 4..7 to left. Stop silences current and held PCM immediately,

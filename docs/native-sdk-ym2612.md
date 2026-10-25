@@ -1,7 +1,7 @@
-# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY
+# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910と
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSGと
 OPL系4種類（YM3526／YM3812／YMF262／Y8950）をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
 この手順書は最初のYM2612移行時のファイル名を保持し、その後の音源の移行も記録しています。
@@ -45,6 +45,8 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | `createSoundChip('ym2413')`の独立Native接続 | `native/reference/tauri/native_genesis_ym2413.cpp` |
 | `createSoundChip('ay8910')`の独立Native接続 | `native/reference/tauri/native_genesis_ay8910.cpp` |
 | MSXと追加AYに共通のAY-3-8910コア | `vendor/mame-ay8910/ay8910.cpp`と対応ヘッダー |
+| Genesisが使うSega PSGの低レベルC ABI | `wasm/segapsg_wasm.cpp`と`wasm/chip_state.h` |
+| Genesis／Nuked、Master System、Game Gearと追加PSGに共通のコア | `vendor/ymfm/segapsg.cpp`と対応ヘッダー |
 | DOS PC／MSX Audioの選択中OPL系接続 | `native/reference/tauri/native_genesis_opl.cpp` |
 | OPL系4種類の独立追加接続 | `native/reference/tauri/native_genesis_extra_opl.cpp` |
 | 選択中／追加Y8950のメモリーinterface | `native/reference/tauri/native_genesis_y8950_memory.h` |
@@ -76,20 +78,33 @@ Master System／MSXの選択中音源は、Tauriの`src-tauri/src/native_genesis
 `NativeOpllCore`と機種用接続を引き続き使います。独立SDK接続には別のrendererがあり、
 この共通ヘッダーを置き換える変更ではありません。
 SDKのincludeを優先し、OPL provider／PCMは既存のarchive内で一度だけコンパイルします。
-Sega PSGと機種用の補助処理はアプリ側に残ります。
+機種用の補助処理はアプリ側に残ります。Sega PSGコアの現在の境界は下記に記載します。
 先行移行済みのOPL／PCMとADPCM実装への依存も維持します。
 
 OPL系4種類の選択中接続／追加接続と、対応するヘッダーもSDKからビルドします。
 DOS PCはYM3526／YM3812／YMF262、MSX AudioはY8950を選び、追加音源も生成時に4種類から選択します。
 SDKのcppは同じSDK内のC ABIヘッダーとY8950メモリーhelperを参照し、アプリ側の転送ヘッダーは作りません。
 OPL／PCM／ADPCM providerは既にSDKへ移行済みで、今回重複して追加しません。archiveの順序も維持します。
-同じarchiveにあるローカルRF5C164接続、PSGと機種用補助処理、Rustの予約・owner制御と混合はそのままです。
+同じarchiveにあるローカルRF5C164接続、PSGの機種用補助処理、Rustの予約・owner制御と混合はそのままです。
 
 AY-3-8910の共通コア／ヘッダーと独立接続もSDKからビルドし、既存のMSX archive内でコアを一度だけ組み込みます。
 MSXの選択中音源はローカルの`src-tauri/src/native_genesis_msx.cpp`を使い、AYのレート変換と
 `NativeOpllCore`、Rustの予約・owner制御と混合を維持します。
 独立SDK接続は別のtick／レート変換を持つため、選択中音源の処理をその接続へ置き換える変更ではありません。
 AYの初期clock、tone／noise／envelope、明示的な音量0、Stop／resetの既存動作を引き継ぎます。
+
+Sega PSGの共有コアと低レベルC ABIも、同じ固定SDKへ参照を切り替えます。
+`wasm/segapsg_wasm.cpp`はNative C++として使い、SDK側の`chip_state.h`と`segapsg.h`を参照します。
+コアcpp／headerと合わせた4入力は旧コピーとbyte一致し、SDKの版や同梱バイト列は変更しません。
+既存の`tetorica_native_genesis` archive内で一度だけコンパイルし、Genesis／Nuked、
+Master System、Game Gearと`createSoundChip('segapsg')`の追加音源が共有します。
+既存のarchive順序、C++14・O2・MSVC `/EHsc`を維持します。
+Game GearもSDKのincludeを従来コピーより優先し、同じコア型を使います。
+
+Genesis／Nukedの機種用接続とgain・DC除去・PSG混合はローカルの`src-tauri/src/native_genesis_core.cpp`に残ります。
+Master System／Game Gearと追加PSGは、ローカルの機種用接続と`src-tauri/src/native_genesis_psg.h`の
+`NativePsgCore`を引き続き使います。PSGのレート変換、clock、Stop／reset、ステレオマスクと試奏の制御を
+SDKの機種用接続へ置き換える変更ではありません。Rustの予約・owner管理とMixer／FXも引き継ぎます。
 
 Y8950は512個の可変4 KiBページを借用し、最大2 MiBのADPCM-B RAMを扱います。
 SDKメモリーhelperはポインター配列とinterfaceを保持し、RAMのバイト列自体は所有しません。
@@ -127,7 +142,7 @@ X68000の機種用接続、Rust側のサンプル所有・予約・予算管理�
 追加OKI接続はサンプルをコピーせず借用し、Rustがその参照の所有・寿命を管理します。
 OKIの素材やサンプル転送の管理をSDKへ移す変更ではありません。
 
-Sega PSGと、上記以外の音源の接続とソースは従来の同梱スナップショットを使います。
+上記以外の音源の接続とソースは従来の同梱スナップショットを使います。
 ブラウザー／npmのWASM配布やPlaygroundの`dist/`は、このSDK取り込みで更新しません。
 
 従来の`src-tauri/src/native_genesis_ym2203.cpp`／`.h`と`src-tauri/native-ym2203/`は、
@@ -153,6 +168,10 @@ AYの旧接続／コア／ヘッダーと`src-tauri/native-msx/`も原典・ラ�
 既存の同梱ライセンスの参照先は保持し、syncスクリプトだけではSDKの実行ソースを更新しません。
 OPL系の旧cpp／header／メモリーhelperと`src-tauri/native-opl/`も由来の記録として保持します。
 実際のSDK接続とヘッダー、Y8950メモリーhelperを監視し、原典だけになった`native-opl/`の監視は外します。
+Sega PSGの旧コア／C ABIとGenesis／Master System／Game Gearの比較用スナップショットも保持します。
+実際の入力は既存のSDK `vendor/ymfm/`と`wasm/`の監視対象です。ローカルの機種用接続と
+`NativePsgCore`の監視を継続し、ほかの入力も残る`native-genesis/`の監視は外しません。
+旧コピーや各syncスクリプトの更新だけでは、実際のSDK PSGコアは更新されません。
 
 ## 照合と更新
 
@@ -216,6 +235,8 @@ node scripts/check_native_x68000.mjs
 node scripts/check_native_extra_ym2151.mjs
 node scripts/check_native_extra_okim6258.mjs
 node scripts/check_native_master_system.mjs
+node scripts/check_native_game_gear.mjs
+node scripts/check_native_nuked.mjs
 node scripts/check_native_msx.mjs
 node scripts/check_native_extra_ym2413.mjs
 node scripts/check_native_extra_ay8910.mjs
@@ -354,7 +375,7 @@ run全体と全5ジョブが成功し、CIのためのコード修正は不要�
 今回のYM2413接続と共有OPL／PCMの参照切替は、macOS／Clangで次を確認しました。音声デバイスは開いていません。
 
 15入力が旧コピーとbyte一致し、OPL providerとの差は相対includeパスだけでした。
-SDK優先で解決される`segapsg.h`も旧ヘッダーと一致し、PSGの実装cppはローカルのままです。
+このYM2413移行時点では、SDK優先で解決される`segapsg.h`も旧ヘッダーと一致し、PSGの実装cppはローカルのままでした。
 旧接続とSDK接続を別々にコンパイルして出力のbyte一致を確認し、実WASMとも比較しました。
 
 | 対象 | 比較数 | フレーム |
@@ -376,7 +397,7 @@ YM2413関連は711件・3,225,600フレーム、共有providerの回帰確認は
 - `cargo test --locked --offline`が723件成功、明示実行用4件ignored。
 - 再生ライフサイクルは22 mode、604,032フレーム、88回のRun／Stop遷移が成功。混合音源は3構成、7単独音源、追加生成の受入れが成功。16台の制限で17台目を拒否し、Stop後に予約した予算をすべて回収する試験も成功。両runnerのexit codeは0、`deviceOpened: false`。
 
-これはAY／PSG接続自体のSDK移行や、Y8950の新しいADPCM素材転送APIを追加したという意味ではありません。
+このYM2413移行はAY／PSG接続自体のSDK移行や、Y8950の新しいADPCM素材転送APIを追加したという意味ではありません。
 先行する全OPN移行CIは今回のYM2413差分を含みません。このローカル検証時点では各OSの新しいCIは未実行でした。
 後続CIの状況は次節に記録します。実機の音声出力は別の確認です。
 
@@ -507,8 +528,67 @@ CI対象の`src/native_genesis_extra_snes_tests.rs:656`で、状態読取が返�
 ほかのエラーと、完了前の待機・履歴失効・状態値等のassertは保持します。
 音源コア・製品のRust実装・ビルド・APIは変更していません。
 修正後のローカルRust全試験は723成功・0失敗・4件ignoredで、対象試験の反復も50／50成功しました。
-修正は未コミットで、CI対象`276e744...`には含まれません。修正版のCI再実行はまだ行っていません。
+ローカル検証終了時点では修正は未コミットで、最初のCI対象`276e744...`には含まれていません。
+その後、ユーザーが修正とガイドを`842245dd...`としてcommit／pushしました。修正を含む別のCIは次節に記録します。
 OPL／AY移行との因果関係を確定したという意味ではありません。
 
 このCIはOS間のPCM bit一致や各OSでのWASM比較を確認するものではありません。
 音声デバイスを使う実機の音声出力・ノイズ・UI操作・インストール後の起動も別の確認です。
+
+## SNES試験修正後の5環境CI — 全5構成成功
+
+[Build Desktop — run 40143851548](https://github.com/kyorohiro/tetorica-fm2612-playground-tauri/actions/runs/40143851548)を、
+mainのコミット`842245ddf060fedaeb42e6b01d30175b488816b7`から`workflow_dispatch`で手動実行しました。
+OPL接続／AY移行と、前節のSNES試験修正を含みます。最初に失敗したrun `40142510765`とは別の実行です。
+アプリ版は`0.90.1`のままで、タグや新しいドラフトリリース・一般公開は作成していません。
+attempt 1は`completed`／`success`で終了し、全5ジョブの検証とインストーラービルドが成功しました。
+
+| 構成 | ソース照合・Cargo・再生／混合のstep | インストーラービルド |
+| --- | --- | --- |
+| macOS ARM64 | 成功 | 成功（DMG） |
+| macOS x86_64 | 成功 | 成功（DMG） |
+| Windows x86_64 | 成功 | 成功（NSIS） |
+| Linux ARM64 | 成功 | 成功（DEB／AppImage） |
+| Linux x86_64 | 成功 | 成功（DEB／AppImage） |
+
+最初のCIで失敗したmacOS x86_64も、今回は検証とビルドを含むジョブ全体が成功しました。
+取得した全5構成の検証JSONを監査し、検証アーティファクトZIPのdigestもGitHubの記録と照合しました。
+
+- SDK374ファイルを含む22件の固定記録と、対応ソースZIP1,796ファイルの照合が成功。
+- 22 mode、604,032フレーム、88回のRun／Stop遷移が成功。
+- 3混合構成、7単独音源、受入れ／16台制限とStop後の予約予算回収が成功。
+- 両runnerはexit code 0、`deviceOpened: false`。
+
+前回reportが欠けたmacOS x86_64も、今回は3つのJSONが揃って成功しました。
+検証レポート5件とインストーラー5件の計10アーティファクトをGitHub APIで確認しました。
+すべて有効期限内で、サイズは0より大きいものです。全5ジョブのドラフトリリース作成stepはskippedでした。
+インストーラーや対応ソースZIPをダウンロードして起動・独立照合する確認は行っていません。
+今回のCI開始後に製品コードや試験は変更せず、記録だけを更新しています。
+OS間のPCM bit一致、各OSでのWASM比較、実機の音声出力・ノイズ・UI操作・インストール後の起動は別の確認です。
+
+## Sega PSG移行の検証
+
+macOS ARM64／Clangで音声デバイスを開かずに検証しました。
+固定SDKのコアcpp／header、低レベルC ABIと`chip_state.h`の4入力は旧コピーとbyte一致します。
+旧入力とSDK入力を別々にコンパイルし、同じ命令列に対するstdoutのbyte一致を確認してから、実配布WASMと比較しました。
+
+| 対象 | 比較数 | フレーム | WASMとの最大PCM差 |
+| --- | ---: | ---: | ---: |
+| Game Gear／追加PSGの共通接続 | 69 | 454,656 | 0 |
+| Master System | 63 | 387,072 | 0 |
+| NukedのFM＋PSG | 222 | 1,363,968 | 2.9802322387695312e-8 |
+| GenesisのFM＋PSG | 6 | 49,152 | 3.725290298461914e-9 |
+
+計360ケース・2,254,848フレームで旧／SDKの出力がbyte一致しました。
+NukedとGenesisのWASMとの差は、参照切替前と同じ微小な浮動小数点の丸め差です。
+4つの既定checkerも実際のSDK入力から成功し、コンパイルしたパスとハッシュを記録しました。
+その再確認分は上表へ二重加算しません。
+PSGのattenuation 0は最大音量、15は消音です。保持したattenuation 0をStop／offで失わず、auditionで復帰するケースも確認しました。
+
+- 別のNative間比較6ケース・36,864フレームで、raw C ABIの40バイトのシリアライズ状態全体とPCMが一致しました。同じローカルビルド条件での比較で、privateオブジェクト全体やWASM内部状態のdumpではありません。この状態APIのvector割当てはcallback外で扱います。
+- Game Gear・Master System・Nukedのfixture自己試験で、callback中のallocation／freeが0でした。主Genesisの比較はPCMとFM pitchを対象とし、単独のallocation測定は含みません。
+- Rust全試験は723成功・0失敗・明示実行用4件ignored。
+- 再生ライフサイクルは22 mode、604,032フレーム、88 Run／Stop遷移が成功。runnerはexit code 0、`deviceOpened: false`。
+- 追加音源は3混合構成・7単独音源が成功。受入れ、16台制限での17台目の拒否、Stop後の予約予算0への回収も成功しました。runnerはexit code 0、`deviceOpened: false`。
+
+先行するrun `40143851548`はこのPSG参照切替を含みません。今回の各OSのCIや実機の音声出力は未確認です。
