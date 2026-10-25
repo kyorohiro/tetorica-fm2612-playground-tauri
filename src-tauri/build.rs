@@ -19,6 +19,69 @@ fn native_okim6258_source() -> std::path::PathBuf {
     output
 }
 
+fn native_dx7_sources() -> (std::path::PathBuf, Vec<std::path::PathBuf>) {
+    const SOURCES: &[&str] = &[
+        "dx7note.cc",
+        "env.cc",
+        "exp2.cc",
+        "fm_core.cc",
+        "fm_op_kernel.cc",
+        "freqlut.cc",
+        "lfo.cc",
+        "patch.cc",
+        "pitchenv.cc",
+        "resofilter.cc",
+        "ringbuffer.cc",
+        "sin.cc",
+        "synth_unit.cc",
+    ];
+    const HEADERS: &[&str] = &[
+        "aligned_buf.h",
+        "controllers.h",
+        "dx7note.h",
+        "env.h",
+        "exp2.h",
+        "fm_core.h",
+        "fm_op_kernel.h",
+        "freqlut.h",
+        "lfo.h",
+        "module.h",
+        "patch.h",
+        "pitchenv.h",
+        "resofilter.h",
+        "ringbuffer.h",
+        "sin.h",
+        "synth.h",
+        "synth_unit.h",
+    ];
+    const OVERRIDES: &[&str] = &[
+        "dx7note.cc",
+        "env.cc",
+        "ringbuffer.cc",
+        "synth.h",
+        "synth_unit.cc",
+        "synth_unit.h",
+    ];
+    let sdk = std::path::Path::new("vendor/tetorica-soundchip-native");
+    let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo OUT_DIR"))
+        .join("tetorica_sdk_dx7_msfa");
+    std::fs::create_dir_all(&output).expect("create Native DX7 compilation directory");
+    // MSFA uses quoted includes: every .cc must sit beside the matching Native
+    // headers. Mirror the SDK's copy-only assembly without changing its pin.
+    for name in SOURCES.iter().chain(HEADERS.iter()) {
+        let directory = if OVERRIDES.contains(name) {
+            "native/reference/overrides/msfa"
+        } else {
+            "vendor/msfa"
+        };
+        let source = sdk.join(directory).join(name);
+        std::fs::copy(&source, output.join(name))
+            .unwrap_or_else(|error| panic!("copy pinned SDK DX7 {}: {error}", source.display()));
+    }
+    let sources = SOURCES.iter().map(|name| output.join(name)).collect();
+    (output, sources)
+}
+
 fn main() {
     // Native C++ wrappers catch allocation failures before returning across Rust FFI.
     // Enable standard exception unwinding for all MSVC C++ translation units.
@@ -288,9 +351,13 @@ fn main() {
         .file("vendor/tetorica-soundchip-native/wasm/rf5c164_wasm.cpp")
         .warnings(false)
         .compile("tetorica_native_megacd");
-    println!("cargo:rerun-if-changed=native-dx7");
-    println!("cargo:rerun-if-changed=src/native_genesis_dx7.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_dx7.h");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/msfa");
+    println!(
+        "cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/overrides/msfa"
+    );
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_dx7.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_dx7.h");
+    let (msfa_directory, msfa_sources) = native_dx7_sources();
     let mut dx7 = cc::Build::new();
     dx7.cpp(true)
         .flag_if_supported("/EHsc")
@@ -302,24 +369,10 @@ fn main() {
         .flag_if_supported("-fwrapv")
         .flag_if_supported("-fno-strict-aliasing")
         .flag_if_supported("-ffp-contract=off")
-        .include("native-dx7")
-        .file("src/native_genesis_dx7.cpp");
-    for source in [
-        "dx7note",
-        "env",
-        "exp2",
-        "fm_core",
-        "fm_op_kernel",
-        "freqlut",
-        "lfo",
-        "patch",
-        "pitchenv",
-        "resofilter",
-        "ringbuffer",
-        "sin",
-        "synth_unit",
-    ] {
-        dx7.file(format!("native-dx7/{source}.cc"));
+        .include(&msfa_directory)
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_dx7.cpp");
+    for source in msfa_sources {
+        dx7.file(source);
     }
     dx7.warnings(false).compile("tetorica_native_dx7");
     // The SDK adapter contains the ported APU/FDS core. Selected and

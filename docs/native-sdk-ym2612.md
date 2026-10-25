@@ -1,7 +1,7 @@
-# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280／Game Boy／NES＋FDS
+# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280／Game Boy／NES＋FDS／DX7
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、NES＋FDSと
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、NES＋FDS、DX7と
 OPL系4種類（YM3526／YM3812／YMF262／Y8950）をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
 この手順書は最初のYM2612移行時のファイル名を保持し、その後の音源の移行も記録しています。
@@ -58,6 +58,8 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | 選択中／追加生成Game Boyの共通Native接続 | `native/reference/tauri/native_genesis_gameboy.cpp`と対応ヘッダー |
 | 共通Game Boy APU | `vendor/mame-gameboy/gameboy_apu.cpp`と対応ヘッダー |
 | 選択中NES＋FDS／追加生成NESの共通接続とAPU／FDS移植実装 | `native/reference/tauri/native_genesis_nes.cpp`と対応ヘッダー |
+| 選択中／追加生成DX7の共通Native接続 | `native/reference/tauri/native_genesis_dx7.cpp`と対応ヘッダー |
+| 共通MSFAの24入力と6 Native override | `vendor/msfa/`と`native/reference/overrides/msfa/`からCargoの出力先へコピーして組み立て |
 | DOS PC／MSX Audioの選択中OPL系接続 | `native/reference/tauri/native_genesis_opl.cpp` |
 | OPL系4種類の独立追加接続 | `native/reference/tauri/native_genesis_extra_opl.cpp` |
 | 選択中／追加Y8950のメモリーinterface | `native/reference/tauri/native_genesis_y8950_memory.h` |
@@ -156,6 +158,21 @@ SDKの`vendor/tetorica-nes/nes_core.cpp`を追加でコンパイルする変更�
 各インスタンスの64 KiB DMC RAMとFDS波形・変調表を維持し、アップロードをRAMへコピーします。
 RustのDMC転送payload所有・予約、owner・寿命・台数・予算と回収、PCM、Stop／reset・試奏、Mixer／FXと機種APIはアプリ側に残ります。
 
+選択中DX7と独立追加DX7の共通接続cpp／header、およびMSFAも固定SDKからビルドします。
+接続cpp／headerは旧コピーとbyte一致します。`src-tauri/build.rs`の`native_dx7_sources()`が、
+`vendor/msfa/`の24共有ファイルと`native/reference/overrides/msfa/`の6ファイルを
+`OUT_DIR/tetorica_sdk_dx7_msfa/`へ編集せずにコピーし、13個のccと17個のheaderを組み立てます。
+overrideは`dx7note.cc`、`env.cc`、`ringbuffer.cc`、`synth.h`、`synth_unit.cc`、`synth_unit.h`です。
+引用形式のincludeはソースの隣を先に探すため、共有ソースとoverrideの直接混在ではなく、同じprivateディレクトリを使います。
+既存の`tetorica_native_dx7` archive内の14翻訳単位とリンク順序、C++17・O2・`MSFA_FORCE_SCALAR`・`_USE_MATH_DEFINES`・
+MSVC `/EHsc`・`-fwrapv`・`-fno-strict-aliasing`・`-ffp-contract=off`を維持し、新しいPython／CMake依存は追加しません。
+
+SDKのNative-only `synth_unit.cc`には、Panic時に16個の事前確保済み`Dx7Note`へ`Dx7Note{}`を値代入し、
+note状態とfeedback履歴を初期化する修正があります。オブジェクトのアドレスを変えず、allocation／freeも行いません。
+通常のnote-on／release／killは保持しますが、Panic後の再発音は意図した修正のため、旧スナップショットとの全面的なbyte一致は主張しません。
+155バイト音色のコピー、16音のslot制御と内部44.1 kHzの生成・device rate変換は既存接続のままです。
+Rustの音色所有・転送予約、Keyboard lease・owner、16 slotの受入れ制御、PCM、Stop、Mixer／FXと機種APIはアプリ側に残ります。
+
 Y8950は512個の可変4 KiBページを借用し、最大2 MiBのADPCM-B RAMを扱います。
 SDKメモリーhelperはポインター配列とinterfaceを保持し、RAMのバイト列自体は所有しません。
 RustのArcによる所有、control側でのCOW準備、寿命・回収・予算管理を引き継ぎます。
@@ -237,6 +254,10 @@ Cargoは実際のSDK接続cpp／headerと`vendor/mame-gameboy/`を監視し、�
 NESの旧接続とJS原典スナップショット、`core.json`／`sources.json`、READMEとライセンスの同梱先も保持します。
 CargoはSDK接続cpp／headerを監視し、実消費元のない旧スナップショットのソース監視を外します。
 旧コピーや`sync_native_nes.py`だけでは実際のSDK入力を更新しません。
+DX7の旧接続と`src-tauri/native-dx7/`の32ファイルのスナップショット、原本／修正版のハッシュ、ライセンスの同梱先も保持します。
+CargoはSDKの`vendor/msfa/`と6 Native overrideのディレクトリ、接続cpp／headerを監視し、
+Rustの埋め込み消費元がない旧`native-dx7/`とローカル接続のソース監視を外します。
+旧コピーや`sync_native_dx7.py`だけでは実際のSDK入力を更新しません。SDKの固定配布物へ直接変更を加えません。
 
 ## 照合と更新
 
@@ -905,3 +926,40 @@ attempt 1は`completed`／`success`で終了し、全5ジョブの検証とイ�
 取得したのは検証レポートZIPだけで、インストーラーや対応ソースZIPのダウンロード・起動・独立照合は行っていません。
 今回のCI開始後に製品コードや試験は変更せず、記録だけを更新しています。追加のcommit／pushは行っていません。
 OS間のPCM bit一致や各OSでのWASM比較、実機の音声出力・ノイズ・UI操作・インストール後の起動は別の確認です。先行するローカル比較結果と区別してください。
+
+## DX7移行の検証
+
+2026-10-25。選択中／独立追加の共通Native接続とMSFAを固定SDKへ切り替えました。
+接続cpp／headerとMSFA 30入力中29ファイルは旧コピーとbyte一致し、差はNative Panicのfeedback履歴初期化だけです。
+MSFAは24共有入力と6 Native overrideをコピーして組み立てます。macOS ARM64／Clang・Nodeで、
+通常再生の旧／SDK一致と、意図したPanic修正を分けて検証しました。
+
+| 対象 | 固有Native入力数 | Nativeフレーム | 実WASM比較回数 | 比較フレーム |
+| --- | ---: | ---: | ---: | ---: |
+| 選択中DX7の既存再生比較 | 114 | 792,576 | 114 | 792,576 |
+| 独立追加DX7の既存比較 | 21 | 239,616 | 63 | 718,848 |
+| 32 algorithm × 3 rateのPanic／再発音 | 96 | 786,432 | 96 | 786,432 |
+| 合計 | 231 | 1,818,624 | 273 | 2,297,856 |
+
+既存135入力・1,032,192 Nativeフレームは旧／SDKのstdoutがbyte一致し、双方とも実WASM最大差0でした。
+追加側は1入力を3通りのblock分割へ比較します。追加checker内の選択中比較の再実行、
+既定／fixture指定の再確認、自己試験と公開JS adapterの確認は集計へ加算していません。
+新しいPanic比較はSDKと実WASMで全96入力の差0、新規インスタンスへ戻る自己試験も96／96成功しました。
+旧版は79／96入力でSDKとの差があり、17入力は一致しました。全入力でframe 1,403の再発音直前までは一致し、
+差は再発音後だけに現れ、最大差は`0.0002746583195403218`でした。この意図した差を通常再生の回帰結果と分けています。
+SDKと実WASMの合計273比較・2,297,856フレームの最大差は0でした。
+
+- Tauri既存fixtureの自己試験は旧／SDKとも成功。SDKの強化fixtureはrate境界、不正slotの無作用、保護slotとrelease tail、16音の確保、held／released音へのlive edit、voice identity分離、即時Panic無音と96回のfeedback再発音が成功しました。強化した新規音源一致判定は旧版で意図どおり失敗し、別に実行した旧版の制御試験は成功しました。
+- Native本体と16個の事前確保noteは合計35,320バイト。17通りの部分生成失敗の回収、LFO／filter／resamplerの独立性、保護slot割当て、単一slot killを確認し、render／制御中のallocation／freeは0でした。毎フレームのprivate全状態やWASM内部状態をdump比較したものではありません。
+- 2本の既定checkerが固定SDKから成功。1 fixtureにつきSDK32ファイルとfixture側2ファイルの計34入力をSHA-256と照合し、30組立入力の実読み込みと両ABI headerを確認しました。`--fixture`／`--out`のinline指定は成功し、不正な12形式をコンパイル前に拒否し、入力fixtureを保持しました。
+- 実Cargo生成物の30入力はSDKとbyte一致し、32ソース入力の監視を確認しました。実archiveの14 object、10個のC ABI exportの各1回の定義と既存リンク順序を保持し、旧ヘッダー混入や新しい動的ライブラリー指示はありません。
+- 公開JS adapterは44.1／48 kHzで確認し、96 kHzは実配布WASM exportsへ同じ整数位相変換を適用した比較です。公開adapterの96 kHz対応を追加したという意味ではありません。実WASMのSHA-256は`f5de761e82ea303420fb3aac79a0a59dd053773b81453b955254dd13aac77d6f`で、`web/`と`docs/`が一致しました。
+
+`npm test`はPython 22件・Node 31件が成功。Rust全試験は723成功・0失敗・明示実行用4件ignoredでした。
+MCPのローカルTCP bindのため初めから制限外で実行し、sandbox内の失敗や製品修正はありません。
+再生ライフサイクルは22 mode・604,032フレーム・88 Run／Stopが成功しました。
+追加音源の3混合構成・7単独音源、受入れ／16台制限で17台目の拒否も成功し、両制限試験でStop後の予約予算は0へ戻りました。
+再生／混合の両runnerはexit code 0、`deviceOpened: false`です。
+直前の全5構成成功run `40168462256`はこのDX7移行を含みません。
+今回のcommit／push、新しいCI、sanitizer、実機の音声出力・ノイズ・UI操作やインストール後の起動は未実施です。
+リアルタイム期限や処理速度の保証もこの確認範囲に含まれません。

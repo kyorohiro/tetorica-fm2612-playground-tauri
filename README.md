@@ -45,7 +45,7 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 
 ## Native音源SDK
 
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、NES＋FDSとOPL系4種類
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、NES＋FDS、DX7とOPL系4種類
 （YM3526／YM3812／YMF262／Y8950）は、自己完結した`tetorica-soundchip-native`のソース配布を
 `src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
 取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
@@ -66,6 +66,7 @@ RF5C164の選択中接続とコア／低レベルC ABI、独立追加接続もSD
 PC Engineの選択中HuC6280と独立追加接続もSDKを使い、コアの直接includeと既存のRustの予約・PCM・Stop制御を維持します。
 Game Boyの選択中／独立追加接続と共通APUもSDKを使い、既存のarchive・Rustの予約・PCM・Stop制御を維持します。
 NES＋FDSの選択中／独立追加接続と、その中のAPU／FDS移植実装もSDKを使い、既存の1翻訳単位とRustのDMC転送payload所有・予約・予算管理を維持します。
+DX7の選択中／独立追加接続とMSFAもSDKを使います。24共有ファイルと6 Native overrideをCargoの出力先へコピーして組み立て、Panic時は事前確保済みのnote状態とfeedback履歴を割当てなしで初期化します。
 既に固定しているSDK `0.1.0`を使い、共通providerは一度だけ組み込みます。
 Genesisのgain・DC除去・PSG混合、機種用接続と`NativePsgCore`のレート変換、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
 他の音源は従来の同梱スナップショットを使います。
@@ -201,6 +202,7 @@ Main／Workerとも共通FX・liveFx・Audioモニター・最終出力録音を
 Stopは音色バンクと選択を保持して発音を止めます。YM2612／PSGは生成しません。
 内部44,100 Hz固定で出力機器のsample rateへ変換します。`createSoundChip('dx7')`による独立音源の追加にも対応します。
 由来とApache-2.0ライセンスは`src-tauri/native-dx7/`に保存し、ライセンスをアプリにも同梱します。
+実際の接続とMSFAは固定SDKからビルドします。通常発音・release・killの動作は保持し、Native Panic後の再発音ではSDKのfeedback履歴初期化を使います。旧スナップショットは由来・比較用として保持します。
 
 NES＋FDS modeでは、現在のJSNES APUとFDSのJS実装をC++へ移植した音源を使います。
 Pulse 2声、Triangle、Noise、DMC、FDSの6CH、DMC用64 KiB RAM、FDS波形・変調、clock変更に対応します。
