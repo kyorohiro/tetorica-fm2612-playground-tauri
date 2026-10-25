@@ -613,7 +613,8 @@ PSGのattenuation 0は最大音量、15は消音です。保持したattenuation
 - 再生ライフサイクルは22 mode、604,032フレーム、88 Run／Stop遷移が成功。runnerはexit code 0、`deviceOpened: false`。
 - 追加音源は3混合構成・7単独音源が成功。受入れ、16台制限での17台目の拒否、Stop後の予約予算0への回収も成功しました。runnerはexit code 0、`deviceOpened: false`。
 
-先行するrun `40143851548`はこのPSG参照切替を含みません。今回の各OSのCIや実機の音声出力は未確認です。
+先行するrun `40143851548`はこのPSG参照切替を含みません。このローカル検証終了時点では各OSのCIは未実行でした。
+後続CIの結果は末尾に記録します。実機の音声出力は別の確認です。
 
 ## RF5C164移行の検証
 
@@ -641,4 +642,35 @@ macOS ARM64／Clangで音声デバイスを開かずに検証しました。
 - 追加音源は3混合構成・7単独音源、受入れ／16台制限とStop後の予約予算0への回収が成功。再生／混合の両runnerはexit code 0、`deviceOpened: false`でした。
 
 先行するrun `40143851548`は今回のSega PSG／RF5C164参照切替を含みません。
-両移行を含む各OSのCIと、実機の音声出力は未確認です。
+このローカル検証終了時点では両移行を含む各OSのCIは未実行でした。後続CIの結果は次節に記録します。
+実機の音声出力は別の確認です。
+
+## Sega PSG／RF5C164移行後の5環境CI — 全5構成成功
+
+[Build Desktop — run 40148943609](https://github.com/kyorohiro/tetorica-fm2612-playground-tauri/actions/runs/40148943609)を、
+mainのコミット`4939ddc7f7125f47d969e29c975264eaa528d81c`から`workflow_dispatch`で手動実行しました。
+Sega PSGの共通コア／raw C ABIと、RF5C164の選択中／独立追加接続・コア／raw C ABIの移行を含みます。
+attempt 1は`completed`／`success`で終了し、全5ジョブの検証とインストーラービルドが成功しました。
+アプリ版は`0.90.1`のままで、タグや新しいドラフトリリース・一般公開は作成していません。
+
+| 構成 | ソース照合・Cargo・再生／混合の検証 | インストーラービルド |
+| --- | --- | --- |
+| macOS ARM64 | 成功 | 成功（DMG） |
+| macOS x86_64 | 成功 | 成功（DMG） |
+| Windows x86_64 | 成功 | 成功（NSIS） |
+| Linux ARM64 | 成功 | 成功（DEB／AppImage） |
+| Linux x86_64 | 成功 | 成功（DEB／AppImage） |
+
+全5構成の検証JSONを取得・監査し、検証アーティファクトZIPのdigestもGitHubの記録と照合しました。
+
+- SDK374ファイルを含む22件の固定記録と、対応ソースZIP1,796ファイルの照合が成功。
+- 22 mode、604,032フレーム、88回のRun／Stop遷移が成功。
+- 3混合構成、7単独音源、受入れ／16台制限とStop後の予約予算回収が成功。
+- 両runnerはexit code 0、`deviceOpened: false`。
+
+検証レポート5件とインストーラー5件の計10アーティファクトをGitHub APIで確認しました。
+すべて対象run／commitと一致し、有効期限内で、サイズは0より大きいものです。
+全5ジョブのドラフトリリース添付stepはskippedでした。
+インストーラーや対応ソースZIPのダウンロード・起動・独立照合は行っていません。
+今回のCI開始後に製品コードや試験は変更せず、記録だけを更新しています。
+OS間のPCM bit一致や各OSでのWASM比較、実機の音声出力・ノイズ・UI操作・インストール後の起動は別の確認です。
