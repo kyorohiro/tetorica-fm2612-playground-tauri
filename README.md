@@ -45,7 +45,7 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 
 ## Native音源SDK
 
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280とOPL系4種類
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game BoyとOPL系4種類
 （YM3526／YM3812／YMF262／Y8950）は、自己完結した`tetorica-soundchip-native`のソース配布を
 `src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
 取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
@@ -64,6 +64,7 @@ Sega PSGの共有コアと低レベルC ABIもSDKから一度だけ組み込み�
 RF5C164の選択中接続とコア／低レベルC ABI、独立追加接続もSDKを使います。選択中音源と追加音源は別々に64 KiBのRAMを所有し、Rustのアップロード予約・寿命・予算管理は維持します。
 32X PWMの選択中／追加生成に共通のNative接続とコアヘッダーもSDKを使い、既存のPWM archiveとホストの制御・混合は維持します。
 PC Engineの選択中HuC6280と独立追加接続もSDKを使い、コアの直接includeと既存のRustの予約・PCM・Stop制御を維持します。
+Game Boyの選択中／独立追加接続と共通APUもSDKを使い、既存のarchive・Rustの予約・PCM・Stop制御を維持します。
 既に固定しているSDK `0.1.0`を使い、共通providerは一度だけ組み込みます。
 Genesisのgain・DC除去・PSG混合、機種用接続と`NativePsgCore`のレート変換、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
 他の音源は従来の同梱スナップショットを使います。
@@ -212,7 +213,7 @@ JSNESのApache-2.0、FDSのMITライセンスとJSNES著作者情報をアプリ
 Game Boy／PC Engineでは、Browser版と同じMAME由来のC++音源を直接使います。
 `gameboy`／`pce`と`useSoundChip('gameboy'/'huc6280')`、Main／Worker、KeyboardのChip／CH選択、
 Operatorsの音色・波形編集／試聴、clock変更に対応します。Stopは波形・音色・clockを保持します。
-HuC6280のNative接続とコアは固定SDKからビルドし、機種APIとホストの制御・混合は維持します。
+Game Boy／HuC6280のNative接続とコアは固定SDKからビルドし、機種APIとホストの制御・混合は維持します。
 
 SNESではS-DSPをNativeで動かし、8声のBRR楽器・サンプルRAM・ADSR／GAIN・noise・echoを使えます。
 `snes`／`useSoundChip('snes')`、BRRアップロード、Main／Worker、Keyboard／Operators、

@@ -1,7 +1,7 @@
-# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280
+# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280／Game Boy
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280と
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boyと
 OPL系4種類（YM3526／YM3812／YMF262／Y8950）をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
 この手順書は最初のYM2612移行時のファイル名を保持し、その後の音源の移行も記録しています。
@@ -55,6 +55,8 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | 32X PWMのFIFO・routing・timer・PCM生成 | `wasm/pwm32x_core.h` |
 | 選択中／追加生成HuC6280の共通Native接続 | `native/reference/tauri/native_genesis_huc6280.cpp`と対応ヘッダー |
 | 接続が直接includeするHuC6280コア | `vendor/mame-huc6280/huc6280.cpp`と対応ヘッダー |
+| 選択中／追加生成Game Boyの共通Native接続 | `native/reference/tauri/native_genesis_gameboy.cpp`と対応ヘッダー |
+| 共通Game Boy APU | `vendor/mame-gameboy/gameboy_apu.cpp`と対応ヘッダー |
 | DOS PC／MSX Audioの選択中OPL系接続 | `native/reference/tauri/native_genesis_opl.cpp` |
 | OPL系4種類の独立追加接続 | `native/reference/tauri/native_genesis_extra_opl.cpp` |
 | 選択中／追加Y8950のメモリーinterface | `native/reference/tauri/native_genesis_y8950_memory.h` |
@@ -139,6 +141,13 @@ HuC6280も選択中PC Engine／独立追加生成の共通Native接続とコア�
 C++17・O2・MSVC `/EHsc`・`-fwrapv`・`-fno-strict-aliasing`・`-ffp-contract=off`とリンク順序も維持します。
 Rustの予約・owner・寿命・予算、PCM経路、Stop／reset・試奏と機種API、共通Mixer／FXはアプリ側に残ります。
 
+Game Boyも選択中／独立追加生成の共通Native接続とAPUを固定SDKから使います。
+接続cpp／headerと`vendor/mame-gameboy/gameboy_apu.cpp`／headerの4入力は旧コピーとbyte一致します。
+APU headerは従来Native版の状態観測用`NativeGameboyAccess` friendを含みます。Browser原本との差は以前からあるもので、今回DSPや観測用接続を追加する変更ではありません。
+既存の`tetorica_native_gameboy` archive内で接続とAPUを各1回ずつコンパイルし、
+C++17・O2・MSVC `/EHsc`・`-fwrapv`・`-fno-strict-aliasing`・`-ffp-contract=off`とリンク順序を維持します。
+Rustの予約・owner・寿命・予算、PCM、Stop／reset・試奏、Mixer／FXとWebView／JS APIはアプリ側に残ります。
+
 Y8950は512個の可変4 KiBページを借用し、最大2 MiBのADPCM-B RAMを扱います。
 SDKメモリーhelperはポインター配列とinterfaceを保持し、RAMのバイト列自体は所有しません。
 RustのArcによる所有、control側でのCOW準備、寿命・回収・予算管理を引き継ぎます。
@@ -214,6 +223,9 @@ PWMの旧接続と`src-tauri/native-pwm/`も原典・比較用として保持し
 `sources.json`が固定するスナップショットのREADME等の原典・ハッシュ記録は変更せず、旧コピーやsyncスクリプトだけではSDKの入力を更新しません。
 HuC6280の旧接続・スナップショット・固定原典も比較用に保持し、READMEや`PINNED`、ライセンスの参照先は変更しません。
 実際のSDK接続cpp／headerと`vendor/mame-huc6280/`を監視し、旧スナップショットのソース監視は外します。
+Game Boyの旧接続・スナップショット・固定原典とライセンスの同梱先も保持します。
+Cargoは実際のSDK接続cpp／headerと`vendor/mame-gameboy/`を監視し、実消費元のない旧スナップショットのソース監視を外します。
+旧コピーや`sync_native_gameboy.py`だけでは実際のSDK入力を更新しません。READMEや`PINNED`等の固定原典は変更しません。
 
 ## 照合と更新
 
@@ -259,10 +271,11 @@ node scripts/check_native_extra_stability.mjs --out=native-validation/extra-stab
 node scripts/check_native_genesis_core.mjs /path/to/hello_ymfm --seconds=60 --out=native-validation/web-native.json
 ```
 
-PWMの選択中接続もTauriルートから比較できます。
+PWMとGame Boyの選択中接続もTauriルートから比較できます。
 
 ```sh
 node scripts/check_native_pwm.mjs --source /path/to/hello_ymfm
+node scripts/check_native_gameboy.mjs --source /path/to/hello_ymfm
 ```
 
 各音源の選択中音源／追加音源の比較は、Browser／WASM側の`hello_ymfm`ルートで実行します。
@@ -290,6 +303,8 @@ node scripts/check_native_extra_rf5c164.mjs
 node scripts/check_native_extra_pwm.mjs
 node scripts/check_native_huc6280.mjs
 node scripts/check_native_extra_huc6280.mjs
+node scripts/check_native_gameboy.mjs
+node scripts/check_native_extra_gameboy.mjs
 node scripts/check_native_msx.mjs
 node scripts/check_native_extra_ym2413.mjs
 node scripts/check_native_extra_ay8910.mjs
@@ -790,3 +805,30 @@ attempt 1は`completed`／`success`で終了し、全5ジョブの検証とイ�
 取得したのは検証レポートZIPだけで、インストーラーや対応ソースZIPのダウンロード・起動・独立照合は行っていません。
 今回のCI開始後に製品コードや試験は変更せず、記録だけを更新しています。追加のcommit／pushは行っていません。
 OS間のPCM bit一致や各OSでのWASM比較、実機の音声出力・ノイズ・UI操作・インストール後の起動は別の確認です。
+
+## Game Boy移行の検証
+
+共通Native接続cpp／headerとAPU cpp／headerの4入力は旧コピーとbyte一致します。
+macOS ARM64／Clang・Nodeで旧／SDKを別々にコンパイルし、同じ入力のstdoutのbyte一致を確認してから実配布WASMと比較しました。
+
+| 対象 | Native入力数（suite内） | Nativeフレーム | 実WASM比較回数 | 比較フレーム |
+| --- | ---: | ---: | ---: | ---: |
+| 選択中Game Boy | 42 | 396,912 | 42 | 396,912 |
+| 追加Game Boy | 48 | 439,056 | 144 | 1,317,168 |
+
+両suiteの36入力はsample rate・frame数・命令列SHAが同じで、PCMのSHAも一致しています。
+延べ90入力・835,968フレームに対し、重複を除いた固有Native入力は54件・488,208フレームです。
+追加側の各入力を3通りのWorklet block分割で比較し、実WASM比較は計186回・1,714,080フレームで差0でした。
+比較回数や既定コンパイル経路の再確認を、固有Native入力の数へ加算していません。
+
+- Tauriの既存fixtureとSDK既存の検証fixtureを旧／SDKへ実行し、constructor境界、不正入力のrollback、3 rate×3 clock×4 voiceのStop、NR52／DMG波形RAM・source maskの保持、半clockでのvoice別held PCMと全体Stop、独立インスタンスと観測read・位相が成功しました。
+- 公開state ABIの60バイトとoffsetを確認し、render中のallocation／freeは0。状態・位相・callbackの自己試験はPCM比較と別で、毎フレームのprivate全状態dumpやWASM内部状態の比較ではありません。
+- 既定のSDKコンパイル経路2本と実行ファイルをinline指定する経路が成功し、不正な`--fixture`の6形式をコンパイル前に拒否しました。入力のパスとハッシュも記録しました。
+
+`npm test`は31／31成功。Rust全試験は723成功・0失敗・明示実行用4件ignoredでした。
+MCPのローカルTCP bindのため、今回は初めから制限外で実行し、sandbox内の失敗や製品修正はありません。
+再生ライフサイクルは22 mode、604,032フレーム、88 Run／Stopが成功し、runnerはexit code 0、`deviceOpened: false`でした。
+追加音源混合試験も3混合構成・7単独音源、受入れ／16台制限で17台目の拒否が成功し、
+受入れ・台数制限の双方でStop後の予約予算が0へ戻りました。runnerはexit code 0、`deviceOpened: false`でした。
+直前の全5構成成功run `40162092207`は、今回のGame Boy参照切替を含みません。
+今回はローカル実装・検証までで、Game Boy差分のcommit／push、新しいCIとsanitizerは未実施です。実機の音声出力も別の確認です。

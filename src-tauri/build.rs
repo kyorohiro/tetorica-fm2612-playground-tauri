@@ -336,11 +336,14 @@ fn main() {
         .file("src/native_genesis_nes.cpp")
         .warnings(false)
         .compile("tetorica_native_nes");
-    for name in ["gameboy", "snes"] {
-        println!("cargo:rerun-if-changed=native-{name}");
-        println!("cargo:rerun-if-changed=src/native_genesis_{name}.cpp");
-        println!("cargo:rerun-if-changed=src/native_genesis_{name}.h");
-    }
+    println!("cargo:rerun-if-changed=native-snes");
+    println!("cargo:rerun-if-changed=src/native_genesis_snes.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_snes.h");
+    // Selected and independent Game Boy instances use the same SDK adapter
+    // and APU core, compiled once in the existing archive.
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/mame-gameboy");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_gameboy.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_gameboy.h");
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
@@ -349,9 +352,9 @@ fn main() {
         .flag_if_supported("-fwrapv")
         .flag_if_supported("-fno-strict-aliasing")
         .flag_if_supported("-ffp-contract=off")
-        .include("native-gameboy/snapshot/third_party/mame-gameboy")
-        .file("src/native_genesis_gameboy.cpp")
-        .file("native-gameboy/snapshot/third_party/mame-gameboy/gameboy_apu.cpp")
+        .include("vendor/tetorica-soundchip-native/vendor/mame-gameboy")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_gameboy.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/mame-gameboy/gameboy_apu.cpp")
         .warnings(false)
         .compile("tetorica_native_gameboy");
     // The SDK wrapper includes huc6280.cpp directly; compile that core only

@@ -50,6 +50,14 @@ byte-identical. The wrapper directly includes `huc6280.cpp`, so the core remains
 in one translation unit in `tetorica_native_huc6280`, with the existing C++17/O2,
 MSVC `/EHsc`, `-fwrapv`, `-fno-strict-aliasing` and `-ffp-contract=off` settings.
 Rust scheduling, PCM, Stop controls and machine APIs remain application-owned.
+Selected and independent Game Boy instances also use the SDK's
+`native/reference/tauri/native_genesis_gameboy.cpp` and matching header, with
+`vendor/mame-gameboy/gameboy_apu.cpp` and its header. All four inputs are
+byte-identical to the old copies. The adapter and APU are each compiled once in
+the existing `tetorica_native_gameboy` archive with C++17/O2, MSVC `/EHsc`,
+`-fwrapv`, `-fno-strict-aliasing` and `-ffp-contract=off`; Rust scheduling, PCM,
+Stop controls and mixing remain in the application. Legacy snapshots, source
+pins and license resources are retained.
 Master System/MSX machine adapters and their `NativeOpllCore` helper, selected
 MSX AY resampling, the local `NativePsgCore` helper and Genesis mixing/DC/gains
 remain local;

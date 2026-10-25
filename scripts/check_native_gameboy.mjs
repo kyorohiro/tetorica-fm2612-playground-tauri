@@ -1,18 +1,27 @@
 #!/usr/bin/env node
 // Offline PCM comparison against the shipped browser WASM. No output device.
-import {readFile,writeFile,mkdtemp} from 'node:fs/promises';
+import {readFile,writeFile,mkdtemp,rm} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
-import {dirname,resolve} from 'node:path';
+import {createHash} from 'node:crypto';
+import {dirname,resolve,relative} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 const repository=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-const option=name=>{const equal=process.argv.find(v=>v.startsWith(name+'='));if(equal)return equal.slice(name.length+1);const index=process.argv.indexOf(name);return index<0?undefined:process.argv[index+1];};
+const option=name=>{const equal=process.argv.find(value=>value.startsWith(name+'=')),index=process.argv.indexOf(name);if(equal===undefined&&index<0)return undefined;const value=equal===undefined?process.argv[index+1]:equal.slice(name.length+1);if(!value||value.startsWith('--'))throw new Error(`${name} needs a value`);return value;};
 const source=resolve(option('--source')??resolve(repository,'../..'));
 const out=option('--out');
-const work=await mkdtemp(resolve(tmpdir(),'tetorica-native-gameboy-'));
-const executable=resolve(work,'fixture');
-const build=spawnSync('clang++',['-std=c++17','-O2','-ffp-contract=off','-fwrapv','-fno-strict-aliasing',`-I${resolve(repository,'src-tauri/native-gameboy/snapshot/third_party/mame-gameboy')}`,resolve(repository,'src-tauri/src/native_genesis_gameboy_fixture.cpp'),resolve(repository,'src-tauri/src/native_genesis_gameboy.cpp'),resolve(repository,'src-tauri/native-gameboy/snapshot/third_party/mame-gameboy/gameboy_apu.cpp'),'-o',executable],{encoding:'utf8'});
-if(build.status!==0)throw new Error(build.stderr);
+const provided=option('--fixture'),work=provided?null:await mkdtemp(resolve(tmpdir(),'tetorica-native-gameboy-'));
+const executable=resolve(provided??resolve(work,'fixture'));
+let nativeSources;
+try {
+if(!provided){
+  const sdk=resolve(repository,'src-tauri/vendor/tetorica-soundchip-native');
+  const sources=[resolve(repository,'src-tauri/src/native_genesis_gameboy_fixture.cpp'),resolve(sdk,'native/reference/tauri/native_genesis_gameboy.cpp'),resolve(sdk,'vendor/mame-gameboy/gameboy_apu.cpp')];
+  const inputs=[...sources,resolve(sdk,'native/reference/tauri/native_genesis_gameboy.h'),resolve(sdk,'vendor/mame-gameboy/gameboy_apu.h'),resolve(repository,'src-tauri/src/native_genesis_gameboy.h')];
+  nativeSources=await Promise.all(inputs.map(async file=>({file:relative(repository,file),sha256:createHash('sha256').update(await readFile(file)).digest('hex')})));
+  const build=spawnSync('clang++',['-std=c++17','-O2','-ffp-contract=off','-fwrapv','-fno-strict-aliasing',`-I${resolve(sdk,'vendor/mame-gameboy')}`,...sources,'-o',executable],{encoding:'utf8'});
+  if(build.status!==0)throw new Error(build.stderr);
+}
 const self=spawnSync(executable,['--self-test'],{encoding:'utf8'});if(self.status!==0)throw new Error(self.stderr);
 const {GameboyApu}=await import(pathToFileURL(resolve(source,'web/gameboyapu.js')));
 const {ChipClockResampler}=await import(pathToFileURL(resolve(source,'web/playground_chip_clock.js')));
@@ -35,20 +44,24 @@ cases.push({name:'reset-mid-note',frames:8192,events:[...base,...wave(0,1980),..
 let seed=0x1842;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed;};
 const raw=[...base];for(let i=0;i<300;i++){const address=random()%48,value=random()&255;raw.push(W(1+i*23,address,address===22?128:value));}
 cases.push({name:'deterministic-raw-writes',frames:8192,events:raw});
-const report={date:new Date().toISOString().slice(0,10),reference:'existing docs/generated/gameboy_apu_wasm.wasm; outer clock resampler activated lazily as in the shipped Worklet',deviceOpened:false,selfTest:JSON.parse(self.stderr),cases:[],maximumDifference:0,stereoFrames:0};
+const report={date:new Date().toISOString().slice(0,10),reference:'existing docs/generated/gameboy_apu_wasm.wasm; outer clock resampler activated lazily as in the shipped Worklet',deviceOpened:false,selfTest:JSON.parse(self.stderr),
+  wasmSha256:createHash('sha256').update(wasmBinary).digest('hex'),...(nativeSources?{nativeSources}:{fixtureProvided:true}),cases:[],maximumDifference:0,stereoFrames:0};
 for(const rate of [44100,48000,96000])for(const test of cases){
   const events=test.events.slice().sort((a,b)=>a.frame-b.frame),input=events.map(e=>`${e.frame} ${e.op} ${e.address} ${e.value}`).join('\n')+'\n';
   const native=spawnSync(executable,[String(rate),String(test.frames)],{input,maxBuffer:32*1024*1024});if(native.status!==0)throw new Error(`${test.name}: ${native.stderr}`);
   const pcm=new Float32Array(native.stdout.buffer,native.stdout.byteOffset,native.stdout.byteLength/4);
+  if(native.stdout.byteLength!==test.frames*8)throw new Error('Native fixture must return every stereo frame');
   const chip=await GameboyApu.create({moduleFactory:factory,moduleOptions:{wasmBinary},sampleRate:rate});
   let resampler=null,frame=0,index=0,max=0;
   try{while(frame<test.frames){while(index<events.length&&events[index].frame===frame){const e=events[index++];if(e.op==='write')chip.writeRegister(e.address,e.value);else if(e.op==='clock')(resampler??=new ChipClockResampler()).setClock(e.value,4194304);else if(e.op==='reset'){chip.reset();resampler?.resetPhase();}}
     const end=Math.min(test.frames,events[index]?.frame??test.frames,frame+257),left=new Float32Array(end-frame),right=new Float32Array(end-frame);if(resampler)resampler.render(chip,left,right);else{const pcm=chip.generateStereo(left.length);left.set(pcm.left);right.set(pcm.right);}
-    for(let i=0;i<left.length;i++){max=Math.max(max,Math.abs(left[i]-pcm[(frame+i)*2]),Math.abs(right[i]-pcm[(frame+i)*2+1]));}
+    for(let i=0;i<left.length;i++){if(!Number.isFinite(pcm[(frame+i)*2])||!Number.isFinite(pcm[(frame+i)*2+1]))throw new Error('Non-finite Native PCM');max=Math.max(max,Math.abs(left[i]-pcm[(frame+i)*2]),Math.abs(right[i]-pcm[(frame+i)*2+1]));}
     frame=end;
   }}finally{chip.dispose();}
   if(max!==0)throw new Error(`${test.name}@${rate}: PCM difference ${max}`);
   report.cases.push({name:test.name,sampleRate:rate,frames:test.frames,maximumDifference:max});report.stereoFrames+=test.frames;report.maximumDifference=Math.max(report.maximumDifference,max);
 }
+report.status='passed';
 if(out)await writeFile(out,JSON.stringify(report,null,2)+'\n');
 console.log(JSON.stringify({cases:report.cases.length,stereoFrames:report.stereoFrames,maximumDifference:report.maximumDifference,selfTest:report.selfTest,deviceOpened:false}));
+}finally{if(work)await rm(work,{recursive:true,force:true});}
