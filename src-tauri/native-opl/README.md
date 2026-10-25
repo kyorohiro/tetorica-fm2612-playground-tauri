@@ -18,8 +18,9 @@ helper owns the pointer table and interface, not the RAM bytes. Rust retains
 page ownership, control-side copy-on-write preparation, lifetime, retirement and
 budget accounting. The audio thread is the sole reader/writer of published
 pages and preserves the existing memory and upload revision behavior.
-The RF5C164 adapter sharing the archive, machine helpers, PSG/AY, scheduling and
-mixing remain local to Tauri. No new sample-memory API is introduced here.
+The independent RF5C164 adapter sharing this archive also builds from the pinned
+SDK, with its own renderer and 64 KiB RAM. Machine helpers, PSG/AY host controls,
+scheduling and mixing remain in Tauri. No new sample-memory API is introduced here.
 
 `scripts/sync_native_opl.py --source PATH --check` verifies the pinned Browser
 wrappers, authoring API, Worklet, inspector and the once-compiled synthesis

@@ -1,7 +1,7 @@
-# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG
+# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSGと
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164と
 OPL系4種類（YM3526／YM3812／YMF262／Y8950）をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
 この手順書は最初のYM2612移行時のファイル名を保持し、その後の音源の移行も記録しています。
@@ -45,8 +45,12 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | `createSoundChip('ym2413')`の独立Native接続 | `native/reference/tauri/native_genesis_ym2413.cpp` |
 | `createSoundChip('ay8910')`の独立Native接続 | `native/reference/tauri/native_genesis_ay8910.cpp` |
 | MSXと追加AYに共通のAY-3-8910コア | `vendor/mame-ay8910/ay8910.cpp`と対応ヘッダー |
-| Genesisが使うSega PSGの低レベルC ABI | `wasm/segapsg_wasm.cpp`と`wasm/chip_state.h` |
+| Genesisが使うSega PSGの低レベルC ABI | `wasm/segapsg_wasm.cpp`と`vendor/ymfm/chip_state.h` |
 | Genesis／Nuked、Master System、Game Gearと追加PSGに共通のコア | `vendor/ymfm/segapsg.cpp`と対応ヘッダー |
+| Mega CD／32X系の選択中RF5C164接続 | `native/reference/tauri/native_genesis_rf5c164.cpp`と対応ヘッダー |
+| RF5C164の独立追加接続 | `native/reference/tauri/native_genesis_extra_rf5c164.cpp`と対応ヘッダー |
+| 選択中RF5C164とraw C ABIに共通のコア | `vendor/mame-rf5c164/rf5c164.cpp`と対応ヘッダー |
+| RF5C164のraw C ABI | `wasm/rf5c164_wasm.cpp`と`vendor/ymfm/chip_state.h` |
 | DOS PC／MSX Audioの選択中OPL系接続 | `native/reference/tauri/native_genesis_opl.cpp` |
 | OPL系4種類の独立追加接続 | `native/reference/tauri/native_genesis_extra_opl.cpp` |
 | 選択中／追加Y8950のメモリーinterface | `native/reference/tauri/native_genesis_y8950_memory.h` |
@@ -85,7 +89,7 @@ OPL系4種類の選択中接続／追加接続と、対応するヘッダーもS
 DOS PCはYM3526／YM3812／YMF262、MSX AudioはY8950を選び、追加音源も生成時に4種類から選択します。
 SDKのcppは同じSDK内のC ABIヘッダーとY8950メモリーhelperを参照し、アプリ側の転送ヘッダーは作りません。
 OPL／PCM／ADPCM providerは既にSDKへ移行済みで、今回重複して追加しません。archiveの順序も維持します。
-同じarchiveにあるローカルRF5C164接続、PSGの機種用補助処理、Rustの予約・owner制御と混合はそのままです。
+同じarchiveにある独立RF5C164接続も現在はSDKを使います。PSGの機種用補助処理、Rustの予約・owner制御と混合はそのままです。
 
 AY-3-8910の共通コア／ヘッダーと独立接続もSDKからビルドし、既存のMSX archive内でコアを一度だけ組み込みます。
 MSXの選択中音源はローカルの`src-tauri/src/native_genesis_msx.cpp`を使い、AYのレート変換と
@@ -105,6 +109,18 @@ Genesis／Nukedの機種用接続とgain・DC除去・PSG混合はローカル�
 Master System／Game Gearと追加PSGは、ローカルの機種用接続と`src-tauri/src/native_genesis_psg.h`の
 `NativePsgCore`を引き続き使います。PSGのレート変換、clock、Stop／reset、ステレオマスクと試奏の制御を
 SDKの機種用接続へ置き換える変更ではありません。Rustの予約・owner管理とMixer／FXも引き継ぎます。
+
+RF5C164の選択中／独立追加接続、コアとraw C ABIも同じ固定SDKからビルドします。
+選択中接続は`RF5C164`コアを内包し、raw C ABIとともに既存の`tetorica_native_megacd` archiveへ組み込みます。
+コアは一度だけコンパイルします。追加接続は既存の`tetorica_native_opl` archiveに入り、
+独自のrendererと8声分の保持出力を持つ既存実装を使います。両方を一つのrendererへ統合する変更ではありません。
+接続cpp／headerの2組、コアcpp／header、raw C ABIと`chip_state.h`の8入力は旧コピーとbyte一致します。
+SDKの固定版とバイト列、既存のarchive順序・C++14・O2・MSVC `/EHsc`は維持します。
+
+選択中音源と追加音源はそれぞれ64 KiBのRAMを所有し、アップロードされたデータをそのRAMへコピーします。
+可変RAMページを借用する方式へ切り替えません。Rust側の不変upload payloadの所有、受入れ・転送予約、
+寿命・回収・メモリー予算、既存のStop／resetやKeyboard試奏の制御と混合はホスト側に残ります。
+サンプル素材の準備や録音・ファイル入力をSDKへ移す変更でもありません。
 
 Y8950は512個の可変4 KiBページを借用し、最大2 MiBのADPCM-B RAMを扱います。
 SDKメモリーhelperはポインター配列とinterfaceを保持し、RAMのバイト列自体は所有しません。
@@ -172,6 +188,10 @@ Sega PSGの旧コア／C ABIとGenesis／Master System／Game Gearの比較用�
 実際の入力は既存のSDK `vendor/ymfm/`と`wasm/`の監視対象です。ローカルの機種用接続と
 `NativePsgCore`の監視を継続し、ほかの入力も残る`native-genesis/`の監視は外しません。
 旧コピーや各syncスクリプトの更新だけでは、実際のSDK PSGコアは更新されません。
+RF5C164の旧接続／コア／raw C ABIと`src-tauri/native-megacd/`も原典・比較用の記録として保持します。
+CargoはSDKのRFコアディレクトリと2組の接続cpp／header、既存のSDK共通ヘッダー／wasm入力を監視します。
+旧`native-megacd/`は実行ソースや埋め込み音声素材の参照がなくなったためソース監視を外しますが、ライセンスの同梱先は保持します。
+旧コピーや`sync_native_megacd.py`の更新だけでは、実際にコンパイルするSDKは変わりません。
 
 ## 照合と更新
 
@@ -237,6 +257,8 @@ node scripts/check_native_extra_okim6258.mjs
 node scripts/check_native_master_system.mjs
 node scripts/check_native_game_gear.mjs
 node scripts/check_native_nuked.mjs
+node scripts/check_native_megacd.mjs
+node scripts/check_native_extra_rf5c164.mjs
 node scripts/check_native_msx.mjs
 node scripts/check_native_extra_ym2413.mjs
 node scripts/check_native_extra_ay8910.mjs
@@ -592,3 +614,31 @@ PSGのattenuation 0は最大音量、15は消音です。保持したattenuation
 - 追加音源は3混合構成・7単独音源が成功。受入れ、16台制限での17台目の拒否、Stop後の予約予算0への回収も成功しました。runnerはexit code 0、`deviceOpened: false`。
 
 先行するrun `40143851548`はこのPSG参照切替を含みません。今回の各OSのCIや実機の音声出力は未確認です。
+
+## RF5C164移行の検証
+
+macOS ARM64／Clangで音声デバイスを開かずに検証しました。
+選択中／独立追加接続、コア、raw C ABIと共通状態ヘッダーの8入力は旧コピーとbyte一致します。
+旧入力とSDK入力を別々にコンパイルし、同じ命令列に対するstdoutのbyte一致を確認してから実配布WASMと比較しました。
+
+| 対象 | 比較数 | フレーム | WASMとの最大差 |
+| --- | ---: | ---: | ---: |
+| 選択中RF5C164（外側のclock変換とgain rampを含む） | 21 | 98,304 | 0 |
+| 独立追加RF5C164 | 75 | 448,512 | 0 |
+
+計96ケース・546,816フレームで旧／SDKの出力がbyte一致し、実WASMとの差も0でした。
+追加接続は毎フレーム95値を比較しました。左右PCM、56個のレジスターshadow値、control／selected／mask／clock／bank、
+16個のチャンネル位置readと16箇所のRAM観測を含みます。RAM全64 KiBの毎フレーム比較ではありません。
+2つの既定checkerも実際のSDK入力から成功し、使用したファイルとディスク上のSHA-256を確認しました。
+その再実行分は比較数へ二重加算していません。
+
+- 別のNative間比較6ケース・24,576フレームで、raw C ABIと独立追加接続を44.1／48／96 kHzで確認しました。PCMと16個のbus readを毎フレーム比較し、各ケース27箇所のcheckpointでRAM全65,536バイトを独立した期待値と旧／SDK間で照合しました。
+- rawの65,660バイトのシリアライズ状態全体、追加接続の100バイトの公開状態と全RAMも一致しました。ロード後に呼び出し側のバッファを変更してもRAMが変わらず、コピーする所有方式を維持します。範囲外の拒否、reset後のRAM保持、clearとbank切替後の書込みも確認しました。
+- これはNative間の公開状態・RAM比較で、privateオブジェクトやWASM内部状態のdumpではありません。raw状態APIのvector割当てはcallback外で扱います。
+- 追加接続のfixture自己試験では、9通りのrate／clock条件での音源分離、8声を飽和させた低clockの保持PCM、RAM範囲・保持・状態read、source取り消しとStop／resetが成功。callback中のallocation／freeは0でした。
+- Rust全試験は723成功・0失敗・明示実行用4件ignored。
+- 再生ライフサイクルは22 mode、604,032フレーム、88 Run／Stop遷移が成功しました。
+- 追加音源は3混合構成・7単独音源、受入れ／16台制限とStop後の予約予算0への回収が成功。再生／混合の両runnerはexit code 0、`deviceOpened: false`でした。
+
+先行するrun `40143851548`は今回のSega PSG／RF5C164参照切替を含みません。
+両移行を含む各OSのCIと、実機の音声出力は未確認です。

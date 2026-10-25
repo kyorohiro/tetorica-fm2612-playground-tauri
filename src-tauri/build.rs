@@ -49,9 +49,9 @@ fn main() {
     println!("cargo:rerun-if-changed=native-nuked");
     println!("cargo:rerun-if-changed=src/native_genesis_nuked.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_nuked_ym2612.inc");
-    println!("cargo:rerun-if-changed=native-megacd");
-    println!("cargo:rerun-if-changed=src/native_genesis_rf5c164.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_rf5c164.h");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/mame-rf5c164");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_rf5c164.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_rf5c164.h");
     println!("cargo:rerun-if-changed=native-livefx");
     println!("cargo:rerun-if-changed=src/native_genesis_livefx.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_livefx.h");
@@ -85,8 +85,8 @@ fn main() {
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_opl.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_okim6258.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_okim6258.h");
-    println!("cargo:rerun-if-changed=src/native_genesis_extra_rf5c164.cpp");
-    println!("cargo:rerun-if-changed=src/native_genesis_extra_rf5c164.h");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_rf5c164.cpp");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_rf5c164.h");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_opl.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_opl.h");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_opl.h");
@@ -115,9 +115,9 @@ fn main() {
         .file("src/native_genesis_game_gear.cpp")
         .warnings(false)
         .compile("tetorica_native_game_gear");
-    // Selected DOS/MSX Audio and additional OPL adapters use the pinned SDK.
-    // Their shared OPL/PCM provider follows with Master System/MSX on GNU ld;
-    // RF5C164 keeps its application-owned adapter in this archive.
+    // Selected DOS/MSX Audio, additional OPL and additional RF5C164 adapters
+    // use the pinned SDK. The shared OPL/PCM provider follows with Master
+    // System/MSX on GNU ld; the independent RF renderer stays in this archive.
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
@@ -130,7 +130,7 @@ fn main() {
         .file(
             "vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_opl.cpp",
         )
-        .file("src/native_genesis_extra_rf5c164.cpp")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_extra_rf5c164.cpp")
         .warnings(false)
         .compile("tetorica_native_opl");
     // MSX retains its machine adapter and shares the SDK AY core with the
@@ -273,15 +273,19 @@ fn main() {
         .file("native-nuked/snapshot/third_party/nuked-opn2/ym3438.c")
         .warnings(false)
         .compile("tetorica_native_nuked_opn2");
+    // Selected Mega-CD RF5C164 and the raw C ABI share one SDK decoder. The
+    // independent RF renderer above keeps its own core and voice-cancellation
+    // state; both retain their existing copy-into-owned-RAM upload semantics.
     cc::Build::new()
         .cpp(true)
         .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
-        .include("native-megacd")
-        .file("src/native_genesis_rf5c164.cpp")
-        .file("native-megacd/rf5c164.cpp")
-        .file("native-megacd/rf5c164_wasm.cpp")
+        .include("vendor/tetorica-soundchip-native/vendor/mame-rf5c164")
+        .include("vendor/tetorica-soundchip-native/vendor/ymfm")
+        .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_rf5c164.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/mame-rf5c164/rf5c164.cpp")
+        .file("vendor/tetorica-soundchip-native/wasm/rf5c164_wasm.cpp")
         .warnings(false)
         .compile("tetorica_native_megacd");
     println!("cargo:rerun-if-changed=native-dx7");
