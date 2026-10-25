@@ -1232,6 +1232,7 @@ mod tests {
                         performance: None,
                         owner: None,
                         action: CommandAction::Mix {
+                            gain_units: crate::native_genesis::GainUnits::Legacy,
                             fm_left: 1.,
                             fm_right: 1.,
                             psg_left: 1.,

@@ -329,6 +329,7 @@ fn native_megacd_mix_and_master_are_in_shared_output_path() {
             &[command(
                 0,
                 CommandAction::Mix {
+                    gain_units: super::GainUnits::Legacy,
                     fm_left: 1.0,
                     fm_right: 1.0,
                     psg_left: 1.0,

@@ -192,6 +192,7 @@ extern "C" {
     fn native_genesis_psg_mute(core: *mut c_void, channel: u8);
     fn native_genesis_psg_reset(core: *mut c_void);
     fn native_genesis_mix(core: *mut c_void, gains: *const f32);
+    fn native_genesis_mix_source(core: *mut c_void, gains: *const f32);
     fn native_genesis_sample(core: *mut c_void, output: *mut f32);
     fn native_genesis_master(core: *mut c_void) -> f32;
 }
@@ -266,6 +267,7 @@ impl Core {
                 Action::PsgReset => native_genesis_psg_reset(self.0),
                 Action::Reset => native_genesis_reset(self.0),
                 Action::Mix(gains) => native_genesis_mix(self.0, gains.as_ptr()),
+                Action::SourceMix(gains) => native_genesis_mix_source(self.0, gains.as_ptr()),
                 _ => unreachable!("Media actions are owned by Renderer"),
             }
         }
@@ -333,6 +335,7 @@ enum Action {
     PsgReset,
     Reset,
     Mix([f32; 5]),
+    SourceMix([f32; 5]),
     DacPlay {
         bank: Arc<media::Bank>,
         offset: usize,
@@ -352,6 +355,13 @@ enum Action {
     Fx(FxAction),
     FxReset(FxAction),
     Noise(Option<noise::Prepared>),
+}
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum GainUnits {
+    #[default]
+    Legacy,
+    Source,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Owner {
@@ -596,6 +606,8 @@ enum CommandAction {
         name: Option<String>,
     },
     Mix {
+        #[serde(default, rename = "gainUnits")]
+        gain_units: GainUnits,
         #[serde(rename = "fmLeft")]
         fm_left: f32,
         #[serde(rename = "fmRight")]
@@ -734,6 +746,7 @@ impl Command {
                 return Err("Native media command requires a loaded bank".into())
             }
             CommandAction::Mix {
+                gain_units,
                 fm_left,
                 fm_right,
                 psg_left,
@@ -749,7 +762,10 @@ impl Command {
                 {
                     return Err("Native source gains must be 0–2 and master gain 0–3.8".into());
                 }
-                Action::Mix(gains)
+                match gain_units {
+                    GainUnits::Legacy => Action::Mix(gains),
+                    GainUnits::Source => Action::SourceMix(gains),
+                }
             }
         })
     }
@@ -5807,7 +5823,7 @@ impl Renderer {
                         self.psg_owners = [None; 4];
                         self.psg_latch = 0;
                     }
-                    Action::Mix(gains)
+                    Action::Mix(gains) | Action::SourceMix(gains)
                         if self.dx7.is_some()
                             || self.nes.is_some()
                             || self.gameboy.is_some()
@@ -5990,6 +6006,7 @@ impl Renderer {
                     Action::Opl(command) => command.starts(),
                     Action::Pwm(command) => command.starts(),
                     Action::Mix(_)
+                    | Action::SourceMix(_)
                     | Action::RfMix(_)
                     | Action::RfLoad(_)
                     | Action::RfWriteMemory(..)
@@ -7729,6 +7746,85 @@ mod tests {
         );
     }
     #[test]
+    fn source_mix_ipc_gain_units_keep_public_bounds_and_explicit_legacy_contract() {
+        let packet = |units: serde_json::Value, value: f32| {
+            serde_json::json!({"frame":0,"type":"mix","gainUnits":units,
+                "fmLeft":value,"fmRight":0.5,"psgLeft":value,"psgRight":0.35,"master":3.8})
+        };
+        let parsed: Command = serde_json::from_value(packet(serde_json::json!("source"), 2.0)).unwrap();
+        assert!(matches!(parsed.validate().unwrap(), Action::SourceMix([2.0, 0.5, 2.0, 0.35, 3.8])));
+        let legacy: Command = serde_json::from_value(packet(serde_json::json!("legacy"), 2.0)).unwrap();
+        assert!(matches!(legacy.validate().unwrap(), Action::Mix([2.0, 0.5, 2.0, 0.35, 3.8])));
+        for value in [-0.01, 2.01] {
+            let invalid: Command = serde_json::from_value(packet(serde_json::json!("source"), value)).unwrap();
+            assert!(invalid.validate().is_err());
+        }
+        for units in [serde_json::Value::Null, serde_json::json!(1), serde_json::json!("unknown")] {
+            assert!(serde_json::from_value::<Command>(packet(units, 1.0)).is_err());
+        }
+    }
+
+    #[test]
+    fn source_mix_core_uses_actual_source_gains_and_retains_them_through_reset_and_stop() {
+        for nuked in [false, true] {
+            for rate in [44100, 48000, 96000] {
+                for fm in [false, true] {
+                    let mut actual = Core::new_engine(rate, nuked).unwrap();
+                    let mut legacy = Core::new_engine(rate, nuked).unwrap();
+                    // Source gain 2 requires a private PSG target above 2;
+                    // the public protocol still accepts no value above 2.
+                    let source_gains = if fm { [2.0, 0.4, 0.0, 0.0, 0.5] } else { [0.0, 0.0, 2.0, 0.4, 0.5] };
+                    let legacy_gains = if fm { [1.0, 1.0, 0.0, 0.0, 0.5] } else { [0.0, 0.0, 1.0, 1.0, 0.5] };
+                    actual.apply(Action::SourceMix(source_gains));
+                    legacy.apply(Action::Mix(legacy_gains));
+                    for operation in 0..3 {
+                        if operation == 1 { actual.apply(Action::Reset); legacy.apply(Action::Reset); }
+                        if operation == 2 { unsafe { native_genesis_stop_voices(actual.0); native_genesis_stop_voices(legacy.0); } }
+                        for core in [&mut actual, &mut legacy] {
+                            if fm {
+                                fm_patch(core); core.apply(Action::Write(0, 0x28, 0x80));
+                            } else {
+                                for value in [0x85, 0x10, 0x94] { core.apply(Action::PsgWrite(value)); }
+                            }
+                            for _ in 0..1024 { core.sample(); }
+                        }
+                        let trim = if fm { 0.9 } else { 0.35 };
+                        let mut energy = 0.0f32;
+                        for _ in 0..2048 {
+                            let a = actual.sample(); let b = legacy.sample();
+                            assert!((a[0] - b[0] * (2.0 / trim)).abs() < 3e-7, "source left: {nuked}/{rate}/{fm}/{operation}: {a:?}/{b:?}");
+                            assert!((a[1] - b[1] * (0.4 / trim)).abs() < 3e-7, "source right: {nuked}/{rate}/{fm}/{operation}");
+                            energy += a[0].abs();
+                        }
+                        assert!(energy > 0.1);
+                    }
+                    actual.apply(Action::SourceMix([0.0, 0.0, 0.0, 0.0, 0.5]));
+                    for _ in 0..1024 { actual.sample(); }
+                    assert_eq!(actual.sample(), [0.0; 2]);
+                    assert_eq!(actual.master(), 0.5);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn source_mix_is_queued_at_its_frame_and_settles_without_waking_or_resetting_chips() {
+        for nuked in [false, true] {
+            let mode = if nuked { Some("genesis-nuked") } else { None };
+            let shared = Shared::new_modes(48000, 1, false, false, false, mode);
+            let mut renderer = Renderer::new_modes(48000, false, false, false, mode).unwrap();
+            let parsed: Command = serde_json::from_value(serde_json::json!({"frame":1024,"type":"mix","gainUnits":"source", "fmLeft":0,"fmRight":0,"psgLeft":0,"psgRight":0,"master":1})).unwrap();
+            let mut commands = tone(0); commands.push(parsed);
+            shared.enqueue(1, &commands).unwrap();
+            let output = render(&mut renderer, &shared, 2048);
+            assert!(output[512..1024].iter().any(|v| v[0].abs() > 0.001));
+            assert!(output[1536..].iter().all(|v| *v == [0.0; 2]));
+            assert_eq!(shared.pending.load(Ordering::Relaxed), 0);
+            assert_eq!(renderer.frame, 2048);
+        }
+    }
+
+    #[test]
     fn ipc_command_contract_and_gain_ranges_are_explicit() {
         let parsed: Command = serde_json::from_value(serde_json::json!({
             "frame": 17, "type": "mix", "fmLeft": 2, "fmRight": 1,
@@ -7742,6 +7838,7 @@ mod tests {
         let invalid = command(
             0,
             CommandAction::Mix {
+                gain_units: GainUnits::Legacy,
                 fm_left: 2.01,
                 fm_right: 1.0,
                 psg_left: 1.0,
@@ -7842,6 +7939,7 @@ mod tests {
             command(
                 0,
                 CommandAction::Mix {
+                    gain_units: GainUnits::Legacy,
                     fm_left: 1.0,
                     fm_right: 1.0,
                     psg_left: 1.0,
@@ -8285,6 +8383,7 @@ mod tests {
                     command(
                         0,
                         CommandAction::Mix {
+                            gain_units: GainUnits::Legacy,
                             fm_left: 1.0,
                             fm_right: 1.0,
                             psg_left: 1.0,

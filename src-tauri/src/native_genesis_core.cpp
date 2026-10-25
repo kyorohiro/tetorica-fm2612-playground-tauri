@@ -179,6 +179,34 @@ struct NativeGenesis {
         segapsg_set_stereo(psg, stereo);
         if (nuked) voices_stopped = true;
     }
+    // Public source gains remain 0..2. This private conversion cancels the
+    // existing Genesis trims once, keeping current/held samples and ramps in
+    // their original representation. Internal targets may exceed 2; they are
+    // never sent back through the public transport or used as source limits.
+    void mix(const float *gains, bool source_units) {
+        if (nuked) {
+            std::array<double, 5> requested{};
+            for (size_t i = 0; i < requested.size(); ++i)
+                requested[i] = source_units && i < 4 ? double(gains[i]) / (i < 2 ? .9 : .35) : double(gains[i]);
+            // The combined transport sends all gains for a source-specific edit.
+            // Preserve ramps belonging to sources whose target did not change.
+            for (size_t source = 0; source < nuked_ramp.size(); ++source) {
+                const size_t begin = source * 2, end = std::min(begin + 2, nuked_target.size());
+                bool changed = false;
+                for (size_t i = begin; i < end; ++i) changed |= nuked_target[i] != requested[i];
+                if (changed) {
+                    for (size_t i = begin; i < end; ++i) nuked_target[i] = requested[i];
+                    nuked_ramp[source] = std::max(1u, (output_rate + 100) / 200);
+                }
+            }
+        } else {
+            if (source_units) {
+                for (size_t i = 0; i < target.size(); ++i)
+                    target[i] = i < 4 ? gains[i] / (i < 2 ? .9f : .35f) : gains[i];
+            } else std::copy(gains, gains + 5, target.begin());
+            ramp = std::max(1u, output_rate / 200); // Existing ymfm 5 ms ramp.
+        }
+    }
     void sample_nuked(float *output) {
         for (size_t source = 0; source < nuked_ramp.size(); ++source) {
             auto &remaining = nuked_ramp[source];
@@ -265,23 +293,10 @@ void native_genesis_psg_stereo(void *ptr, uint8_t value) {
     segapsg_set_stereo(core->psg, value);
 }
 void native_genesis_mix(void *ptr, const float *gains) {
-    auto *core = static_cast<NativeGenesis *>(ptr);
-    if (core->nuked) {
-        // The combined transport sends all gains for a source-specific edit.
-        // Preserve ramps belonging to sources whose target did not change.
-        for (size_t source = 0; source < core->nuked_ramp.size(); ++source) {
-            const size_t begin = source * 2, end = std::min(begin + 2, core->nuked_target.size());
-            bool changed = false;
-            for (size_t i = begin; i < end; ++i) changed |= core->nuked_target[i] != gains[i];
-            if (changed) {
-                for (size_t i = begin; i < end; ++i) core->nuked_target[i] = gains[i];
-                core->nuked_ramp[source] = std::max(1u, (core->output_rate + 100) / 200);
-            }
-        }
-    } else {
-        std::copy(gains, gains + 5, core->target.begin());
-        core->ramp = std::max(1u, core->output_rate / 200); // Existing ymfm 5 ms ramp.
-    }
+    static_cast<NativeGenesis *>(ptr)->mix(gains, false);
+}
+void native_genesis_mix_source(void *ptr, const float *gains) {
+    static_cast<NativeGenesis *>(ptr)->mix(gains, true);
 }
 float native_genesis_master(void *ptr) { auto *core = static_cast<NativeGenesis *>(ptr); return core->nuked ? float(core->nuked_current[4]) : core->current[4]; }
 uint8_t native_genesis_read(void *ptr, uint32_t port) { auto *core=static_cast<NativeGenesis *>(ptr); return core->fm.read(core->ym, port); }
