@@ -1095,6 +1095,8 @@ SDKのソースZIPを独立した一時ディレクトリへ展開し、全24 CT
 Tauriの`npm test`もPython 22件・Node 31件成功しました。このツール試験はSDK最終取り込み前に実行し、
 合成fixtureを使うため実際の同梱receiptには依存しません。
 2本の既定checkerも初回取り込み後のSDK入力から成功し、選択中12入力／独立追加8入力のハッシュを記録しました。
+比較ツールもSDKのLinux監査用`native/tests/nuked_audit.cpp`を使う形へ揃え、最終記録はshimを含む13／9入力です。
+同じ222／198ケースと自己試験の再実行も成功し、合計420ケースへ重複加算していません。
 実Cargo archive各1 objectのDWARFはSDK接続cpp／コアCを指し、10 raw C ABI・16独立C ABI・8 prefix済みOPN2 exportは各1回、非prefix定義は0でした。
 独立した依存preprocessで6音源入力がSDK内だけに解決され、実入力監視と既存リンク順序も確認しました。
 
@@ -1110,7 +1112,15 @@ Rust全試験は723成功・0失敗・明示実行用4件ignored。MCPのロー�
 
 SDKの初回CI run `40174420834`はLinux 2構成で試験用allocation macroと標準ヘッダーのinclude順によりコンパイルが失敗しました。
 SDKの試験専用shimで標準ヘッダーを先に読み、製品コア・接続を変えずに修正しました。
-修正コミット`e4b7d7ecef60e3927ac04815cd9f985f62c82f04`のSDK CI run `40175263453`を開始しました。この記録時点では成否を確認していません。
-新しいTauri 5構成CIは、このローカルチェックポイント後に実行して結果を追記します。
+修正コミット`e4b7d7ecef60e3927ac04815cd9f985f62c82f04`の[SDK CI run 40175263453](https://github.com/kyorohiro/tetorica-soundchip-native/actions/runs/40175263453)は全6ジョブ成功しました。
+Native 5構成それぞれで19ライブラリー・24 CTest・18 WAV example・Python 51件・JS参照が成功し、診断ZIP 5個のGitHub digestと元ソースZIPのSHA一致を確認しました。WASMは通常ymfm YM2612のビルドと抽出ソース再ビルドの同期ABI検証で、新規Nuked WASMのビルドではありません。
+
+Nuked移行を含む[Tauri CI run 40175615215](https://github.com/kyorohiro/tetorica-fm2612-playground-tauri/actions/runs/40175615215)はattempt 1で`completed`／`success`になりました。
+対象は`main`の`367fd7a851ffadd3a01c3cfb985972112156ca63`。Windows x64、Linux x64／ARM64、macOS Intel／ARM64の全5構成で試験とインストーラー生成・アップロードが成功しました。
+各ジョブログでPython 22件・Node 31件、CargoはWindows 726成功／3 ignored、ほか4構成723成功／4 ignoredを確認しました。
+全5構成の検証JSONでSDK379ファイル・22件の固定記録・対応ソースZIP1,801ファイル、22 mode・604,032フレーム・88 Run／Stopと、3混合構成・7単独音源・受入れ／16台制限・Stop後予算0が成功しました。両runnerはexit code 0、`deviceOpened: false`です。
+計10アーティファクトのrun／commit一致・非空・有効期限内と検証ZIP 5個のGitHub digestを確認し、タグ用のドラフトリリース添付stepは全5構成skippedでした。
+CI内のソースZIP SHAはWindowsとほか4構成で異なりますが、各CIの内容照合は成功しています。原因は断定せず、ZIP自己ハッシュと検証summaryのハッシュは本体側のNuked作業記録へ残します。
+CI対象からのTauri差分はこの結果記録ガイドだけで、製品・試験入力は変更していません。インストーラー／ソースZIPそのものの取得・独立検証・起動は、このレポート監査には含めません。
 直前の全5構成成功run `40171879716`は今回のNuked移行を含みません。
 実機聴音・UI操作、インストール後の起動、OS間PCM一致、各OSのWASM比較は別の確認です。
