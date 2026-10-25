@@ -984,7 +984,8 @@ MCPのローカルTCP bindのため初めから制限外で実行し、sandbox�
 追加音源の3混合構成・7単独音源、受入れ／16台制限で17台目の拒否も成功し、両制限試験でStop後の予約予算は0へ戻りました。
 再生／混合の両runnerはexit code 0、`deviceOpened: false`です。
 直前の全5構成成功run `40168462256`はこのDX7移行を含みません。
-今回のcommit／push、新しいCI、sanitizer、実機の音声出力・ノイズ・UI操作やインストール後の起動は未実施です。
+このDX7ローカル検証を終えた時点ではcommit／pushと新しいCIは未実施でした。その後のSNES／SPCとまとめたCI結果は末尾へ記録します。
+sanitizer、実機の音声出力・ノイズ・UI操作やインストール後の起動は未確認です。
 リアルタイム期限や処理速度の保証もこの確認範囲に含まれません。
 
 ## SNES／SPC移行の検証
@@ -1018,5 +1019,40 @@ MCPのTCP bindのため初めから制限外で実行し、sandbox内失敗は�
 22 mode・604,032フレーム・88 Run／Stop、3混合構成・7単独音源と受入れ／16台制限も成功し、
 17台目を拒否して両制限試験のStop後予約予算が0へ戻りました。両runnerはexit code 0、`deviceOpened: false`です。
 直前の全5構成成功run `40168462256`はDX7も今回のSNES／SPC移行も含みません。
-対応ソースZIPの照合後にcommit／pushし、DX7を含む5構成CIで確認する予定です。
+対応ソースZIPの照合後にcommit／pushし、DX7を含む5構成CIでも確認しました。結果は次節に記録します。
 新しいタグやreleaseは作成しません。実機聴音・UI操作、インストール後の起動とリアルタイム期限は別の確認です。
+
+## DX7／SNES／SPC移行後の5環境CI — 全5構成成功
+
+[Build Desktop — run 40171879716](https://github.com/kyorohiro/tetorica-fm2612-playground-tauri/actions/runs/40171879716)で、
+DX7とSNES／SPC移行を含む`8b9e922ad6e9c1f8d33cf5719b05330b58311944`をmainから手動実行しました。
+attempt 1、2026-10-25 07:12:01 UTC開始、07:26:29 UTC完了。runは`completed`／`success`で、
+全5構成の検証・インストーラービルドとアップロードが成功しました。CIのための製品・試験修正は不要でした。
+
+| 構成 | 自動試験・ソース照合 | インストーラービルド |
+| --- | --- | --- |
+| macOS ARM64 | 成功 | 成功（DMG） |
+| macOS x86_64 | 成功 | 成功（DMG） |
+| Windows x86_64 | 成功 | 成功（NSIS） |
+| Linux ARM64 | 成功 | 成功（DEB／AppImage） |
+| Linux x86_64 | 成功 | 成功（DEB／AppImage） |
+
+全5構成のログでPython 22件・Node 31件が成功しました。Rust全試験はmacOS／Linux各構成が723成功・0失敗・4件ignored、Windowsが726成功・0失敗・3件ignoredでした。
+全5構成のNative検証JSONを取得し、次を確認しました。
+
+- SDK374ファイルを含む22件の固定記録と、対応ソースZIP全1,796ファイルの照合成功。
+- 22 mode・604,032フレーム・88 Run／Stopと、3混合構成・7単独音源の成功。
+- 追加生成の受入れ／16台制限・17台目拒否が成功し、両制限試験のStop後予約予算が0へ戻ること。
+- 再生／混合runnerがともにexit code 0、`deviceOpened: false`であること。
+- 取得した検証レポートZIP全5組のサイズとGitHub artifact digestが一致すること。
+
+検証5組とインストーラー5組の計10成果物は対象run／commitと一致し、有効期限内・非空でした。
+全5ジョブのドラフトリリース添付stepはskipped。アプリ版は`0.90.1`のままで、新しいタグ・ドラフトリリース・一般公開は行っていません。
+CIの対応ソースZIP SHA-256はmacOS／Linuxが`39cd14b113557665c039d0af3960839ed566c7ad2fdc49286859d8b5c53fa684`、
+Windowsが`f3ac24c3a08277ebcdf3651dce8f2620ebae6dc05bc149fac4de48cb89fb19e3`でした。
+各CI内の照合は成功しており、ハッシュ差の原因は断定しません。SDK pinとfrontend archiveは全構成で一致しています。
+
+このCIはDX7とSNES／SPCの移行を含みます。先行するrun `40168462256`には含まれません。
+CI後の変更は結果記録だけで、製品・試験入力は同じです。
+上記のローカル273比較／519比較は各OSのCIで実行した比較ではありません。
+検証レポートだけを取得し、インストーラーや対応ソースZIP自体の取得・独立照合・起動、OS間のPCM一致、実機聴音・UI操作は行っていません。
