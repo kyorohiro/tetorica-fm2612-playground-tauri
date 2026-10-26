@@ -23,6 +23,9 @@ class NativeSourceTests(unittest.TestCase):
             path.write_text('matching source: ' + name)
         for name in ['src-tauri/vendor/tetorica-soundchip-native/vendor/ymfm/ymfm_opn.cpp',
                      'src-tauri/vendor/tetorica-soundchip-native/vendor/ymfm/LICENSE',
+                     'src-tauri/vendor/tetorica-soundchip-native/vendor/tetorica_sega_psg/segapsg.cpp',
+                     'src-tauri/vendor/tetorica-soundchip-native/vendor/tetorica_sega_psg/segapsg.h',
+                     'src-tauri/vendor/tetorica-soundchip-native/vendor/tetorica_sega_psg/LICENSE',
                      'src-tauri/vendor/tetorica-soundchip-native/RELEASE-MANIFEST.json',
                      'src-tauri/soundchip-sdk.json', 'docs/native-sdk-ym2612.md']:
             path = root / name
@@ -49,6 +52,9 @@ class NativeSourceTests(unittest.TestCase):
                     self.assertIn(name, manifest['files'])
                 for name in ['src-tauri/vendor/tetorica-soundchip-native/vendor/ymfm/ymfm_opn.cpp',
                              'src-tauri/vendor/tetorica-soundchip-native/vendor/ymfm/LICENSE',
+                             'src-tauri/vendor/tetorica-soundchip-native/vendor/tetorica_sega_psg/segapsg.cpp',
+                             'src-tauri/vendor/tetorica-soundchip-native/vendor/tetorica_sega_psg/segapsg.h',
+                             'src-tauri/vendor/tetorica-soundchip-native/vendor/tetorica_sega_psg/LICENSE',
                              'src-tauri/vendor/tetorica-soundchip-native/RELEASE-MANIFEST.json',
                              'src-tauri/soundchip-sdk.json', 'docs/native-sdk-ym2612.md']:
                     self.assertIn(name, manifest['files'])

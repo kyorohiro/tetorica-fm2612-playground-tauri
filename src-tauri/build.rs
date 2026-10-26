@@ -97,6 +97,7 @@ fn main() {
     // builds it directly, without fetching another checkout or invoking CMake.
     println!("cargo:rerun-if-changed=soundchip-sdk.json");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/ymfm");
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/tetorica_sega_psg");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/wasm");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2612.cpp");
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_ym2612.h");
@@ -173,6 +174,7 @@ fn main() {
         .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
+        .include("vendor/tetorica-soundchip-native/vendor/tetorica_sega_psg")
         .include("vendor/tetorica-soundchip-native/vendor/ymfm")
         .include("native-genesis")
         .file("src/native_genesis_game_gear.cpp")
@@ -221,6 +223,7 @@ fn main() {
         .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
+        .include("vendor/tetorica-soundchip-native/vendor/tetorica_sega_psg")
         .include("vendor/tetorica-soundchip-native/vendor/ymfm")
         .include("vendor/tetorica-soundchip-native/wasm")
         .include("native-genesis")
@@ -295,6 +298,7 @@ fn main() {
         .flag_if_supported("/EHsc")
         .std("c++14")
         .opt_level(2)
+        .include("vendor/tetorica-soundchip-native/vendor/tetorica_sega_psg")
         .include("vendor/tetorica-soundchip-native/vendor/ymfm")
         .include("vendor/tetorica-soundchip-native/wasm")
         .include("native-genesis")
@@ -306,7 +310,7 @@ fn main() {
         .file("vendor/tetorica-soundchip-native/native/src/ymfm_opn_provider.cpp")
         .file("vendor/tetorica-soundchip-native/vendor/ymfm/ymfm_adpcm.cpp")
         .file("vendor/tetorica-soundchip-native/vendor/ymfm/ymfm_ssg.cpp")
-        .file("vendor/tetorica-soundchip-native/vendor/ymfm/segapsg.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/tetorica_sega_psg/segapsg.cpp")
         .warnings(false)
         .compile("tetorica_native_genesis");
     // GNU ld sees the common-core consumer, then the prefixed adapter, then

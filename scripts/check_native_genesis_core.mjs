@@ -48,14 +48,15 @@ try {
   const files = ['src/native_genesis_fixture.cpp', 'src/native_genesis_core.cpp', 'src/native_genesis_nuked.cpp',
     `${sdk}/wasm/ym2612_wasm.cpp`, `${sdk}/native/src/ymfm_opn_provider.cpp`,
     `${sdk}/vendor/ymfm/ymfm_adpcm.cpp`, `${sdk}/vendor/ymfm/ymfm_ssg.cpp`,
-    `${sdk}/wasm/segapsg_wasm.cpp`, `${sdk}/vendor/ymfm/segapsg.cpp`];
+    `${sdk}/wasm/segapsg_wasm.cpp`, `${sdk}/vendor/tetorica_sega_psg/segapsg.cpp`];
   if (!options.fixture) {
     const c = spawnSync(process.env.CC ?? 'cc', ['-std=c11', '-O2', '-fwrapv', ...symbols.map(name => `-DOPN2_${name}=tetorica_nuked_OPN2_${name}`), '-I', nuked, '-c', join(nuked, 'ym3438.c'), '-o', provider], {encoding: 'utf8'});
     assert.equal(c.status, 0, c.stderr);
     report.nativeSources = files.map(file => ({file: `src-tauri/${file}`,
       sha256: createHash('sha256').update(readFileSync(join(repo, 'src-tauri', file))).digest('hex')}));
     const compiled = spawnSync(process.env.CXX ?? 'c++', ['-std=c++14', '-O2',
-      '-I', join(sdkRoot, 'vendor/ymfm'), '-I', join(sdkRoot, 'wasm'), '-I', native, '-I', nuked,
+      '-I', join(sdkRoot, 'vendor/tetorica_sega_psg'), '-I', join(sdkRoot, 'vendor/ymfm'),
+      '-I', join(sdkRoot, 'wasm'), '-I', native, '-I', nuked,
       ...files.map(file => join(repo, 'src-tauri', file)), provider, '-o', executable], {encoding: 'utf8'});
     assert.equal(compiled.status, 0, compiled.stderr);
     report.compilerMilliseconds = performance.now() - compileStart;

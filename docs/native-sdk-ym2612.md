@@ -10,15 +10,15 @@ submodule、ビルド中のGitHub取得を必要としません。
 
 | 項目 | 値 |
 | --- | --- |
-| SDK版 | `0.1.1` |
-| ソース配布 | `tetorica-soundchip-native-0.1.1-sources.zip` |
-| 配布ZIPのSHA-256 | `939fb035aef36c84cac3d1e058271ca3ddfc6ebd9ce5cfa4b3d04bc92876416b` |
-| SDKの元コミット | `e4b7d7ecef60e3927ac04815cd9f985f62c82f04` |
+| SDK版 | `0.1.2` |
+| ソース配布 | `tetorica-soundchip-native-0.1.2-sources.zip` |
+| 配布ZIPのSHA-256 | `752d0f449fd69300881f7c369f190932154e96ab8fd103676917087a454b8c72` |
+| SDKの元コミット | `53b33a15f5c4b919b185cb912016eccfbbb6d3a6` |
 | 同梱先 | `src-tauri/vendor/tetorica-soundchip-native/` |
 | Tauri側の取り込み記録 | `src-tauri/soundchip-sdk.json` |
 
 取り込み記録は`schemaVersion: 1`で、`name`、`version`、`sourceCommit`、`archiveName`、
-`archiveSha256`、`manifestSha256`、`fileCount`を保存します。現在の同梱数は379ファイルです。
+`archiveSha256`、`manifestSha256`、`fileCount`を保存します。現在の同梱数は381ファイルです。
 `sourceCommit`は取り込み時に指定する由来の記録で、コミット署名や配布物の署名を検証したものではありません。
 取り込み時に期待するZIPのSHA-256を検証し、SDKマニフェストと各ファイルのサイズ／SHA-256を照合します。
 `--check`は元ZIPやネットワークを使わず、同梱マニフェストのハッシュと全ファイルを記録に照合します。
@@ -48,7 +48,7 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 | `createSoundChip('ay8910')`の独立Native接続 | `native/reference/tauri/native_genesis_ay8910.cpp` |
 | MSXと追加AYに共通のAY-3-8910コア | `vendor/mame-ay8910/ay8910.cpp`と対応ヘッダー |
 | Genesisが使うSega PSGの低レベルC ABI | `wasm/segapsg_wasm.cpp`と`vendor/ymfm/chip_state.h` |
-| Genesis／Nuked、Master System、Game Gearと追加PSGに共通のコア | `vendor/ymfm/segapsg.cpp`と対応ヘッダー |
+| Genesis／Nuked、Master System、Game Gearと追加PSGに共通のコア | `vendor/tetorica_sega_psg/segapsg.cpp`と対応ヘッダー、同フォルダーの`LICENSE` |
 | Mega CD／32X系の選択中RF5C164接続 | `native/reference/tauri/native_genesis_rf5c164.cpp`と対応ヘッダー |
 | RF5C164の独立追加接続 | `native/reference/tauri/native_genesis_extra_rf5c164.cpp`と対応ヘッダー |
 | 選択中RF5C164とraw C ABIに共通のコア | `vendor/mame-rf5c164/rf5c164.cpp`と対応ヘッダー |
@@ -81,7 +81,7 @@ SDKのOPN providerがymfmのOPN実装と明示的なテンプレート実体化�
 
 YM2203とYM2608は、それぞれ選択中のPC-98音源と追加生成の両方で、同じSDK側のNative接続を使います。
 Neo Geoも選択中／追加音源のYM2610（FM 4CH）とYM2610B（FM 6CH）が一つのSDK接続を共有し、生成時に変種を選択します。
-これらの先行移行は同梱済みのSDK `0.1.0`へ参照を切り替えました。現在はNuked単体ターゲットを追加した`0.1.1`を固定し、既存音源の実装を保持しています。
+これらの先行移行は同梱済みのSDK `0.1.0`へ参照を切り替えました。Nuked単体ターゲットを追加した`0.1.1`を経て、現在はSega PSGを独立フォルダーへ分離した`0.1.2`を固定し、既存音源の音声計算を保持しています。
 共有OPN／SSG／ADPCMはYM2612移行時からSDK側のものを一度だけ組み込んでおり、
 個別の移行用にもう一つ追加しません。既存のarchive順序を維持します。
 
@@ -113,7 +113,9 @@ AYの初期clock、tone／noise／envelope、明示的な音量0、Stop／reset�
 
 Sega PSGの共有コアと低レベルC ABIも、同じ固定SDKへ参照を切り替えます。
 `wasm/segapsg_wasm.cpp`はNative C++として使い、SDK側の`chip_state.h`と`segapsg.h`を参照します。
-コアcpp／headerと合わせた4入力は旧コピーとbyte一致し、SDKの版や同梱バイト列は変更しません。
+SDK `0.1.2`では、コアcpp／headerを`vendor/tetorica_sega_psg/`へ分離しています。
+Tetorica独自実装のBSD-3-Clause表記とSMS Powerの仕様資料への参照を付け、共有状態helperは`vendor/ymfm/chip_state.h`に維持します。
+DSPの計算、C ABI、Native側のレート変換と音量は変更していません。
 既存の`tetorica_native_genesis` archive内で一度だけコンパイルし、Genesis／Nuked、
 Master System、Game Gearと`createSoundChip('segapsg')`の追加音源が共有します。
 既存のarchive順序、C++14・O2・MSVC `/EHsc`を維持します。
@@ -309,9 +311,9 @@ SDKを更新するときだけ、検証したソースZIPを明示して取り�
 
 ```sh
 python3 scripts/import_soundchip_sdk.py \
-  --archive /path/to/tetorica-soundchip-native-0.1.1-sources.zip \
-  --sha256 939fb035aef36c84cac3d1e058271ca3ddfc6ebd9ce5cfa4b3d04bc92876416b \
-  --source-commit e4b7d7ecef60e3927ac04815cd9f985f62c82f04
+  --archive /path/to/tetorica-soundchip-native-0.1.2-sources.zip \
+  --sha256 752d0f449fd69300881f7c369f190932154e96ab8fd103676917087a454b8c72 \
+  --source-commit 53b33a15f5c4b919b185cb912016eccfbbb6d3a6
 python3 scripts/import_soundchip_sdk.py --check
 ```
 
@@ -1124,3 +1126,34 @@ CI内のソースZIP SHAはWindowsとほか4構成で異なりますが、各CI�
 CI対象からのTauri差分はこの結果記録ガイドだけで、製品・試験入力は変更していません。インストーラー／ソースZIPそのものの取得・独立検証・起動は、このレポート監査には含めません。
 直前の全5構成成功run `40171879716`は今回のNuked移行を含みません。
 実機聴音・UI操作、インストール後の起動、OS間PCM一致、各OSのWASM比較は別の確認です。
+
+## SDK 0.1.2 — Sega PSGの独立配置
+
+2026-10-26。固定ソースZIPをSDK `0.1.2`へ更新し、Sega PSGコアを
+`vendor/tetorica_sega_psg/`から一度だけコンパイルする形へ切り替えました。
+Game Gear／Master System／Genesisのinclude探索を同じフォルダーへ揃えています。
+共有状態helperは`vendor/ymfm/chip_state.h`を維持します。
+SDK内の独立したBSD-3-Clauseライセンスをインストーラーの
+`tetorica-segapsg-LICENSE.txt`にも収録します。従来のymfmライセンスも保持します。
+
+取り込みはソースZIPの期待SHA-256と宣言した元コミットを指定する正式インポーターで行い、
+同梱381ファイルとmanifestのハッシュをオフラインで照合しました。
+旧SDKのC/C++ソース・ヘッダー268ファイルを比較し、移動したPSGの2ファイルに追加した
+4行のBSD／SPDX表記以外は全バイト列が一致しました。DSP計算・C ABIの変更はありません。
+古いNativeスナップショットと由来の記録は更新していません。
+
+macOS ARM64で次の検証が成功しました。
+
+- `npm test`: Python 22件、Node 31件。
+- `cargo test --locked --offline`: 726成功、0失敗、明示実行用4件ignored。
+- 既定のGenesis実Native／配布WASM比較: 3レート・6ケース・49,152ステレオフレーム。
+  最大差は既存のFloat32丸めの範囲の`3.725290298461914e-9`でした。
+- Native安定性: 22 mode、604,032フレーム、88 Run／Stop。
+  固定／可変ブロックのPCM一致とStop後pending 0を確認しました。
+- 追加音源の実Shared／Renderer: 3混合構成、7単独音源、受入れ／16台制限、
+  Stop後予約予算0。両runnerはexit code 0、`deviceOpened: false`です。
+
+対応ソースZIPは同梱SDKの新PSGソースとライセンスを再帰的に収録します。
+既存の収録・照合試験に新配置のcpp／header／LICENSEを加えています。
+これらはローカルのビルドとオフライン試験で、OSの音声出力や実機聴音を確認したものではありません。
+Native 5構成のCI結果は別途記録します。

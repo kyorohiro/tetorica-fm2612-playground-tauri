@@ -68,7 +68,8 @@ Game Boyの選択中／独立追加接続と共通APUもSDKを使い、既存の
 NES＋FDSの選択中／独立追加接続と、その中のAPU／FDS移植実装もSDKを使い、既存の1翻訳単位とRustのDMC転送payload所有・予約・予算管理を維持します。
 DX7の選択中／独立追加接続とMSFAもSDKを使います。24共有ファイルと6 Native overrideをCargoの出力先へコピーして組み立て、Panic時は事前確保済みのnote状態とfeedback履歴を割当てなしで初期化します。
 SNESの選択中／独立追加S-DSP接続とSPC700ファイルプレーヤーもSDKを使います。2接続と4コアソースを既存の同一archiveへ組み込み、共有S-DSPを一度だけコンパイルします。RAM／timeline／SPCファイルの所有、準備・回収と予算管理はRust側に残ります。
-Nuked YM2612もSDKのNative接続・Browser共通C wrapperとコアを使います。SDK `0.1.1`を固定し、共通providerは一度だけ組み込みます。
+Nuked YM2612もSDKのNative接続・Browser共通C wrapperとコアを使います。SDK `0.1.2`を固定し、共通providerは一度だけ組み込みます。
+Sega PSGはSDK内の`vendor/tetorica_sega_psg/`へ独立したTetoricaのBSD-3-Clause実装です。音声計算と共通providerの数は維持します。
 Genesisのgain・DC除去・PSG混合、機種用接続と`NativePsgCore`のレート変換、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
 通常の22音源IDに加えて、Genesis Nuked／32X Nukedと追加生成YM2612のNukedエンジンもSDK参照です。機種用の補助処理はアプリ側に残ります。
 固定した版と更新手順、共有providerの範囲は[Native SDKの取り込み](docs/native-sdk-ym2612.md)を参照してください。

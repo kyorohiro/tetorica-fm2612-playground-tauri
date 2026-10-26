@@ -26,10 +26,12 @@ by Rust; ownership, lifetime, control-side copy-on-write, scheduling and budgets
 remain application responsibilities. The shared AY-3-8910 core and independent
 AY adapter also use the SDK, compiled once in the existing MSX archive.
 The shared Sega PSG core/header and raw C ABI now use the SDK's
-`vendor/ymfm/segapsg.cpp` and `wasm/segapsg_wasm.cpp`, compiled once in the existing
+`vendor/tetorica_sega_psg/segapsg.cpp` and `wasm/segapsg_wasm.cpp`, compiled once in the existing
 `tetorica_native_genesis` archive for Genesis/Nuked, Master System, Game Gear and
 additional PSG instances. The SDK wrapper resolves `vendor/ymfm/chip_state.h`
-through the SDK include path.
+through the SDK include path. The dedicated Sega PSG directory carries its
+Tetorica BSD-3-Clause license and SMS Power hardware-reference attribution;
+the layout change preserves DSP arithmetic and the C ABI.
 Selected RF5C164 adapters, their decoder and raw C ABI also build from the SDK
 in `tetorica_native_megacd`; the decoder is compiled once. The independent RF
 adapter builds from the SDK in `tetorica_native_opl` and retains its own renderer,
