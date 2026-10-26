@@ -16,7 +16,7 @@ for(let i=0;i<args.length;i++){
 }
 if(options.has('--help')){
   console.log('Usage: node scripts/check_native_extra_stability.mjs [--out=report.json] [--long] [--seconds=30] [--rounds=3] [--release] [--compare=previous.json]');
-  console.log('Default: three mixed racks, two rounds, two 0.125-second runs per round; fixed/variable exact PCM, owner/Stop/disposal and Native budget checks.');
+  console.log('Default: four mixed racks and eight solo sources, two rounds, two 0.125-second runs per round; fixed/variable exact PCM, owner/Stop/disposal and Native budget checks.');
   console.log('--long defaults to 30 simulated seconds per run and three rounds. Solo/raw diagnostic windows stay at 4096 frames. Timings have no speed threshold.');
   process.exit(argumentError?1:0);
 }
@@ -33,7 +33,7 @@ try{
   const result=spawnSync('cargo',cargo,{cwd:repository,env:{...process.env,TETORICA_NATIVE_EXTRA_STABILITY_PROFILE:long?'long':'bounded',TETORICA_NATIVE_EXTRA_STABILITY_SECONDS:String(seconds),TETORICA_NATIVE_EXTRA_STABILITY_ROUNDS:String(rounds),TETORICA_NATIVE_EXTRA_STABILITY_REPORT:out},stdio:'inherit'});
   report=JSON.parse(await readFile(out,'utf8'));
   report.runner={state:'complete',platform:process.platform,arch:process.arch,command:['cargo',...cargo],exitCode:result.status,signal:result.signal,wallSeconds:(Date.now()-start)/1000,...(result.error?{error:result.error.message}:{})};
-  report.passed=result.status===0&&report.passed===true&&report.scenes?.length===3&&report.scenes.every(scene=>scene.passed===true)&&report.soloSources?.length===7&&report.soloSources.every(source=>source.passed===true)&&report.admission?.passed===true&&report.slots?.passed===true&&report.deviceOpened===false;
+  report.passed=result.status===0&&report.passed===true&&report.scenes?.length===4&&report.scenes.every(scene=>scene.passed===true)&&report.soloSources?.length===8&&report.soloSources.every(source=>source.passed===true)&&report.admission?.passed===true&&report.slots?.passed===true&&report.deviceOpened===false;
   if(options.has('--compare')){
     const path=resolve(options.get('--compare')),baseline=JSON.parse(await readFile(path,'utf8'));
     report.comparison={baseline:path,comparableConfiguration:baseline.profile===report.profile&&baseline.sampleRate===report.sampleRate&&baseline.secondsPerRun===report.secondsPerRun&&baseline.rounds===report.rounds&&baseline.timingBuild===report.timingBuild,note:'Diagnostic only: build, compiler, host load and architecture affect timing.',scenes:report.scenes.map(scene=>{const previous=baseline.scenes?.find(old=>old.scene===scene.scene&&old.passed);return {scene:scene.scene,renderSeconds:scene.delivered?.renderSeconds,baselineRenderSeconds:previous?.delivered?.renderSeconds??null,renderTimeRatio:previous?.delivered?.renderSeconds>0?scene.delivered.renderSeconds/previous.delivered.renderSeconds:null};})};

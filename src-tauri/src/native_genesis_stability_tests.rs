@@ -4,7 +4,7 @@ use super::*;
 use serde_json::{json, Value};
 use std::{any::Any, panic::AssertUnwindSafe, path::PathBuf};
 
-const MODES: [&str; 22] = [
+const MODES: [&str; 23] = [
     "genesis",
     "mega-cd",
     "32x",
@@ -15,6 +15,7 @@ const MODES: [&str; 22] = [
     "gameboy",
     "snes",
     "pc-engine",
+    "wonderswan",
     "pc98",
     "pc98-26",
     "neogeo",
@@ -155,6 +156,17 @@ fn scene(mode: &str, frame: u64) -> Vec<Command> {
             out.push(message("huc6280",frame,json!({"method":"batch","channel":0,"voice":1,"action":"on","commands":[
                 {"method":"write","register":2,"value":254},{"method":"write","register":3,"value":0},{"method":"write","register":4,"value":152}]})));
         }
+        "wonderswan" => {
+            out.push(message("wonderswan",frame,json!({"method":"write","address":0x91,"value":8})));
+            let mut commands: Vec<_> = (0..16).map(|i|json!({"method":"memory","address":i,"value":((i*2)&15)|(((i*2+1)&15)<<4),"channel":0})).collect();
+            commands.extend([
+                json!({"method":"write","address":0x80,"value":0x61}),
+                json!({"method":"write","address":0x81,"value":7}),
+                json!({"method":"write","address":0x88,"value":0xf9}),
+                json!({"method":"write","address":0x90,"value":1,"controlMask":1}),
+            ]);
+            out.push(message("wonderswan",frame,json!({"method":"batch","channel":0,"voice":1,"action":"on","commands":commands})));
+        }
         "pc98" | "pc98-26" | "neogeo" | "neogeo-b" => {
             let kind = match mode { "pc98"=>"ym2608","pc98-26"=>"ym2203",_=>"ym2610b" };
             for mut op in fm_ops() { op["port"]=json!(0); out.push(message(kind,frame,op)); }
@@ -272,6 +284,7 @@ fn pending_metadata(s: &Shared) -> usize {
     snapshot!(gameboy);
     snapshot!(snes);
     snapshot!(huc6280);
+    snapshot!(wonderswan);
     snapshot!(ym2608);
     snapshot!(ym2203);
     snapshot!(ym2610b);
@@ -314,6 +327,7 @@ fn accepted_guards(s: &Shared) -> Vec<std::sync::Weak<dyn Any + Send + Sync>> {
             Action::Gameboy(v) => Some(weak(v)),
             Action::Snes(v) => Some(weak(v)),
             Action::Huc6280(v) => Some(weak(v)),
+            Action::WonderSwan(v) => Some(weak(v)),
             Action::Ym2608(v) => Some(weak(v)),
             Action::Ym2203(v) => Some(weak(v)),
             Action::Ym2610b(v) => Some(weak(v)),

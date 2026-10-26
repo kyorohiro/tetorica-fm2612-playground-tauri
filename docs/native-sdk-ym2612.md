@@ -1,8 +1,8 @@
-# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280／Game Boy／NES＋FDS／DX7／SNES／SPC／Nuked YM2612
+# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280／Game Boy／WonderSwan／NES＋FDS／DX7／SNES／SPC／Nuked YM2612
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
 YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、NES＋FDS、DX7、SNES／SPCと
-OPL系4種類（YM3526／YM3812／YMF262／Y8950）、代替Nuked YM2612をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
+OPL系4種類（YM3526／YM3812／YMF262／Y8950）、WonderSwan、代替Nuked YM2612をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
 この手順書は最初のYM2612移行時のファイル名を保持し、その後の音源の移行も記録しています。
 
@@ -28,7 +28,7 @@ SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの�
 アプリ側のライセンスで置き換えません。SDK内の`LICENSES.md`と各カタログを参照してください。
 同梱している全コンポーネントをアプリでリンクする、という意味ではありません。
 SDK `0.1.4`にはWonderSwanのraw C++コアとWASM bridgeも含まれます。
-今回の固定版更新ではCargoへWonderSwanをリンクせず、WonderSwan modeは引き続きWeb Audioのみです。
+固定版更新に続いてWonderSwanのNative接続を追加しました。rawコアはSDKから、スピーカー補正・レート変換の接続はアプリの`src-tauri/src/native_genesis_wonderswan.{h,cpp}`からビルドします。
 
 ## ビルドで使う部分
 
@@ -61,6 +61,7 @@ SDK `0.1.4`にはWonderSwanのraw C++コアとWASM bridgeも含まれます。
 | 接続が直接includeするHuC6280コア | `vendor/mame-huc6280/huc6280.cpp`と対応ヘッダー |
 | 選択中／追加生成Game Boyの共通Native接続 | `native/reference/tauri/native_genesis_gameboy.cpp`と対応ヘッダー |
 | 共通Game Boy APU | `vendor/mame-gameboy/gameboy_apu.cpp`と対応ヘッダー |
+| 選択中／追加生成WonderSwanに共通のrawコア | `vendor/mame-wonderswan/wonderswan.cpp`と対応ヘッダー。接続はアプリの`src-tauri/src/native_genesis_wonderswan.{h,cpp}` |
 | 選択中NES＋FDS／追加生成NESの共通接続とAPU／FDS移植実装 | `native/reference/tauri/native_genesis_nes.cpp`と対応ヘッダー |
 | 選択中／追加生成DX7の共通Native接続 | `native/reference/tauri/native_genesis_dx7.cpp`と対応ヘッダー |
 | 共通MSFAの24入力と6 Native override | `vendor/msfa/`と`native/reference/overrides/msfa/`からCargoの出力先へコピーして組み立て |
@@ -1168,7 +1169,7 @@ Native 5構成のCI結果は別途記録します。
 既存の音源コア・Native接続・WASM bridge、アプリの`build.rs`・Native接続・Rust制御・Mixer値は変更していません。
 追加されたWonderSwanのrawコア・公開header・fixture・WAV example・WASM bridgeをソース配布に保持しますが、
 Cargoの接続、Native backendの対応mode、Stop・clock・ownerの制御は今回追加していません。
-WonderSwanは引き続きWeb Audioで再生します。
+この固定版更新時点ではWonderSwanはWeb Audioのみでした。その後のNative接続は次節を参照してください。
 
 ローカルmacOS ARM64で次を確認しました。
 
@@ -1187,3 +1188,29 @@ WonderSwanは引き続きWeb Audioで再生します。
   frontend ZIPのSHA-256は`fd73d44799dfe7819dba99967331bb3a0d0fab4d545fae8e6ee20fc6b1a0cc54`です。
 
 これらは音声デバイスを開かないローカル試験です。Windows／Linux／Intel MacのTauriビルドと実機聴音は今回の記録に含みません。
+
+
+## WonderSwan Native Audio接続
+
+2026-10-27。固定SDK 0.1.4のrawコアを変更せず、選択中WonderSwan modeと
+`createSoundChip('wonderswan')`の独立音源をNativeへ接続しました。
+アプリ側の`src-tauri/src/native_genesis_wonderswan.{h,cpp}`とSDKの
+`vendor/mame-wonderswan/wonderswan.cpp`を一度ずつコンパイルします。
+スピーカーの波形midpoint補正・初回fetch境界・clockのaverage/hold変換は
+Browserの実Workletに合わせています。SDKの395ファイルとMixer値は維持します。
+
+Main／Worker、Keyboard、波形／pan／Noise／Sweep編集、RAMとclockに対応します。
+共有0x90は適用時にmaskをmergeし、実RAMアドレスと手動leaseを保護します。
+StopはRAM・音色・clockを保持、resetはRAMも初期化します。
+予約・キャンセル・回収・予算管理は既存のRust経路を使います。
+
+ローカルmacOS ARM64で実Worklet対Nativeの204ケース・995,328ステレオフレーム、
+raw WASM対Nativeの9ケース・73,728フレームが完全一致しました。
+C++377,424チェック、ASan／UBSan、Rust新規15件と全体741成功・4ignored、
+23modeの安定性と追加音源の4混合／8単独／16台制限／Stop予算0も成功しました。
+配布frontend920ファイルを照合し、Python22／Node31試験も成功しました。
+最終flat配布のChromium／WebKitでNative RPCモックによるUI接続と、
+実Web Audio再生を別々に確認しました。対応ソースZIPには新接続・SDK原典・ライセンスを含みます。
+
+これは音声デバイスを開かないローカル検証です。新しい変更の5構成CIと実機聴音は次の作業です。
+以前のSDK取り込みCIはこの新接続を含みません。

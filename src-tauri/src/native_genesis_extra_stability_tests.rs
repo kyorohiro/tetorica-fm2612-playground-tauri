@@ -16,6 +16,7 @@ enum Kind {
     Spc,
     Opna,
     Opnb,
+    Ws,
 }
 impl Kind {
     fn name(self) -> &'static str {
@@ -27,6 +28,7 @@ impl Kind {
             Self::Spc => "spc",
             Self::Opna => "ym2608",
             Self::Opnb => "ym2610",
+            Self::Ws => "wonderswan",
         }
     }
     fn channel(self, index: usize) -> u8 {
@@ -37,7 +39,7 @@ impl Kind {
         }
     }
 }
-const ALL: [Kind; 7] = [
+const ALL: [Kind; 8] = [
     Kind::Fm,
     Kind::Rf,
     Kind::Dx,
@@ -45,8 +47,9 @@ const ALL: [Kind; 7] = [
     Kind::Spc,
     Kind::Opna,
     Kind::Opnb,
+    Kind::Ws,
 ];
-const SCENES: [(&str, &[Kind]); 3] = [
+const SCENES: [(&str, &[Kind]); 4] = [
     ("fm-pcm-dx7", &[Kind::Fm, Kind::Rf, Kind::Dx]),
     (
         "snes-spc-mixed",
@@ -63,6 +66,10 @@ const SCENES: [(&str, &[Kind]); 3] = [
             Kind::Opna,
             Kind::Opnb,
         ],
+    ),
+    (
+        "wonderswan-wave-mixed",
+        &[Kind::Fm, Kind::Rf, Kind::Dx, Kind::Ws],
     ),
 ];
 #[derive(Clone, Copy)]
@@ -92,6 +99,9 @@ fn create(s: &Shared, kind: Kind, id: u64) -> Source {
         }
         Kind::Opnb => {
             s.create_extra_ym2610(id, None).unwrap();
+        }
+        Kind::Ws => {
+            s.create_extra_wonderswan(id, None).unwrap();
         }
     }
     Source { kind, id }
@@ -193,6 +203,7 @@ fn resources(source: Source, heavy: bool, gain: f32) -> Vec<Command> {
         Kind::Spc=>{},
         Kind::Opna=>m.push(wr(0,0x29,0x80)),
         Kind::Opnb=>{},
+        Kind::Ws=>m.push(json!({"method":"write","address":0x91,"value":8})),
         _=>{}
     }
     let mut commands: Vec<_> = m.into_iter().map(|m| cmd(source, 0, m, None)).collect();
@@ -254,6 +265,12 @@ fn notes(source: Source, voices: usize, owners: [u32; 2]) -> Vec<Command> {
             Kind::Dx=>json!({"method":"note-on","note":([60,64,67][i]),"velocity":100,"voice":i+1,"audition":i==0}),
             Kind::Rf=>json!({"method":"batch","channel":ch,"voice":i+1,"action":"on","audition":i==0,"commands":[{"method":"set-channel","channel":ch,"options":{"start":0,"loopStart":0,"step":512+i*128,"volume":90,"pan":{"left":15,"right":15}}},{"method":"key-on","channel":ch}]}),
             Kind::Snes=>json!({"method":"batch","channel":ch,"voice":i+1,"action":"on","audition":i==0,"commands":[{"method":"key-on","channel":ch}]}),
+            Kind::Ws=>{
+                let mut commands:Vec<_>=(0..16).map(|n|json!({"method":"memory","address":ch as usize*16+n,"value":((n*2+i*3)&15)|(((n*2+1+i*3)&15)<<4),"channel":ch})).collect();
+                let frequency=1737+u32::from(ch)*67;
+                commands.extend([json!({"method":"write","address":0x80+ch*2,"value":frequency&255}),json!({"method":"write","address":0x81+ch*2,"value":frequency>>8}),json!({"method":"write","address":0x88+ch,"value":0xf9}),json!({"method":"write","address":0x90,"value":1u8<<ch,"controlMask":1u8<<ch})]);
+                json!({"method":"batch","channel":ch,"voice":i+1,"action":"on","audition":i==0,"commands":commands})
+            },
             _=>json!({"method":"batch","channel":ch,"voice":i+1,"action":"on","audition":i==0,"commands":fm(ch,false)}),
         };cmd(source,0,m,owner)
     }).collect()
@@ -409,6 +426,9 @@ fn state(s: &Shared, source: Source) -> Value {
         Kind::Opnb => {
             serde_json::to_value(s.extra_ym2610_status(source.id, None).unwrap()).unwrap()
         }
+        Kind::Ws => {
+            serde_json::to_value(s.extra_wonderswan_status(source.id, None).unwrap()).unwrap()
+        }
     }
 }
 fn metadata(v: &Value) -> usize {
@@ -461,6 +481,12 @@ fn assert_owners(s: &Shared, sources: &[Source], cancelled: bool) {
                 assert_eq!(c["enabled"].as_u64().unwrap() & 2 == 0, cancelled);
                 assert_ne!(c["enabled"].as_u64().unwrap() & 4, 0);
             }
+            Kind::Ws => {
+                let gates = c["registers"][16].as_u64().unwrap();
+                assert_eq!(gates & 1, 1);
+                assert_eq!(gates & 2 == 0, cancelled);
+                assert_ne!(gates & 4, 0);
+            }
             _ => {
                 let ch = source.kind.channel(1) as usize;
                 assert_eq!(c["keyMasks"][source.kind.channel(0) as usize], 15);
@@ -471,7 +497,7 @@ fn assert_owners(s: &Shared, sources: &[Source], cancelled: bool) {
     }
 }
 fn future(sources: &[Source], frame: u64) -> Vec<Command> {
-    sources.iter().filter(|source|source.kind!=Kind::Spc).flat_map(|source|(1..=2).map(move|owner|{let ch=source.kind.channel(owner as usize);let m=match source.kind{Kind::Dx=>json!({"method":"note-on","note":72+owner,"velocity":90,"voice":100+owner}),Kind::Rf=>json!({"method":"set-channel","channel":ch,"options":{"step":768+owner*128}}),Kind::Snes=>json!({"method":"batch","channel":ch,"voice":owner+1,"action":"on","commands":[{"method":"key-on","channel":ch}]}),_=>wr(ch/3,0xa0+ch%3,110+owner as u8)};cmd(*source,frame,m,Some(owner))})).collect()
+    sources.iter().filter(|source|source.kind!=Kind::Spc).flat_map(|source|(1..=2).map(move|owner|{let ch=source.kind.channel(owner as usize);let m=match source.kind{Kind::Dx=>json!({"method":"note-on","note":72+owner,"velocity":90,"voice":100+owner}),Kind::Rf=>json!({"method":"set-channel","channel":ch,"options":{"step":768+owner*128}}),Kind::Snes=>json!({"method":"batch","channel":ch,"voice":owner+1,"action":"on","commands":[{"method":"key-on","channel":ch}]}),Kind::Ws=>json!({"method":"write","address":0x80+ch*2,"value":110+owner as u8}),_=>wr(ch/3,0xa0+ch%3,110+owner as u8)};cmd(*source,frame,m,Some(owner))})).collect()
 }
 fn guards(s: &Shared) -> Vec<std::sync::Weak<dyn Any + Send + Sync>> {
     fn weak<T: Any + Send + Sync>(v: &Arc<T>) -> std::sync::Weak<dyn Any + Send + Sync> {
@@ -488,6 +514,7 @@ fn guards(s: &Shared) -> Vec<std::sync::Weak<dyn Any + Send + Sync>> {
             Action::ExtraSnes(_, v) => Some(weak(v)),
             Action::ExtraYm2608(_, v) => Some(weak(v)),
             Action::ExtraYm2610(_, v) => Some(weak(v)),
+            Action::ExtraWonderSwan(_, v) => Some(weak(v)),
             _ => None,
         };
         if let Some(w) = w {

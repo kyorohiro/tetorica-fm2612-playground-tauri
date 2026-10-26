@@ -23,8 +23,6 @@ mod dx7;
 #[cfg(test)]
 #[path = "native_genesis_dx7_tests.rs"]
 mod dx7_tests;
-#[path = "native_genesis_y8950_memory.rs"]
-mod y8950_memory;
 #[path = "native_genesis_extra_budget.rs"]
 mod extra_budget;
 #[path = "native_genesis_extra_dx7.rs"]
@@ -60,9 +58,6 @@ mod extra_okim6258_tests;
 #[path = "native_genesis_extra_opl.rs"]
 mod extra_opl;
 #[cfg(test)]
-#[path = "native_genesis_y8950_memory_tests.rs"]
-mod y8950_memory_tests;
-#[cfg(test)]
 #[path = "native_genesis_extra_opl_tests.rs"]
 mod extra_opl_tests;
 #[path = "native_genesis_extra_psg.rs"]
@@ -90,6 +85,11 @@ mod extra_spc;
 #[cfg(test)]
 #[path = "native_genesis_extra_spc_tests.rs"]
 mod extra_spc_tests;
+#[path = "native_genesis_extra_wonderswan.rs"]
+mod extra_wonderswan;
+#[cfg(test)]
+#[path = "native_genesis_extra_wonderswan_tests.rs"]
+mod extra_wonderswan_tests;
 #[path = "native_genesis_extra_ym2151.rs"]
 mod extra_ym2151;
 #[cfg(test)]
@@ -134,8 +134,18 @@ mod nes;
 mod opl;
 #[path = "native_genesis_snes.rs"]
 mod snes;
+#[path = "native_genesis_wonderswan.rs"]
+mod wonderswan;
+#[cfg(test)]
+#[path = "native_genesis_wonderswan_tests.rs"]
+mod wonderswan_tests;
 #[path = "native_genesis_x68000.rs"]
 mod x68000;
+#[path = "native_genesis_y8950_memory.rs"]
+mod y8950_memory;
+#[cfg(test)]
+#[path = "native_genesis_y8950_memory_tests.rs"]
+mod y8950_memory_tests;
 #[path = "native_genesis_ym2203.rs"]
 mod ym2203;
 #[path = "native_genesis_ym2608.rs"]
@@ -299,6 +309,7 @@ enum Action {
     ExtraOkim6258(Arc<extra_psg::Instance>, Arc<extra_okim6258::Prepared>),
     ExtraGameboy(Arc<extra_psg::Instance>, Arc<extra_gameboy::Prepared>),
     ExtraHuc6280(Arc<extra_psg::Instance>, Arc<extra_huc6280::Prepared>),
+    ExtraWonderSwan(Arc<extra_psg::Instance>, Arc<extra_wonderswan::Prepared>),
     ExtraDx7(Arc<extra_psg::Instance>, Arc<extra_dx7::Prepared>),
     ExtraPwm(Arc<extra_psg::Instance>, Arc<extra_pwm::Prepared>),
     ExtraSnes(Arc<extra_psg::Instance>, Arc<extra_snes::Prepared>),
@@ -312,6 +323,7 @@ enum Action {
     Gameboy(Arc<gameboy::Prepared>),
     Snes(Arc<snes::Prepared>),
     Huc6280(Arc<huc6280::Prepared>),
+    WonderSwan(Arc<wonderswan::Prepared>),
     Ym2608(Arc<ym2608::Prepared>),
     Ym2203(Arc<ym2203::Prepared>),
     Ym2610b(Arc<ym2610b::Prepared>),
@@ -459,6 +471,11 @@ enum CommandAction {
         instance: u64,
         message: extra_huc6280::Message,
     },
+    #[serde(rename = "extra-wonderswan")]
+    ExtraWonderSwan {
+        instance: u64,
+        message: extra_wonderswan::Message,
+    },
     ExtraDx7 {
         instance: u64,
         message: extra_dx7::Message,
@@ -509,6 +526,10 @@ enum CommandAction {
     },
     Huc6280 {
         message: huc6280::Message,
+    },
+    #[serde(rename = "wonderswan")]
+    WonderSwan {
+        message: wonderswan::Message,
     },
     Ym2608 {
         message: ym2608::Message,
@@ -642,6 +663,7 @@ impl Command {
             | CommandAction::ExtraOkim6258 { .. }
             | CommandAction::ExtraGameboy { .. }
             | CommandAction::ExtraHuc6280 { .. }
+            | CommandAction::ExtraWonderSwan { .. }
             | CommandAction::ExtraDx7 { .. }
             | CommandAction::ExtraPwm { .. }
             | CommandAction::ExtraSnes { .. }
@@ -657,6 +679,7 @@ impl Command {
             CommandAction::Gameboy { ref message } => Action::Gameboy(message.prepare()?),
             CommandAction::Snes { ref message } => Action::Snes(message.prepare()?),
             CommandAction::Huc6280 { ref message } => Action::Huc6280(message.prepare()?),
+            CommandAction::WonderSwan { ref message } => Action::WonderSwan(message.prepare()?),
             CommandAction::Ym2608 { ref message } => Action::Ym2608(message.prepare()?),
             CommandAction::Ym2203 { ref message } => Action::Ym2203(message.prepare()?),
             CommandAction::Ym2610b { ref message } => Action::Ym2610b(message.prepare()?),
@@ -870,6 +893,8 @@ struct Shared {
     gameboy: Option<Box<gameboy::Shared>>,
     snes: Option<Box<snes::Shared>>,
     huc6280: Option<Box<huc6280::Shared>>,
+    wonderswan: Option<Box<wonderswan::Shared>>,
+    wonderswan_initial_clock: u32,
     ym2608: Option<Box<ym2608::Shared>>,
     ym2203: Option<Box<ym2203::Shared>>,
     ym2610b: Option<Box<ym2610b::Shared>>,
@@ -956,6 +981,9 @@ impl Shared {
             gameboy: (console == Some("gameboy")).then(|| Box::new(gameboy::Shared::default())),
             snes: (console == Some("snes")).then(|| Box::new(snes::Shared::default())),
             huc6280: (console == Some("huc6280")).then(|| Box::new(huc6280::Shared::default())),
+            wonderswan: (console == Some("wonderswan"))
+                .then(|| Box::new(wonderswan::Shared::default())),
+            wonderswan_initial_clock: extra_wonderswan::CLOCK,
             ym2608: (console == Some("ym2608")).then(|| Box::new(ym2608::Shared::default())),
             ym2203: (console == Some("ym2203")).then(|| Box::new(ym2203::Shared::default())),
             ym2610b: matches!(console, Some("ym2610" | "ym2610b"))
@@ -1184,6 +1212,7 @@ impl Shared {
                 CommandAction::ExtraOkim6258 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraGameboy { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraHuc6280 { message, .. } => Some(message.prepared_bytes()),
+                CommandAction::ExtraWonderSwan { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraDx7 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraPwm { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraSnes { message, .. } => Some(message.prepared_bytes()),
@@ -1415,6 +1444,21 @@ impl Shared {
                         );
                     }
                     Action::ExtraHuc6280(target, prepared)
+                } else if let CommandAction::ExtraWonderSwan { instance, message } = &command.action {
+                    if command.frame > MAX_SAFE_INTEGER {
+                        return Err("Invalid native command frame".into());
+                    }
+                    let target = self
+                        .extra_psg
+                        .get(*instance, self.epoch.load(Ordering::Acquire))?;
+                    let prepared = target.wonderswan()?.prepare_message(message)?;
+                    if prepared.is_owner_cancel() && command.frame != 0 {
+                        return Err(
+                            "Native WonderSwan owner cancellation requires immediate frame zero"
+                                .into(),
+                        );
+                    }
+                    Action::ExtraWonderSwan(target, prepared)
                 } else if let CommandAction::ExtraDx7 { instance, message } = &command.action {
                     if command.frame > MAX_SAFE_INTEGER {
                         return Err("Invalid native command frame".into());
@@ -1536,6 +1580,9 @@ impl Shared {
                 if matches!(&action, Action::Huc6280(_)) && self.huc6280.is_none() {
                     return Err("Native Huc6280 requires huc6280 mode".into());
                 }
+                if matches!(&action, Action::WonderSwan(_)) && self.wonderswan.is_none() {
+                    return Err("Native WonderSwan requires wonderswan mode".into());
+                }
                 if matches!(&action, Action::Ym2608(_)) && self.ym2608.is_none() {
                     return Err("Native YM2608 requires PC98 mode".into());
                 }
@@ -1591,6 +1638,7 @@ impl Shared {
                     || self.gameboy.is_some()
                     || self.snes.is_some()
                     || self.huc6280.is_some()
+                    || self.wonderswan.is_some()
                     || self.ym2608.is_some()
                     || self.ym2203.is_some()
                     || self.ym2610b.is_some()
@@ -1725,6 +1773,23 @@ impl Shared {
                 .iter()
                 .filter_map(|(action, _)| {
                     if let Action::Huc6280(command) = action {
+                        Some(command.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Err(error) = chip.retain(&prepared) {
+                self.rollback_extra_psg(&actions);
+                self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
+                return Err(error);
+            }
+        }
+        if let Some(chip) = &self.wonderswan {
+            let prepared: Vec<_> = actions
+                .iter()
+                .filter_map(|(action, _)| {
+                    if let Action::WonderSwan(command) = action {
                         Some(command.clone())
                     } else {
                         None
@@ -1930,6 +1995,15 @@ impl Shared {
                     self.invalidation.fetch_add(1, Ordering::Release);
                 }
             }
+            if let Action::ExtraWonderSwan(instance, command) = action {
+                if instance
+                    .wonderswan()
+                    .expect("WonderSwan action target")
+                    .commit_cancel(command)
+                {
+                    self.invalidation.fetch_add(1, Ordering::Release);
+                }
+            }
             if let Action::ExtraDx7(instance, command) = action {
                 if instance
                     .dx7()
@@ -2086,6 +2160,9 @@ impl Shared {
                     Action::ExtraOkim6258(_, c) => Some(extra_psg::Payload::Okim6258(c.clone())),
                     Action::ExtraGameboy(_, c) => Some(extra_psg::Payload::Gameboy(c.clone())),
                     Action::ExtraHuc6280(_, c) => Some(extra_psg::Payload::Huc6280(c.clone())),
+                    Action::ExtraWonderSwan(_, c) => {
+                        Some(extra_psg::Payload::WonderSwan(c.clone()))
+                    }
                     Action::ExtraDx7(_, c) => Some(extra_psg::Payload::Dx7(c.clone())),
                     Action::ExtraPwm(_, c) => Some(extra_psg::Payload::Pwm(c.clone())),
                     Action::ExtraSnes(_, c) => Some(extra_psg::Payload::Snes(c.clone())),
@@ -2117,6 +2194,7 @@ impl Shared {
                 | Action::ExtraOkim6258(instance, _)
                 | Action::ExtraGameboy(instance, _)
                 | Action::ExtraHuc6280(instance, _)
+                | Action::ExtraWonderSwan(instance, _)
                 | Action::ExtraDx7(instance, _)
                 | Action::ExtraPwm(instance, _)
                 | Action::ExtraSnes(instance, _)
@@ -2287,6 +2365,19 @@ impl Shared {
                         .collect();
                     instance.huc6280()?.retain(&prepared)
                 }
+                Action::ExtraWonderSwan(_, _) => {
+                    let prepared: Vec<_> = actions
+                        .iter()
+                        .filter_map(|(action, owner)| {
+                            if let Action::ExtraWonderSwan(target, command) = action {
+                                (target.id == instance.id).then(|| (command.clone(), *owner))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    instance.wonderswan()?.retain(&prepared)
+                }
                 Action::ExtraDx7(_, _) => {
                     let prepared: Vec<_> = actions
                         .iter()
@@ -2427,6 +2518,7 @@ impl Shared {
                         | Action::ExtraOkim6258(target, _)
                         | Action::ExtraGameboy(target, _)
                         | Action::ExtraHuc6280(target, _)
+                        | Action::ExtraWonderSwan(target, _)
                         | Action::ExtraDx7(target, _)
                         | Action::ExtraPwm(target, _)
                         | Action::ExtraSnes(target, _)
@@ -2502,6 +2594,11 @@ impl Shared {
                 }
                 Action::ExtraHuc6280(instance, command) => {
                     let state = instance.huc6280().expect("HuC6280 action target");
+                    state.rollback(command.clone());
+                    let _ = state.status(self.frame.load(Ordering::Acquire));
+                }
+                Action::ExtraWonderSwan(instance, command) => {
+                    let state = instance.wonderswan().expect("WonderSwan action target");
                     state.rollback(command.clone());
                     let _ = state.status(self.frame.load(Ordering::Acquire));
                 }
@@ -3114,6 +3211,49 @@ impl Shared {
         *sequence = next_sequence;
         status
     }
+    fn create_extra_wonderswan(
+        &self,
+        instance: u64,
+        clock: Option<u32>,
+    ) -> Result<extra_wonderswan::Status, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self
+            .extra_psg
+            .create_wonderswan(instance, epoch, self.rate, clock)
+        {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target
+            .wonderswan()?
+            .status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional WonderSwan install capacity"));
+        *sequence = next_sequence;
+        status
+    }
     fn create_extra_dx7(&self, instance: u64) -> Result<extra_dx7::Status, String> {
         let mut sequence = self
             .producer
@@ -3613,6 +3753,15 @@ impl Shared {
         self.invalidation.fetch_add(1, Ordering::Release);
         Ok(())
     }
+    fn dispose_extra_wonderswan(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose_wonderswan(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
     fn dispose_extra_dx7(&self, instance: u64) -> Result<(), String> {
         let _producer = self
             .producer
@@ -3907,6 +4056,25 @@ impl Shared {
             return Err("Additional HuC6280 instance has expired".into());
         }
         target.huc6280()?.status(self.frame.load(Ordering::Acquire))
+    }
+    fn extra_wonderswan_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+    ) -> Result<extra_wonderswan::Status, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        if let Some(id) = after {
+            target.wonderswan()?.wait_applied(id)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional WonderSwan instance has expired".into());
+        }
+        target
+            .wonderswan()?
+            .status(self.frame.load(Ordering::Acquire))
     }
     fn extra_dx7_status(
         &self,
@@ -4334,6 +4502,13 @@ impl Shared {
                             .expect("HuC6280 action target")
                             .valid_event(command, event.sequence, event.owner)
                 }
+                Action::ExtraWonderSwan(instance, command) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
+                        && instance
+                            .wonderswan()
+                            .expect("WonderSwan action target")
+                            .valid_event(command, event.sequence, event.owner)
+                }
                 Action::ExtraDx7(instance, command) => {
                     instance.valid(self.epoch.load(Ordering::Acquire))
                         && instance.dx7().expect("DX7 action target").valid_event(
@@ -4412,6 +4587,7 @@ impl Shared {
                     | Action::Gameboy(_)
                     | Action::Snes(_)
                     | Action::Huc6280(_)
+                    | Action::WonderSwan(_)
                     | Action::Ym2608(_)
                     | Action::Ym2610b(_)
                     | Action::Pwm(_)
@@ -4525,6 +4701,10 @@ impl Shared {
                 .huc6280()
                 .expect("HuC6280 action target")
                 .retire(command),
+            Action::ExtraWonderSwan(instance, command) => instance
+                .wonderswan()
+                .expect("WonderSwan action target")
+                .retire(command),
             Action::ExtraDx7(instance, command) => {
                 instance.dx7().expect("DX7 action target").retire(command)
             }
@@ -4577,6 +4757,11 @@ impl Shared {
             }
             Action::Huc6280(command) => {
                 if let Some(chip) = &self.huc6280 {
+                    chip.retire(command);
+                }
+            }
+            Action::WonderSwan(command) => {
+                if let Some(chip) = &self.wonderswan {
                     chip.retire(command);
                 }
             }
@@ -4744,6 +4929,8 @@ impl Shared {
                 "pc98-26"
             } else if self.huc6280.is_some() {
                 "huc6280"
+            } else if self.wonderswan.is_some() {
+                "wonderswan"
             } else if self.dx7.is_some() {
                 "dx7"
             } else if self.nes.is_some() {
@@ -4760,6 +4947,7 @@ impl Shared {
             gameboy_clock: self.gameboy.as_deref().map(gameboy::Shared::clock),
             snes_clock: self.snes.as_deref().map(snes::Shared::clock),
             huc6280_clock: self.huc6280.as_deref().map(huc6280::Shared::clock),
+            wonderswan_clock: self.wonderswan.as_deref().map(wonderswan::Shared::clock),
             ym2608_clock: self.ym2608.as_deref().map(ym2608::Shared::clock),
             ym2203_clock: self.ym2203.as_deref().map(ym2203::Shared::clock),
             ym2610b_clock: self.ym2610b.as_deref().map(ym2610b::Shared::clock),
@@ -4912,6 +5100,7 @@ struct Renderer {
     gameboy: Option<gameboy::Renderer>,
     snes: Option<snes::Renderer>,
     huc6280: Option<huc6280::Renderer>,
+    wonderswan: Option<wonderswan::Renderer>,
     ym2608: Option<ym2608::Renderer>,
     ym2203: Option<ym2203::Renderer>,
     ym2610b: Option<ym2610b::Renderer>,
@@ -4975,6 +5164,16 @@ impl Renderer {
         nes: bool,
         console: Option<&str>,
     ) -> Result<Self, String> {
+        Self::new_modes_with_clock(rate, mega_cd, dx7, nes, console, extra_wonderswan::CLOCK)
+    }
+    fn new_modes_with_clock(
+        rate: u32,
+        mega_cd: bool,
+        dx7: bool,
+        nes: bool,
+        console: Option<&str>,
+        wonderswan_clock: u32,
+    ) -> Result<Self, String> {
         Ok(Self {
             extra_psg: extra_psg::Renderer::default(),
             core: if dx7
@@ -5010,6 +5209,14 @@ impl Renderer {
             },
             huc6280: if console == Some("huc6280") {
                 Some(huc6280::Renderer::new(rate)?)
+            } else {
+                None
+            },
+            wonderswan: if console == Some("wonderswan") {
+                Some(wonderswan::Renderer::new_with_clock(
+                    rate,
+                    wonderswan_clock,
+                )?)
             } else {
                 None
             },
@@ -5175,6 +5382,9 @@ impl Renderer {
             if let (Some(chip), Some(state)) = (&mut self.huc6280, &shared.huc6280) {
                 chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
+            if let (Some(chip), Some(state)) = (&mut self.wonderswan, &shared.wonderswan) {
+                chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
+            }
             if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
                 chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
@@ -5261,6 +5471,9 @@ impl Renderer {
             chip.publish(state);
         }
         if let (Some(chip), Some(state)) = (&self.huc6280, &shared.huc6280) {
+            chip.publish(state);
+        }
+        if let (Some(chip), Some(state)) = (&self.wonderswan, &shared.wonderswan) {
             chip.publish(state);
         }
         if let (Some(chip), Some(state)) = (&self.ym2608, &shared.ym2608) {
@@ -5438,6 +5651,15 @@ impl Renderer {
                 self.extra_psg.apply_huc6280(&instance, &command, owner);
                 state.retire(command);
             }
+            Action::ExtraWonderSwan(instance, command) => {
+                let state = instance.wonderswan().expect("WonderSwan action target");
+                if command.stops() {
+                    state.cancel_before(&command, sequence.saturating_add(1), owner);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.extra_psg.apply_wonderswan(&instance, &command, owner);
+                state.retire(command);
+            }
             Action::ExtraDx7(instance, command) => {
                 let state = instance.dx7().expect("DX7 action target");
                 if command.stops() {
@@ -5557,6 +5779,15 @@ impl Renderer {
                     chip.apply(&command, owner, state);
                 }
                 shared.retire_action(Action::Huc6280(command));
+            }
+            Action::WonderSwan(command) => {
+                if command.stops() {
+                    shared.cancel_nes_before(owner, sequence.saturating_add(1));
+                }
+                if let (Some(chip), Some(state)) = (&mut self.wonderswan, &shared.wonderswan) {
+                    chip.apply(&command, owner, state);
+                }
+                shared.retire_action(Action::WonderSwan(command));
             }
             Action::Ym2608(command) => {
                 if command.stops() {
@@ -5829,6 +6060,7 @@ impl Renderer {
                             || self.gameboy.is_some()
                             || self.snes.is_some()
                             || self.huc6280.is_some()
+                            || self.wonderswan.is_some()
                             || self.ym2608.is_some()
                             || self.ym2203.is_some()
                             || self.ym2610b.is_some()
@@ -5855,6 +6087,11 @@ impl Renderer {
                             chip.stop(state);
                         }
                         if let (Some(chip), Some(state)) = (&mut self.huc6280, &shared.huc6280) {
+                            chip.stop(state);
+                        }
+                        if let (Some(chip), Some(state)) =
+                            (&mut self.wonderswan, &shared.wonderswan)
+                        {
                             chip.stop(state);
                         }
                         if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
@@ -5983,6 +6220,7 @@ impl Renderer {
                     Action::ExtraOkim6258(_, command) => command.starts(),
                     Action::ExtraGameboy(_, command) => command.starts(),
                     Action::ExtraHuc6280(_, command) => command.starts(),
+                    Action::ExtraWonderSwan(_, command) => command.starts(),
                     Action::ExtraDx7(_, command) => command.starts(),
                     Action::ExtraPwm(_, command) => command.starts(),
                     Action::ExtraSnes(_, command) => command.starts(),
@@ -5997,6 +6235,7 @@ impl Renderer {
                     Action::Gameboy(command) => command.starts(),
                     Action::Snes(command) => command.starts(),
                     Action::Huc6280(command) => command.starts(),
+                    Action::WonderSwan(command) => command.starts(),
                     Action::Ym2608(command) => command.starts(),
                     Action::Ym2203(command) => command.starts(),
                     Action::Ym2610b(command) => command.starts(),
@@ -6045,6 +6284,9 @@ impl Renderer {
             chip.mix(&mut pcm);
         }
         if let Some(chip) = &mut self.huc6280 {
+            chip.mix(&mut pcm);
+        }
+        if let Some(chip) = &mut self.wonderswan {
             chip.mix(&mut pcm);
         }
         if let Some(chip) = &mut self.ym2608 {
@@ -6096,6 +6338,7 @@ impl Renderer {
             || self.gameboy.is_some()
             || self.snes.is_some()
             || self.huc6280.is_some()
+            || self.wonderswan.is_some()
             || self.ym2608.is_some()
             || self.ym2203.is_some()
             || self.ym2610b.is_some()
@@ -6140,6 +6383,9 @@ impl Renderer {
                     chip.stop(state);
                 }
                 if let (Some(chip), Some(state)) = (&mut self.huc6280, &shared.huc6280) {
+                    chip.stop(state);
+                }
+                if let (Some(chip), Some(state)) = (&mut self.wonderswan, &shared.wonderswan) {
                     chip.stop(state);
                 }
                 if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
@@ -6237,6 +6483,8 @@ pub struct Status {
     #[serde(skip_serializing_if = "Option::is_none")]
     huc6280_clock: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    wonderswan_clock: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     ym2608_clock: Option<u32>,
     ym2203_clock: Option<u32>,
     ym2610b_clock: Option<u32>,
@@ -6297,6 +6545,7 @@ impl NativeGenesis {
             "gameboy" => (false,false,false,Some("gameboy")),
             "snes" => (false,false,false,Some("snes")),
             "pc-engine" | "huc6280" => (false,false,false,Some("huc6280")),
+            "wonderswan" => (false,false,false,Some("wonderswan")),
             "pc98" | "ym2608" => (false,false,false,Some("ym2608")),
             "pc98-26" | "ym2203" => (false,false,false,Some("ym2203")),
             "neogeo" | "ym2610" => (false,false,false,Some("ym2610")),
@@ -6309,12 +6558,25 @@ impl NativeGenesis {
             "ym3526" => (false,false,false,Some("ym3526")),
             "ym3812" => (false,false,false,Some("ym3812")),
             "ymf262" => (false,false,false,Some("ymf262")),
-            _ => return Err("Native output supports Genesis, Mega CD, 32X, 32X Nuked, Genesis Nuked, DX7, NES, Game Boy, SNES, PC Engine, PC98, PC98-26, Neo Geo, X68000, Master System, Game Gear, MSX, MSX Audio and DOS PC modes".into()),
+            _ => return Err("Native output supports Genesis, Mega CD, 32X, 32X Nuked, Genesis Nuked, DX7, NES, Game Boy, SNES, PC Engine, WonderSwan, PC98, PC98-26, Neo Geo, X68000, Master System, Game Gear, MSX, MSX Audio and DOS PC modes".into()),
         })
     }
     fn start_mode(&self, mode: Option<&str>) -> Result<Status, String> {
+        self.start_mode_with_clock(mode, None)
+    }
+    fn start_mode_with_clock(
+        &self,
+        mode: Option<&str>,
+        clock: Option<u32>,
+    ) -> Result<Status, String> {
         let (mega_cd, dx7, nes, console) = Self::mode_config(mode)?;
-        self.replace_running(|session| Self::launch_config(session, mega_cd, dx7, nes, console))
+        let clock = clock.unwrap_or(extra_wonderswan::CLOCK);
+        if !(100_000..=100_000_000).contains(&clock) {
+            return Err("Native WonderSwan clock must be 100000–100000000 Hz".into());
+        }
+        self.replace_running(|session| {
+            Self::launch_config_with_clock(session, mega_cd, dx7, nes, console, clock)
+        })
     }
     fn replace_running(
         &self,
@@ -6352,21 +6614,30 @@ impl NativeGenesis {
         nes: bool,
         console: Option<&'static str>,
     ) -> Result<Running, String> {
+        Self::launch_config_with_clock(session, mega_cd, dx7, nes, console, extra_wonderswan::CLOCK)
+    }
+    fn launch_config_with_clock(
+        session: u64,
+        mega_cd: bool,
+        dx7: bool,
+        nes: bool,
+        console: Option<&'static str>,
+        wonderswan_clock: u32,
+    ) -> Result<Running, String> {
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let (stop, stopped) = mpsc::channel();
-        let thread =
-            std::thread::spawn(
-                move || match start_device(session, mega_cd, dx7, nes, console) {
-                    Ok((stream, shared)) => {
-                        let _ = ready_tx.send(Ok(shared));
-                        let _ = stopped.recv();
-                        drop(stream);
-                    }
-                    Err(error) => {
-                        let _ = ready_tx.send(Err(error));
-                    }
-                },
-            );
+        let thread = std::thread::spawn(move || {
+            match start_device(session, mega_cd, dx7, nes, console, wonderswan_clock) {
+                Ok((stream, shared)) => {
+                    let _ = ready_tx.send(Ok(shared));
+                    let _ = stopped.recv();
+                    drop(stream);
+                }
+                Err(error) => {
+                    let _ = ready_tx.send(Err(error));
+                }
+            }
+        });
         match ready_rx.recv().map_err(|e| e.to_string())? {
             Ok(shared) => Ok(Running {
                 shared,
@@ -6433,6 +6704,7 @@ fn start_device(
     dx7: bool,
     nes: bool,
     console: Option<&'static str>,
+    wonderswan_clock: u32,
 ) -> Result<(cpal::Stream, Arc<Shared>), String> {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     let device = cpal::default_host()
@@ -6442,14 +6714,9 @@ fn start_device(
         .default_output_config()
         .map_err(|e| format!("Native audio configuration failed: {e}"))?;
     let config: cpal::StreamConfig = supported.clone().into();
-    let shared = Arc::new(Shared::new_modes(
-        config.sample_rate.0,
-        session,
-        mega_cd,
-        dx7,
-        nes,
-        console,
-    ));
+    let mut shared = Shared::new_modes(config.sample_rate.0, session, mega_cd, dx7, nes, console);
+    shared.wonderswan_initial_clock = wonderswan_clock;
+    let shared = Arc::new(shared);
     let stream = match supported.sample_format() {
         cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config, shared.clone()),
         cpal::SampleFormat::I16 => build_stream::<i16>(&device, &config, shared.clone()),
@@ -6469,7 +6736,7 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
     shared: Arc<Shared>,
 ) -> Result<cpal::Stream, String> {
     use cpal::traits::DeviceTrait;
-    let mut renderer = Renderer::new_modes(
+    let mut renderer = Renderer::new_modes_with_clock(
         config.sample_rate.0,
         shared.mega_cd,
         shared.dx7.is_some(),
@@ -6508,9 +6775,12 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
             Some("ym2203")
         } else if shared.huc6280.is_some() {
             Some("huc6280")
+        } else if shared.wonderswan.is_some() {
+            Some("wonderswan")
         } else {
             None
         },
+        shared.wonderswan_initial_clock,
     )?;
     // Publish the actual initialized core before start() exposes the session.
     renderer.publish_primary(&shared);
@@ -6553,12 +6823,15 @@ pub async fn native_genesis_start(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, NativeGenesis>,
     mode: Option<String>,
+    clock: Option<u32>,
 ) -> Result<Status, String> {
     crate::allowed(&window)?;
     let state = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || state.start_mode(mode.as_deref()))
-        .await
-        .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        state.start_mode_with_clock(mode.as_deref(), clock)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 pub async fn native_genesis_nes_status(
@@ -6649,6 +6922,30 @@ pub async fn native_genesis_huc6280_status(
                 .huc6280
                 .as_ref()
                 .ok_or("Native huc6280 requires huc6280 mode")?;
+            if let Some(id) = after {
+                chip.wait_applied(id)?;
+            }
+            chip.status(shared.frame.load(Ordering::Acquire))
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+#[tauri::command]
+pub async fn native_genesis_wonderswan_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    after: Option<u64>,
+) -> Result<wonderswan::Status, String> {
+    crate::allowed(&window)?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.with_session(session, |shared| {
+            let chip = shared
+                .wonderswan
+                .as_ref()
+                .ok_or("Native wonderswan requires wonderswan mode")?;
             if let Some(id) = after {
                 chip.wait_applied(id)?;
             }
@@ -7751,15 +8048,28 @@ mod tests {
             serde_json::json!({"frame":0,"type":"mix","gainUnits":units,
                 "fmLeft":value,"fmRight":0.5,"psgLeft":value,"psgRight":0.35,"master":3.8})
         };
-        let parsed: Command = serde_json::from_value(packet(serde_json::json!("source"), 2.0)).unwrap();
-        assert!(matches!(parsed.validate().unwrap(), Action::SourceMix([2.0, 0.5, 2.0, 0.35, 3.8])));
-        let legacy: Command = serde_json::from_value(packet(serde_json::json!("legacy"), 2.0)).unwrap();
-        assert!(matches!(legacy.validate().unwrap(), Action::Mix([2.0, 0.5, 2.0, 0.35, 3.8])));
+        let parsed: Command =
+            serde_json::from_value(packet(serde_json::json!("source"), 2.0)).unwrap();
+        assert!(matches!(
+            parsed.validate().unwrap(),
+            Action::SourceMix([2.0, 0.5, 2.0, 0.35, 3.8])
+        ));
+        let legacy: Command =
+            serde_json::from_value(packet(serde_json::json!("legacy"), 2.0)).unwrap();
+        assert!(matches!(
+            legacy.validate().unwrap(),
+            Action::Mix([2.0, 0.5, 2.0, 0.35, 3.8])
+        ));
         for value in [-0.01, 2.01] {
-            let invalid: Command = serde_json::from_value(packet(serde_json::json!("source"), value)).unwrap();
+            let invalid: Command =
+                serde_json::from_value(packet(serde_json::json!("source"), value)).unwrap();
             assert!(invalid.validate().is_err());
         }
-        for units in [serde_json::Value::Null, serde_json::json!(1), serde_json::json!("unknown")] {
+        for units in [
+            serde_json::Value::Null,
+            serde_json::json!(1),
+            serde_json::json!("unknown"),
+        ] {
             assert!(serde_json::from_value::<Command>(packet(units, 1.0)).is_err());
         }
     }
@@ -7773,33 +8083,63 @@ mod tests {
                     let mut legacy = Core::new_engine(rate, nuked).unwrap();
                     // Source gain 2 requires a private PSG target above 2;
                     // the public protocol still accepts no value above 2.
-                    let source_gains = if fm { [2.0, 0.4, 0.0, 0.0, 0.5] } else { [0.0, 0.0, 2.0, 0.4, 0.5] };
-                    let legacy_gains = if fm { [1.0, 1.0, 0.0, 0.0, 0.5] } else { [0.0, 0.0, 1.0, 1.0, 0.5] };
+                    let source_gains = if fm {
+                        [2.0, 0.4, 0.0, 0.0, 0.5]
+                    } else {
+                        [0.0, 0.0, 2.0, 0.4, 0.5]
+                    };
+                    let legacy_gains = if fm {
+                        [1.0, 1.0, 0.0, 0.0, 0.5]
+                    } else {
+                        [0.0, 0.0, 1.0, 1.0, 0.5]
+                    };
                     actual.apply(Action::SourceMix(source_gains));
                     legacy.apply(Action::Mix(legacy_gains));
                     for operation in 0..3 {
-                        if operation == 1 { actual.apply(Action::Reset); legacy.apply(Action::Reset); }
-                        if operation == 2 { unsafe { native_genesis_stop_voices(actual.0); native_genesis_stop_voices(legacy.0); } }
+                        if operation == 1 {
+                            actual.apply(Action::Reset);
+                            legacy.apply(Action::Reset);
+                        }
+                        if operation == 2 {
+                            unsafe {
+                                native_genesis_stop_voices(actual.0);
+                                native_genesis_stop_voices(legacy.0);
+                            }
+                        }
                         for core in [&mut actual, &mut legacy] {
                             if fm {
-                                fm_patch(core); core.apply(Action::Write(0, 0x28, 0x80));
+                                fm_patch(core);
+                                core.apply(Action::Write(0, 0x28, 0x80));
                             } else {
-                                for value in [0x85, 0x10, 0x94] { core.apply(Action::PsgWrite(value)); }
+                                for value in [0x85, 0x10, 0x94] {
+                                    core.apply(Action::PsgWrite(value));
+                                }
                             }
-                            for _ in 0..1024 { core.sample(); }
+                            for _ in 0..1024 {
+                                core.sample();
+                            }
                         }
                         let trim = if fm { 0.9 } else { 0.35 };
                         let mut energy = 0.0f32;
                         for _ in 0..2048 {
-                            let a = actual.sample(); let b = legacy.sample();
-                            assert!((a[0] - b[0] * (2.0 / trim)).abs() < 3e-7, "source left: {nuked}/{rate}/{fm}/{operation}: {a:?}/{b:?}");
-                            assert!((a[1] - b[1] * (0.4 / trim)).abs() < 3e-7, "source right: {nuked}/{rate}/{fm}/{operation}");
+                            let a = actual.sample();
+                            let b = legacy.sample();
+                            assert!(
+                                (a[0] - b[0] * (2.0 / trim)).abs() < 3e-7,
+                                "source left: {nuked}/{rate}/{fm}/{operation}: {a:?}/{b:?}"
+                            );
+                            assert!(
+                                (a[1] - b[1] * (0.4 / trim)).abs() < 3e-7,
+                                "source right: {nuked}/{rate}/{fm}/{operation}"
+                            );
                             energy += a[0].abs();
                         }
                         assert!(energy > 0.1);
                     }
                     actual.apply(Action::SourceMix([0.0, 0.0, 0.0, 0.0, 0.5]));
-                    for _ in 0..1024 { actual.sample(); }
+                    for _ in 0..1024 {
+                        actual.sample();
+                    }
                     assert_eq!(actual.sample(), [0.0; 2]);
                     assert_eq!(actual.master(), 0.5);
                 }
@@ -7814,7 +8154,8 @@ mod tests {
             let shared = Shared::new_modes(48000, 1, false, false, false, mode);
             let mut renderer = Renderer::new_modes(48000, false, false, false, mode).unwrap();
             let parsed: Command = serde_json::from_value(serde_json::json!({"frame":1024,"type":"mix","gainUnits":"source", "fmLeft":0,"fmRight":0,"psgLeft":0,"psgRight":0,"master":1})).unwrap();
-            let mut commands = tone(0); commands.push(parsed);
+            let mut commands = tone(0);
+            commands.push(parsed);
             shared.enqueue(1, &commands).unwrap();
             let output = render(&mut renderer, &shared, 2048);
             assert!(output[512..1024].iter().any(|v| v[0].abs() > 0.001));
@@ -8944,6 +9285,19 @@ pub fn native_genesis_extra_huc6280_create(
     })
 }
 #[tauri::command]
+pub fn native_genesis_extra_wonderswan_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    clock: Option<u32>,
+) -> Result<extra_wonderswan::Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| {
+        shared.create_extra_wonderswan(instance, clock)
+    })
+}
+#[tauri::command]
 pub fn native_genesis_extra_dx7_create(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, NativeGenesis>,
@@ -9050,6 +9404,16 @@ pub fn native_genesis_extra_huc6280_dispose(
 ) -> Result<(), String> {
     crate::allowed(&window)?;
     state.with_session(session, |shared| shared.dispose_extra_huc6280(instance))
+}
+#[tauri::command]
+pub fn native_genesis_extra_wonderswan_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_wonderswan(instance))
 }
 #[tauri::command]
 pub fn native_genesis_extra_dx7_dispose(
@@ -9179,6 +9543,24 @@ pub async fn native_genesis_extra_huc6280_status(
         tauri::async_runtime::spawn_blocking(move || shared.extra_huc6280_status(instance, after))
             .await
             .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+#[tauri::command]
+pub async fn native_genesis_extra_wonderswan_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+) -> Result<extra_wonderswan::Status, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        shared.extra_wonderswan_status(instance, after)
+    })
+    .await
+    .map_err(|error| error.to_string())??;
     state.with_session(session, |_| Ok(()))?;
     Ok(status)
 }

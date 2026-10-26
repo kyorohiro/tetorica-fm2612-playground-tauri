@@ -2,8 +2,8 @@
 //! control thread; the device callback owns their exclusive mutable access.
 use super::{
     extra_budget, extra_dx7, extra_gameboy, extra_huc6280, extra_msx, extra_nes, extra_okim6258,
-    extra_opl, extra_pwm, extra_rf5c164, extra_snes, extra_spc, extra_ym2151, extra_ym2608,
-    extra_ym2610, master_system, ym2203, ym2612, Owner, MAX_SAFE_INTEGER,
+    extra_opl, extra_pwm, extra_rf5c164, extra_snes, extra_spc, extra_wonderswan, extra_ym2151,
+    extra_ym2608, extra_ym2610, master_system, ym2203, ym2612, Owner, MAX_SAFE_INTEGER,
 };
 use std::{
     cell::UnsafeCell,
@@ -44,6 +44,7 @@ pub enum State {
     Okim6258(Box<extra_okim6258::Shared>),
     Gameboy(Box<extra_gameboy::Shared>),
     Huc6280(Box<extra_huc6280::Shared>),
+    WonderSwan(Box<extra_wonderswan::Shared>),
     Dx7(Box<extra_dx7::Shared>),
     Pwm(Box<extra_pwm::Shared>),
     Snes(Box<extra_snes::Shared>),
@@ -69,6 +70,7 @@ enum Kind {
     Okim6258,
     Gameboy,
     Huc6280,
+    WonderSwan,
     Dx7,
     Pwm,
     Snes,
@@ -92,6 +94,7 @@ enum Core {
     Okim6258(Box<extra_okim6258::Renderer>),
     Gameboy(Box<extra_gameboy::Renderer>),
     Huc6280(Box<extra_huc6280::Renderer>),
+    WonderSwan(Box<extra_wonderswan::Renderer>),
     Dx7(Box<extra_dx7::Renderer>),
     Pwm(Box<extra_pwm::Renderer>),
     Snes(Box<extra_snes::Renderer>),
@@ -241,6 +244,13 @@ impl Instance {
             Err("Additional instance is not a HuC6280".into())
         }
     }
+    pub fn wonderswan(&self) -> Result<&extra_wonderswan::Shared, String> {
+        if let State::WonderSwan(state) = &self.state {
+            Ok(state)
+        } else {
+            Err("Additional instance is not a WonderSwan".into())
+        }
+    }
     pub fn dx7(&self) -> Result<&extra_dx7::Shared, String> {
         if let State::Dx7(state) = &self.state {
             Ok(state)
@@ -304,6 +314,7 @@ impl Instance {
             State::Okim6258(_) => Kind::Okim6258,
             State::Gameboy(_) => Kind::Gameboy,
             State::Huc6280(_) => Kind::Huc6280,
+            State::WonderSwan(_) => Kind::WonderSwan,
             State::Dx7(_) => Kind::Dx7,
             State::Pwm(_) => Kind::Pwm,
             State::Snes(_) => Kind::Snes,
@@ -335,6 +346,7 @@ pub enum Payload {
     Okim6258(Arc<extra_okim6258::Prepared>),
     Gameboy(Arc<extra_gameboy::Prepared>),
     Huc6280(Arc<extra_huc6280::Prepared>),
+    WonderSwan(Arc<extra_wonderswan::Prepared>),
     Dx7(Arc<extra_dx7::Prepared>),
     Pwm(Arc<extra_pwm::Prepared>),
     Snes(Arc<extra_snes::Prepared>),
@@ -360,6 +372,7 @@ impl Payload {
             Self::Okim6258(v) => v.retained_bytes(),
             Self::Gameboy(v) => v.retained_bytes(),
             Self::Huc6280(v) => v.retained_bytes(),
+            Self::WonderSwan(v) => v.retained_bytes(),
             Self::Dx7(v) => v.retained_bytes(),
             Self::Pwm(v) => v.retained_bytes(),
             Self::Snes(v) => v.retained_bytes(),
@@ -385,6 +398,7 @@ impl Payload {
             Self::Okim6258(v) => Arc::strong_count(v) == 1,
             Self::Gameboy(v) => Arc::strong_count(v) == 1,
             Self::Huc6280(v) => Arc::strong_count(v) == 1,
+            Self::WonderSwan(v) => Arc::strong_count(v) == 1,
             Self::Dx7(v) => Arc::strong_count(v) == 1,
             Self::Pwm(v) => Arc::strong_count(v) == 1,
             Self::Snes(v) => Arc::strong_count(v) == 1,
@@ -531,6 +545,7 @@ impl Shared {
                 State::Okim6258(s) => s.collect_retired(),
                 State::Gameboy(s) => s.collect_retired(),
                 State::Huc6280(s) => s.collect_retired(),
+                State::WonderSwan(s) => s.collect_retired(),
                 State::Dx7(s) => s.collect_retired(),
                 State::Pwm(s) => s.collect_retired(),
                 State::Snes(s) => s.collect_retired(),
@@ -666,6 +681,15 @@ impl Shared {
         clock: Option<u32>,
     ) -> Result<Arc<Instance>, String> {
         self.create_kind(id, epoch, rate, clock, Kind::Huc6280)
+    }
+    pub fn create_wonderswan(
+        &self,
+        id: u64,
+        epoch: u64,
+        rate: u32,
+        clock: Option<u32>,
+    ) -> Result<Arc<Instance>, String> {
+        self.create_kind(id, epoch, rate, clock, Kind::WonderSwan)
     }
     pub fn create_dx7(&self, id: u64, epoch: u64, rate: u32) -> Result<Arc<Instance>, String> {
         self.create_kind(id, epoch, rate, None, Kind::Dx7)
@@ -988,6 +1012,17 @@ impl Shared {
                 State::Huc6280(Box::new(state)),
                 Core::Huc6280(Box::new(core)),
             )
+        } else if kind == Kind::WonderSwan {
+            let state = extra_wonderswan::Shared::default();
+            let core = extra_wonderswan::Renderer::new_with_clock(
+                rate,
+                clock.unwrap_or(extra_wonderswan::CLOCK),
+            )?;
+            core.publish(&state);
+            (
+                State::WonderSwan(Box::new(state)),
+                Core::WonderSwan(Box::new(core)),
+            )
         } else if kind == Kind::Dx7 {
             let state = extra_dx7::Shared::default();
             let core = extra_dx7::Renderer::new(rate)?;
@@ -1281,6 +1316,9 @@ impl Shared {
     pub fn dispose_huc6280(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Huc6280)
     }
+    pub fn dispose_wonderswan(&self, id: u64) -> Result<(), String> {
+        self.dispose_kind(id, Kind::WonderSwan)
+    }
     pub fn dispose_dx7(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Dx7)
     }
@@ -1404,6 +1442,7 @@ fn extra_heap_payloads_remain_inside_fixed_instance_headroom() {
     payload!(extra_okim6258::Shared, extra_okim6258::Renderer);
     payload!(extra_gameboy::Shared, extra_gameboy::Renderer);
     payload!(extra_huc6280::Shared, extra_huc6280::Renderer);
+    payload!(extra_wonderswan::Shared, extra_wonderswan::Renderer);
     payload!(extra_dx7::Shared, extra_dx7::Renderer);
     payload!(extra_pwm::Shared, extra_pwm::Renderer);
     payload!(extra_snes::Shared, extra_snes::Renderer);
@@ -1492,6 +1531,9 @@ impl Renderer {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Huc6280(core), State::Huc6280(state)) => {
+                                core.cancel_invalid(&valid, state)
+                            }
+                            (Core::WonderSwan(core), State::WonderSwan(state)) => {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Dx7(core), State::Dx7(state)) => {
@@ -1708,6 +1750,21 @@ impl Renderer {
             }
         }
     }
+    pub fn apply_wonderswan(
+        &mut self,
+        instance: &Instance,
+        command: &Arc<extra_wonderswan::Prepared>,
+        owner: Option<Owner>,
+    ) {
+        unsafe {
+            match (instance.callback_core(), &instance.state) {
+                (Core::WonderSwan(core), State::WonderSwan(state)) => {
+                    core.apply(command, owner, state)
+                }
+                _ => unreachable!("Additional WonderSwan target"),
+            }
+        }
+    }
     pub fn apply_dx7(
         &mut self,
         instance: &Instance,
@@ -1826,6 +1883,7 @@ impl Renderer {
                     (Core::Okim6258(core), _) => core.mix(pcm),
                     (Core::Gameboy(core), _) => core.mix(pcm),
                     (Core::Huc6280(core), _) => core.mix(pcm),
+                    (Core::WonderSwan(core), _) => core.mix(pcm),
                     (Core::Dx7(core), _) => core.mix(pcm),
                     (Core::Pwm(core), State::Pwm(state)) => core.mix_additional(pcm, state),
                     (Core::Snes(core), State::Snes(state)) => core.mix_additional(pcm, state),

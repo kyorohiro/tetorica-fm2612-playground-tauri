@@ -118,7 +118,15 @@ once before the first core is published. Genesis/32X mixing, natural Nuked idle
 DC, source gain/ramp policy and host ownership remain application behavior.
 The old nine-file Nuked snapshot and its licenses remain provenance and
 comparison references; refreshing it alone does not update SDK build inputs.
-All twenty-two ordinary sound-chip IDs and the alternative Nuked YM2612 engine
+Selected and independent WonderSwan instances share the unchanged SDK raw core
+`vendor/mame-wonderswan/wonderswan.cpp`, compiled once with the application-owned
+`src-tauri/src/native_genesis_wonderswan.cpp` and header. The application adapter
+preserves raw unipolar PCM and applies the Browser speaker midpoint correction,
+native-tick startup fence and clock resampler at the output boundary. Rust owns
+register/RAM observations, manual leases, shared control masks, command payloads,
+scheduling, retirement and budgets. The SDK's BSD-3-Clause license, upstream
+source and provenance are included in this source ZIP. No SDK bytes are changed.
+All twenty-three ordinary sound-chip IDs and the alternative Nuked YM2612 engine
 now consume the SDK at these boundaries; machine-specific helpers remain local. The
 [SDK adoption guide](docs/native-sdk-ym2612.md) lists the
 consumed paths, pinned archive hash and deliberate offline update procedure.

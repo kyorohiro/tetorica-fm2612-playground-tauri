@@ -435,6 +435,24 @@ fn main() {
         .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_huc6280.cpp")
         .warnings(false)
         .compile("tetorica_native_huc6280");
+    // WonderSwan shares one pinned raw SDK core between primary and extras.
+    // Speaker DC/clock adaptation belongs to the application, not the SDK.
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/mame-wonderswan");
+    println!("cargo:rerun-if-changed=src/native_genesis_wonderswan.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_wonderswan.h");
+    cc::Build::new()
+        .cpp(true)
+        .flag_if_supported("/EHsc")
+        .std("c++17")
+        .opt_level(2)
+        .flag_if_supported("-fwrapv")
+        .flag_if_supported("-fno-strict-aliasing")
+        .flag_if_supported("-ffp-contract=off")
+        .include("vendor/tetorica-soundchip-native/vendor/mame-wonderswan")
+        .file("src/native_genesis_wonderswan.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/mame-wonderswan/wonderswan.cpp")
+        .warnings(false)
+        .compile("tetorica_native_wonderswan");
     // SNES instruments and complete SPC700 playback share one SDK S-DSP.
     // Keep both adapters and the four core files in the existing archive;
     // compiling two standalone SDK targets here would duplicate the DSP.

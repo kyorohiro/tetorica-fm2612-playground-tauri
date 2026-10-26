@@ -14,7 +14,7 @@ const option = name => {
 };
 if (args.includes('--help')) {
   console.log('Usage: node scripts/check_native_stability.mjs [--out=report.json] [--long] [--seconds=30] [--rounds=3] [--compare=previous.json] [--release]');
-  console.log('Default: 22 modes, 2 constructor/drop rounds, two 0.125-second runs per round, offline and no audio devices.');
+  console.log('Default: 23 modes, 2 constructor/drop rounds, two 0.125-second runs per round, offline and no audio devices.');
   console.log('--long defaults to 30 simulated seconds per run and 3 rounds. Timings are diagnostic; no absolute speed threshold.');
   process.exit(0);
 }
@@ -43,7 +43,7 @@ try {
   report.runner = {state: 'complete', platform: process.platform, arch: process.arch,
     command: ['cargo', ...cargoArgs], exitCode: result.status, signal: result.signal,
     wallSeconds: (Date.now() - start) / 1000, ...(result.error ? {error: result.error.message} : {})};
-  report.passed = result.status === 0 && report.passed === true && report.modes.length === 22;
+  report.passed = result.status === 0 && report.passed === true && report.modes.length === 23;
   if (option('--compare')) {
     const baseline = JSON.parse(await readFile(resolve(option('--compare')), 'utf8'));
     report.comparison = {baseline: resolve(option('--compare')),
