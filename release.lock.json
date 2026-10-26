@@ -1,5 +1,5 @@
 {
-  "archive": "hello_ymfm_wasm_wonderswan-dev_itch_playground.zip",
+  "archive": "hello_ymfm_wasm_sdk-014-dev_itch_playground.zip",
   "files": {
     "LICENSE": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c",
     "THIRD_PARTY_LICENSES.txt": "b02a2895e35bfc856832036be97892a767c49e15b09e88f0fa6f6dd1ca230de8",
@@ -149,6 +149,7 @@
     "favicon.ico": "d325a1e0488fe4201ab33d4e949d25eff54fd347db1d5f119eca5d97bff3c0ba",
     "generated/ay8910_wasm.js": "f0e92cac093e3487eec2090fae73182967109620f23921d2d09b36f9a2e8e29b",
     "generated/ay8910_wasm.wasm": "06ed0deda001d75c56fb2ef1d1b80cc0b967e994606fe27895fcd19d5a1f1689",
+    "generated/build-info.json": "36a424a59ea65d0880b681ab382b8ec70c717845aa9349003e3dd16d0acfba59",
     "generated/gameboy_apu_wasm.js": "bd5d7500c4a3c99763ac7cd27263e73c060f04df3b85167a0fed19f9dad5c4e5",
     "generated/gameboy_apu_wasm.wasm": "ae2bccd3ed8f0c776fc8be198fa9fddebeb18db5654b9160eeef239c9a3faabd",
     "generated/huc6280_wasm.js": "81d317f4aac899c00c9a720ab72946c72dde155f9688cbed22b45cb3fb77804f",
@@ -167,7 +168,6 @@
     "generated/segapsg_wasm.wasm": "c991ed0bd54da10810aeda4008d16832790408d7bbf8a8a0959b3ab4a26a3305",
     "generated/spc_wasm.js": "13106eb82513dac0b3d3e4983b9cb1843eedcdf698ec385a5a91cf9d1d27b699",
     "generated/spc_wasm.wasm": "9a8f6facab15990346cc712e8b14bf316c2b7fcc1260f9ccbea49efea39df408",
-    "generated/wonderswan_build-info.json": "6127db6d72369f885eda0611e1945c3b3ebb74e30c8f606cd599cc7c4c91a180",
     "generated/wonderswan_wasm.js": "6d050c35ce7ad65b2b570b18cdb4b573faf661b0be5380765220b7748b190899",
     "generated/wonderswan_wasm.wasm": "b8ca79e5e562738790e6f6042660d713a555de55e40347064114fe45c36604ab",
     "generated/y8950_wasm.js": "3e5899771862432c9cb1a50c2398c2481583867d922c8c854fba0da4fdbcea77",
@@ -522,7 +522,7 @@
     "licenses/mame-rf5c164/LICENSE": "0a2b34be38b92350c6503001de126a201bcd297203b839ac1dfc6ebd005dd853",
     "licenses/mame-rf5c164/README.md": "3be506399ecf8d36c6724c82673436c7e122d82c84c1263114f1628ac1282af6",
     "licenses/mame-wonderswan/LICENSE": "28c9517f09fd60cf3b5152646b49bd12bcb5491624e5e4c93d8839b981ff01e9",
-    "licenses/mame-wonderswan/README.md": "0633ec8b530b0c3bad13401638649d549f833cc97cedc6c9d0263ae60607220d",
+    "licenses/mame-wonderswan/README.md": "32dc963b4fe76d4b0d926ef4e225765d872434b2951264aeafee9e734afabadd",
     "licenses/nuked-opn2/LICENSE": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331",
     "licenses/nuked-opn2/README.md": "8296e38872f66aa2598ca9d17360bc65e45254ee2028320f512f131712b940aa",
     "licenses/snes-spc/LICENSE": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331",
@@ -826,7 +826,7 @@
     "sources/Nuked-OPN2.md": "ce20e3a98310f89a71ac308d43669d280593cffa0060b6e30723760b2eb76bb3",
     "sources/PWM32X.md": "0be3d6755663d2221a3e1836e026d6a6f73c18d1a30186129ecac1ba8859a411",
     "sources/SNES-SPC.md": "267d7078a59c99d6d56b81b200f97f9db84ea3b481f80a563797df8abd91f328",
-    "sources/SegaPSG.md": "7f5da78846175a9e177ea40bd59a2d96d47dca127664916f7c1ae8d99b30fdd0",
+    "sources/SegaPSG.md": "aa551e33ea9f4da3b5ecbe9b21dfe0db0255086bbb8cfc2b91c2ca46714b056f",
     "sources/scripts/build_nesapu_wasm.sh": "884ff7505447afc232e860bac6e633652ed26c6097c5e0a10e5c14dffee09c4d",
     "sources/scripts/build_nuked_opn2_wasm.sh": "ea620223822175fb4d6470778dd40a07621b9674bebdf9a6a2571917c72c1fbe",
     "sources/scripts/build_pwm32x_wasm.sh": "ed6cdb5573858a6959d9f985a74ed96ae52d066955767a80790e297d1d12c09e",
@@ -920,6 +920,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "58cb2096631756e9b33dd713e251d7bb5cd7e2cf2e4469ef2c83255a1d844802"
   },
-  "sha256": "1bb95a493cbb645a05e9670199cceaaeff1f7d380d9a608e30771cd579000905",
-  "version": "sha256-1bb95a493cbb"
+  "sha256": "fd73d44799dfe7819dba99967331bb3a0d0fab4d545fae8e6ee20fc6b1a0cc54",
+  "version": "sha256-fd73d44799df"
 }

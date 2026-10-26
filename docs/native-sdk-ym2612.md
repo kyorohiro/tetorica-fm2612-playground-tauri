@@ -10,15 +10,15 @@ submodule、ビルド中のGitHub取得を必要としません。
 
 | 項目 | 値 |
 | --- | --- |
-| SDK版 | `0.1.2` |
-| ソース配布 | `tetorica-soundchip-native-0.1.2-sources.zip` |
-| 配布ZIPのSHA-256 | `752d0f449fd69300881f7c369f190932154e96ab8fd103676917087a454b8c72` |
-| SDKの元コミット | `53b33a15f5c4b919b185cb912016eccfbbb6d3a6` |
+| SDK版 | `0.1.4` |
+| ソース配布 | `tetorica-soundchip-native-0.1.4-sources.zip` |
+| 配布ZIPのSHA-256 | `f173092241badd27c84d6846a69bd175375f080a57fdaf4983c56751c201f65e` |
+| SDKの元コミット | `6f8b872b6f35f5df619b2468d58da57037c96e07` |
 | 同梱先 | `src-tauri/vendor/tetorica-soundchip-native/` |
 | Tauri側の取り込み記録 | `src-tauri/soundchip-sdk.json` |
 
 取り込み記録は`schemaVersion: 1`で、`name`、`version`、`sourceCommit`、`archiveName`、
-`archiveSha256`、`manifestSha256`、`fileCount`を保存します。現在の同梱数は381ファイルです。
+`archiveSha256`、`manifestSha256`、`fileCount`を保存します。現在の同梱数は395ファイルです。
 `sourceCommit`は取り込み時に指定する由来の記録で、コミット署名や配布物の署名を検証したものではありません。
 取り込み時に期待するZIPのSHA-256を検証し、SDKマニフェストと各ファイルのサイズ／SHA-256を照合します。
 `--check`は元ZIPやネットワークを使わず、同梱マニフェストのハッシュと全ファイルを記録に照合します。
@@ -27,6 +27,8 @@ submodule、ビルド中のGitHub取得を必要としません。
 SDK内のBSD、MIT、Apache、LGPL等の宣言はコンポーネントごとの原文のまま残し、
 アプリ側のライセンスで置き換えません。SDK内の`LICENSES.md`と各カタログを参照してください。
 同梱している全コンポーネントをアプリでリンクする、という意味ではありません。
+SDK `0.1.4`にはWonderSwanのraw C++コアとWASM bridgeも含まれます。
+今回の固定版更新ではCargoへWonderSwanをリンクせず、WonderSwan modeは引き続きWeb Audioのみです。
 
 ## ビルドで使う部分
 
@@ -81,7 +83,7 @@ SDKのOPN providerがymfmのOPN実装と明示的なテンプレート実体化�
 
 YM2203とYM2608は、それぞれ選択中のPC-98音源と追加生成の両方で、同じSDK側のNative接続を使います。
 Neo Geoも選択中／追加音源のYM2610（FM 4CH）とYM2610B（FM 6CH）が一つのSDK接続を共有し、生成時に変種を選択します。
-これらの先行移行は同梱済みのSDK `0.1.0`へ参照を切り替えました。Nuked単体ターゲットを追加した`0.1.1`を経て、現在はSega PSGを独立フォルダーへ分離した`0.1.2`を固定し、既存音源の音声計算を保持しています。
+これらの先行移行は同梱済みのSDK `0.1.0`へ参照を切り替えました。Nuked単体ターゲットを追加した`0.1.1`、Sega PSGを独立フォルダーへ分離した`0.1.2`を経て、現在はWonderSwanを収録した`0.1.4`を固定し、既存音源の音声計算を保持しています。
 共有OPN／SSG／ADPCMはYM2612移行時からSDK側のものを一度だけ組み込んでおり、
 個別の移行用にもう一つ追加しません。既存のarchive順序を維持します。
 
@@ -311,9 +313,9 @@ SDKを更新するときだけ、検証したソースZIPを明示して取り�
 
 ```sh
 python3 scripts/import_soundchip_sdk.py \
-  --archive /path/to/tetorica-soundchip-native-0.1.2-sources.zip \
-  --sha256 752d0f449fd69300881f7c369f190932154e96ab8fd103676917087a454b8c72 \
-  --source-commit 53b33a15f5c4b919b185cb912016eccfbbb6d3a6
+  --archive /path/to/tetorica-soundchip-native-0.1.4-sources.zip \
+  --sha256 f173092241badd27c84d6846a69bd175375f080a57fdaf4983c56751c201f65e \
+  --source-commit 6f8b872b6f35f5df619b2468d58da57037c96e07
 python3 scripts/import_soundchip_sdk.py --check
 ```
 
@@ -1157,3 +1159,31 @@ macOS ARM64で次の検証が成功しました。
 既存の収録・照合試験に新配置のcpp／header／LICENSEを加えています。
 これらはローカルのビルドとオフライン試験で、OSの音声出力や実機聴音を確認したものではありません。
 Native 5構成のCI結果は別途記録します。
+
+
+## SDK 0.1.4 — WonderSwanを収録した固定配布への更新
+
+2026-10-27。公開済み`v0.1.4`のソースZIPをSHA-256照合後に取り込み、395ファイルをオフラインで検証しました。
+配布manifest本体を除く比較では、旧`0.1.2`から14ファイルを追加し、既存の360ファイルはbyte一致、変更された20ファイルはカタログ・文書・ビルド設定・配布／検証スクリプトです。
+既存の音源コア・Native接続・WASM bridge、アプリの`build.rs`・Native接続・Rust制御・Mixer値は変更していません。
+追加されたWonderSwanのrawコア・公開header・fixture・WAV example・WASM bridgeをソース配布に保持しますが、
+Cargoの接続、Native backendの対応mode、Stop・clock・ownerの制御は今回追加していません。
+WonderSwanは引き続きWeb Audioで再生します。
+
+ローカルmacOS ARM64で次を確認しました。
+
+- `import_soundchip_sdk.py --check`と全22種類のNativeソース固定記録が成功。
+- `npm test`のPython 22試験・Node 31試験が成功。
+- Rust全試験は726成功・0失敗・明示実行用4件ignored。
+  最初のsandbox内実行ではMCPのlocalhost TCP待受け2試験だけが権限拒否となり、
+  ローカルTCPを許可した制限外の同一`--locked --offline`試験で全件成功しました。
+- Genesisの実配布WASMとの比較は44.1／48／96kHz、6ケース・49,152ステレオフレームで成功。
+  最大差は既存のFloat32丸めの範囲の`3.725290298461914e-9`。
+- Native安定性は22 mode・604,032フレーム・88 Run／Stopが成功。
+  固定／可変ブロックのPCM一致、Stop後pending 0、非有限PCM 0を確認しました。
+- 追加音源の実Shared／Rendererは3混合構成・7単独音源、受入れ／16台制限・17台目拒否が成功。
+  両制限試験のStop後予約予算は0、両runnerのexit codeは0、`deviceOpened: false`です。
+- 全28種類のWASM再構築と生成記録を含むPlayground frontendを取り込み、918ファイルの照合と取り込み後の`npm test`も成功。
+  frontend ZIPのSHA-256は`fd73d44799dfe7819dba99967331bb3a0d0fab4d545fae8e6ee20fc6b1a0cc54`です。
+
+これらは音声デバイスを開かないローカル試験です。Windows／Linux／Intel MacのTauriビルドと実機聴音は今回の記録に含みません。
