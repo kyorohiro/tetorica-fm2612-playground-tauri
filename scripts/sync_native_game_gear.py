@@ -5,10 +5,15 @@ import hashlib
 import json
 from pathlib import Path
 
+PSG_ROOT = 'third_party/tetorica_sega_psg'
+PSG_LICENSE = f'{PSG_ROOT}/LICENSE'
 FILES = ['wasm/segapsg_wasm.cpp', 'web/segapsg.js', 'web/segapsg_api.js',
          'web/playground_segapsg.js', 'web/playground_segapsg_worklet.js',
          'web/playground_chip_inspector_state.js', 'web/playground_chip_clock.js']
-SHARED = ['src/segapsg.h', 'src/segapsg.cpp', 'src/chip_state.h']
+SHARED = [f'{PSG_ROOT}/segapsg.h', f'{PSG_ROOT}/segapsg.cpp', 'src/chip_state.h', PSG_LICENSE]
+
+def snapshot_name(source_path):
+    return 'LICENSE.segapsg' if source_path == PSG_LICENSE else Path(source_path).name
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
@@ -30,7 +35,7 @@ def main():
             if args.source and (args.source / name).read_bytes() != data:
                 raise SystemExit('Game Gear differs from Browser reference: ' + name)
         for name, expected in info['sharedPsgProvider'].items():
-            if digest((base / 'native-genesis' / Path(name).name).read_bytes()) != expected:
+            if digest((base / 'native-genesis' / snapshot_name(name)).read_bytes()) != expected:
                 raise SystemExit('Game Gear shared PSG provider differs: ' + name)
             if args.source and digest((args.source / name).read_bytes()) != expected:
                 raise SystemExit('Game Gear shared Browser PSG source differs: ' + name)
@@ -48,10 +53,10 @@ def main():
         files[name] = {'snapshot': relative, 'sha256': digest(data)}
     shared = {name: digest((args.source / name).read_bytes()) for name in SHARED}
     for name, expected in shared.items():
-        if digest((base / 'native-genesis' / Path(name).name).read_bytes()) != expected:
+        if digest((base / 'native-genesis' / snapshot_name(name)).read_bytes()) != expected:
             raise SystemExit('Synchronize native-genesis first: ' + name)
     manifest.write_text(json.dumps({'source': 'hello_ymfm Browser Game Gear Sega PSG',
-        'license': 'Project Sega PSG, same existing Native Genesis provider',
+        'license': 'BSD-3-Clause (Tetorica Sega PSG; native-genesis/LICENSE.segapsg)',
         'adaptation': 'Synthesis sources unchanged and compiled exactly once by native-genesis. NativePsgCore is shared with Master System; Game Gear constructs only one standalone PSG. Stereo register low nibble routes channels to right and high nibble to left. Fixed creation clock, source phase and ChipClockResampler average/hold are preserved across clock edits. Stop retains stereo mask, clock, tone periods, noise mode and remembered attenuation without resetting LFSR. Reset restores stereo 0xff while retaining the selected clock and external source mute.',
         'files': files, 'sharedPsgProvider': shared}, indent=2) + '\n')
     print(f'Native Game Gear synchronized ({len(files)} files, {len(shared)} shared sources)')
