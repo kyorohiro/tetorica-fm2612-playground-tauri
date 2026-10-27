@@ -207,3 +207,19 @@ compiled output and the source ZIP itself. To regenerate it independently:
 ```sh
 python3 scripts/prepare_native_sources.py
 ```
+
+## Application audio sources
+
+The application-owned CD-DA and MSM5205 modules are bundled under
+`src-tauri/native-cdda/` and `src-tauri/native-msm5205/`. They compile their
+local C11 sources directly, independently of the fixed sound-chip SDK. Their
+`sources.json` pins and `scripts/sync_native_cdda.py --check` /
+`scripts/sync_native_msm5205.py --check` verify the exact source and license
+bytes without a parent checkout. MSM5205 retains its BSD-3-Clause libvgm
+attribution and explains its adaptation in `NOTICE.md`.
+
+PC Engine CD-ROM² mode mixes HuC6280 PSG, MSM5205 packed sample RAM and CD-DA
+on the existing audio callback. It is an audio environment, not a CPU, BIOS,
+DMA, SCSI or disc-image emulator. Main and Worker use the same system sources
+and independent Mixer inputs. The standalone source ZIP includes these cores,
+Rust scheduling/upload ownership, the imported frontend and all rebuild inputs.

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "source": "hello_ymfm/native/msm5205",
+  "sha256": {
+    "msm5205_pcm.c": "2554a3c98f3d4de6886e61bbd805451247214c38f18069a97f2796dbbbd9f5be",
+    "msm5205_pcm.h": "aa80487e6bc5b6c79f08ba45dbbf4e475e65dcc7c7c1399de354d743211fbee9",
+    "LICENSE": "38607b04a502faeb382f075f8cf3c83eb5e0232b97fd5ec24f76a30875765a5a",
+    "NOTICE.md": "cc7402a07f59994df098e77cfaec3ba406e54d62c5427530501f5529da9af85d"
+  }
+}

@@ -129,6 +129,10 @@ mod livefx;
 mod master_system;
 #[path = "native_genesis_media.rs"]
 mod media;
+#[path = "native_genesis_cdda.rs"]
+pub mod cdda;
+#[path = "native_genesis_msm5205.rs"]
+pub mod msm5205;
 #[path = "native_genesis_monitor.rs"]
 mod monitor;
 #[path = "native_genesis_msx.rs"]
@@ -300,6 +304,10 @@ impl Drop for Core {
 
 #[derive(Clone, Debug)]
 enum Action {
+    Msm5205Install(Arc<msm5205::Sample>),
+    Msm5205(u64, msm5205::Control),
+    CddaInstall(Arc<cdda::Track>),
+    Cdda(u64, cdda::Control),
     ExtraPsgInstall(Arc<extra_psg::Instance>),
     ExtraPsg(Arc<extra_psg::Instance>, Arc<master_system::Prepared>),
     ExtraYm2612(Arc<extra_psg::Instance>, Arc<ym2612::Prepared>),
@@ -891,6 +899,8 @@ impl Command {
 }
 
 struct Shared {
+    cdda: cdda::Shared,
+    msm5205: msm5205::Shared,
     extra_psg: extra_psg::Shared,
     pokey_mode: Option<&'static str>,
     mega_cd: bool,
@@ -984,6 +994,8 @@ impl Shared {
             None
         };
         Self {
+            cdda: cdda::Shared::default(),
+            msm5205: msm5205::Shared::default(),
             extra_psg: extra_psg::Shared::default(),
             pokey_mode: match console {
                 Some("pokey") => Some("pokey"),
@@ -4564,6 +4576,14 @@ impl Shared {
         let action = event.action.borrow();
         self.valid_owner(event.owner)
             && match &*action {
+                Action::Msm5205(_, msm5205::Control::Mix { .. }) => true,
+                Action::Msm5205(_, _) => {
+                    event.sequence >= self.msm5205.cancel_before.load(Ordering::Acquire)
+                }
+                Action::Cdda(_, cdda::Control::Mix { .. }) => true,
+                Action::Cdda(_, _) => {
+                    event.sequence >= self.cdda.cancel_before.load(Ordering::Acquire)
+                }
                 Action::ExtraPsgInstall(instance) => {
                     instance.valid(self.epoch.load(Ordering::Acquire))
                 }
@@ -5213,6 +5233,16 @@ impl Shared {
             .map_err(|_| "Native producer state is unavailable")?;
         self.extra_psg.deactivate_all()?;
         let epoch = self.epoch.fetch_add(1, Ordering::AcqRel) + 1;
+        self.cdda
+            .store
+            .lock()
+            .map_err(|_| "CD-DA state is unavailable")?
+            .invalidate();
+        self.msm5205
+            .store
+            .lock()
+            .map_err(|_| "MSM5205 state is unavailable")?
+            .invalidate();
         self.active_performance.store(0, Ordering::Release);
         let start = Instant::now();
         while self.stopped_epoch.load(Ordering::Acquire) < epoch {
@@ -5241,6 +5271,16 @@ impl Shared {
         if let Some(chip) = &self.x68000 {
             chip.invalidate_upload();
         }
+        self.cdda
+            .store
+            .lock()
+            .map_err(|_| "CD-DA state is unavailable")?
+            .collect();
+        self.msm5205
+            .store
+            .lock()
+            .map_err(|_| "MSM5205 state is unavailable")?
+            .collect();
         Ok(self.status())
     }
 }
@@ -5261,6 +5301,8 @@ struct DacStream {
 }
 
 struct Renderer {
+    cdda: cdda::Renderer,
+    msm5205: msm5205::Renderer,
     extra_psg: extra_psg::Renderer,
     pokey_mode: bool,
     core: Core,
@@ -5344,6 +5386,8 @@ impl Renderer {
         wonderswan_clock: u32,
     ) -> Result<Self, String> {
         Ok(Self {
+            cdda: cdda::Renderer::new(rate)?,
+            msm5205: msm5205::Renderer::new(rate)?,
             extra_psg: extra_psg::Renderer::default(),
             pokey_mode: matches!(console, Some("pokey" | "pokey-dual")),
             core: if dx7
@@ -5631,6 +5675,8 @@ impl Renderer {
         }
     }
     fn publish_primary(&self, shared: &Shared) {
+        self.cdda.publish(&shared.cdda);
+        self.msm5205.publish(&shared.msm5205);
         if let (Some(nes), Some(state)) = (&self.nes, &shared.nes) {
             nes.publish(state);
         }
@@ -5699,6 +5745,28 @@ impl Renderer {
         let owner = event.owner;
         let sequence = event.sequence;
         match event.action.into_inner() {
+            Action::Msm5205Install(sample) => self.msm5205.install(sample),
+            Action::Msm5205(source, action) => {
+                if action.stops() {
+                    shared
+                        .msm5205
+                        .cancel_before
+                        .fetch_max(sequence, Ordering::AcqRel);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.msm5205.apply(source, action);
+            }
+            Action::CddaInstall(track) => self.cdda.install(track),
+            Action::Cdda(source, action) => {
+                if matches!(action, cdda::Control::Stop | cdda::Control::Unload) {
+                    shared
+                        .cdda
+                        .cancel_before
+                        .fetch_max(sequence, Ordering::AcqRel);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.cdda.apply(source, action);
+            }
             Action::ExtraPsgInstall(instance) => self.extra_psg.install_at(instance, self.frame),
             Action::ExtraPsg(instance, command) => {
                 if command.stops() {
@@ -6386,6 +6454,10 @@ impl Renderer {
             let wakes_audio = {
                 let action = event.action.borrow();
                 match &*action {
+                    Action::Msm5205Install(_) => false,
+                    Action::Msm5205(_, action) => action.starts(),
+                    Action::CddaInstall(_) => false,
+                    Action::Cdda(_, action) => action.starts(),
                     Action::ExtraPsgInstall(_) => false,
                     Action::ExtraPsg(_, command) => command.starts(),
                     Action::ExtraYm2612(_, command) => command.starts(),
@@ -6498,6 +6570,8 @@ impl Renderer {
             chip.mix(&mut pcm);
         }
         self.extra_psg.mix(&mut pcm);
+        self.cdda.mix(&mut pcm);
+        self.msm5205.mix(&mut pcm);
         self.noise.mix(&mut pcm, &shared.noise_completed);
         for slot in &mut self.voices {
             if let Some(voice) = slot {
@@ -6552,6 +6626,8 @@ impl Renderer {
                     }
                 }
                 self.clear_media(shared);
+                self.cdda.clear();
+                self.msm5205.clear();
                 if let (Some(dx7), Some(state)) = (&mut self.dx7, &shared.dx7) {
                     dx7.stop(state);
                 }
@@ -6726,7 +6802,7 @@ impl NativeGenesis {
             "nes" => (false, false, true, None),
             "gameboy" => (false,false,false,Some("gameboy")),
             "snes" => (false,false,false,Some("snes")),
-            "pc-engine" | "huc6280" => (false,false,false,Some("huc6280")),
+            "pc-engine" | "pc-engine-cd" | "huc6280" => (false,false,false,Some("huc6280")),
             "wonderswan" => (false,false,false,Some("wonderswan")),
             "pokey" => (false,false,false,Some("pokey")),
             "pokey-dual" => (false,false,false,Some("pokey-dual")),
@@ -6742,7 +6818,7 @@ impl NativeGenesis {
             "ym3526" => (false,false,false,Some("ym3526")),
             "ym3812" => (false,false,false,Some("ym3812")),
             "ymf262" => (false,false,false,Some("ymf262")),
-            _ => return Err("Native output supports Genesis, Mega CD, 32X, 32X Nuked, Genesis Nuked, DX7, NES, Game Boy, SNES, PC Engine, WonderSwan, POKEY, Dual POKEY, PC98, PC98-26, Neo Geo, X68000, Master System, Game Gear, MSX, MSX Audio and DOS PC modes".into()),
+            _ => return Err("Native output supports Genesis, Mega CD, 32X, 32X Nuked, Genesis Nuked, DX7, NES, Game Boy, SNES, PC Engine, PC Engine CD, WonderSwan, POKEY, Dual POKEY, PC98, PC98-26, Neo Geo, X68000, Master System, Game Gear, MSX, MSX Audio and DOS PC modes".into()),
         })
     }
     fn start_mode(&self, mode: Option<&str>) -> Result<Status, String> {
