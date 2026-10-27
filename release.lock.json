@@ -1,5 +1,5 @@
 {
-  "archive": "hello_ymfm_wasm_cdrom2-panels-dev_itch_playground.zip",
+  "archive": "hello_ymfm_wasm_cdrom2-tab-labels-dev_itch_playground.zip",
   "files": {
     "LICENSE": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c",
     "THIRD_PARTY_LICENSES.txt": "3ecd694b223bce7186140baa168ed2450fb6bc53e44a7eb3726bba17801dc836",
@@ -205,7 +205,7 @@
     "generated/ym3812_wasm.wasm": "9cdc20e017564341bd7c84c59f2ef7eb0f798c698f369c8fbb81f18efc61a5e6",
     "generated/ymf262_wasm.js": "f3da0aa0d81d430ad12e27743c91af7dbf7d1b2cf71a423f042ccd6d13242cf7",
     "generated/ymf262_wasm.wasm": "70cabb8f15d9fbb45a3d62bed1c0a8653cc772306f3b4f0f7656edbe5ce81716",
-    "index.html": "d01d5d8e5cfda27b23c2f374c7c01c2ad699c76685f515be3860abf966a182db",
+    "index.html": "ab3c6a8c2fc7250597a7ff6a99e598956b22bdbcfeef17306a8acaa2775159d9",
     "js/adpcm_b_sample.js": "6cd2346c09713427384f14c152c03b2334928f10e618184a521790a7e9815f93",
     "js/audio-diagnostic-worklet.js": "55214aaa2bd7b3f971a8c25b6a44561df822f73c498c8209f9bd8e227d2abfc9",
     "js/audio_decode.js": "0f972b3983adb38f09e218cf4f1b1dc2fc5e840f0e3cf754c4bd2cd40083e9f4",
@@ -583,7 +583,7 @@
     "licenses/tetorica_sega_psg/LICENSE": "d49c2f05a09d2d648c05a5af92240a5dc4059830bc29afbb8919c6d1ba76bf91",
     "licenses/tetorica_sega_psg/README.md": "9b3510bca94e2f97b356b6f28770bd5aca5c46361b33aaa5829dac55a2c97b2d",
     "llms.txt": "856e21205487784b0c887edeea547978ba5bbc0915d9a61e16f4f14372f36800",
-    "playground.js": "469090e1b43316d870111662b80ccfa92c21d3df0e4360b2a931325487897be0",
+    "playground.js": "e3c3f20805aa51131364739ea397b6f80ad4fd1835a0aaf40371540f7fc36706",
     "playground_audio_diagnostics.js": "95c26e111974b61afebc790ee2db15ea198a45ef404bbe557af7010a17f3767e",
     "playground_audio_engine.js": "1ab74a36125f730d2b5446c38e07644e09ff81823619da403f64dc8a3e0c568e",
     "playground_audio_input.js": "a95c0fb7e19f51cc959d7dc06a43dc1b68bacd2afbff43ab091f7526f38fe4dc",
@@ -999,6 +999,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "5fe6f3a537cb65595f605992fd5b27197f2d309dbc078ad36ce574441824e21b"
   },
-  "sha256": "d405028c329aa89b7ed838d4e81ff108ba6e48fd2949d4f91b6fc96c06e1abee",
-  "version": "sha256-d405028c329a"
+  "sha256": "568006eeb2d758b0e11b96dbf1422136088e29e4135f5a8750fdc07fa4088b63",
+  "version": "sha256-568006eeb2d7"
 }
