@@ -126,7 +126,18 @@ native-tick startup fence and clock resampler at the output boundary. Rust owns
 register/RAM observations, manual leases, shared control masks, command payloads,
 scheduling, retirement and budgets. The SDK's BSD-3-Clause license, upstream
 source and provenance are included in this source ZIP. No SDK bytes are changed.
-All twenty-three ordinary sound-chip IDs and the alternative Nuked YM2612 engine
+POKEY and Dual POKEY modes reuse independently allocated four-channel cores from
+`vendor/libvgm-pokey/pokey.cpp`. They share no mutable phase, registers, polynomial
+state or monitor masks. The SDK's licensed upstream source, adaptation notes and
+BSD-3-Clause license are included. The application-owned
+`src-tauri/src/native_genesis_pokey.cpp` adds the same 10 Hz DC blocker as the
+Browser speaker path, with exact zero and filter reset when all audible channels
+are off. Raw SDK output retains its legacy unipolar scale and DC component.
+The first integration keeps clocks fixed at creation; two-core primary modes
+use the same bounded callback rack as additional `createSoundChip('pokey')`.
+Global Stop retires these core identities; the host restores silent primary
+instances with fresh IDs, retained authoring values and visible Mixer settings.
+All twenty-four ordinary sound-chip IDs and the alternative Nuked YM2612 engine
 now consume the SDK at these boundaries; machine-specific helpers remain local. The
 [SDK adoption guide](docs/native-sdk-ym2612.md) lists the
 consumed paths, pinned archive hash and deliberate offline update procedure.

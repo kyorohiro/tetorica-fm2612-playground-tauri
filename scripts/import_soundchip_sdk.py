@@ -16,12 +16,102 @@ NAME = 'tetorica-soundchip-native'
 SNAPSHOT = Path('src-tauri/vendor') / NAME
 RECEIPT = Path('src-tauri/soundchip-sdk.json')
 MANIFEST = 'RELEASE-MANIFEST.json'
-REQUIRED = {'sdk.json', 'LICENSE', 'LICENSES.md', 'catalog/chips.json',
-            'native/reference/tauri/native_genesis_ym2612.cpp',
-            'native/reference/tauri/native_genesis_ym2612.h',
-            'native/src/ymfm_opn_provider.cpp', 'vendor/ymfm/LICENSE',
-            'vendor/ymfm/ymfm_opn.cpp', 'vendor/ymfm/ymfm_ssg.cpp',
-            'vendor/ymfm/ymfm_adpcm.cpp', 'wasm/ym2612_wasm.cpp'}
+# The full release is pinned and checked; these inputs additionally identify a
+# complete set of migrated WASM inputs instead of a partial bundle.
+REQUIRED = {
+    'sdk.json', 'LICENSE', 'LICENSES.md', 'catalog/chips.json',
+    'catalog/source_inventory.json', 'scripts/build-wasm.sh',
+    'scripts/record_wasm_build.mjs',
+    'wasm/ym2612_wasm.cpp', 'wasm/ym2203_wasm.cpp', 'wasm/ym2608_wasm.cpp',
+    'wasm/ym2610b_wasm.cpp', 'wasm/ym2151_wasm.cpp', 'wasm/okim6258_wasm.cpp',
+    'wasm/ym2413_wasm.cpp', 'wasm/ym3526_wasm.cpp', 'wasm/ym3812_wasm.cpp',
+    'wasm/ymf262_wasm.cpp', 'wasm/y8950_wasm.cpp', 'wasm/ay8910_wasm.cpp',
+    'wasm/segapsg_wasm.cpp', 'wasm/segapcm_wasm.cpp',
+    'wasm/rf5c164_wasm.cpp', 'wasm/pwm32x_wasm.cpp', 'wasm/pwm32x_core.h',
+    'wasm/huc6280_wasm.cpp', 'wasm/gameboy_apu_wasm.cpp',
+    'wasm/nesapu_wasm.cpp', 'wasm/spc_wasm.cpp', 'wasm/k051649_wasm.cpp',
+    'wasm/opn_variant_wasm.cpp', 'wasm/ymf278b_wasm.cpp',
+    'wasm/nuked_opn2_wasm.c',
+    'wasm/opn_state.h', 'wasm/ymfm_wasm_interface.h',
+    'scripts/build_ym2612_wasm.sh', 'scripts/build_ym2203_wasm.sh',
+    'scripts/build_ym2608_wasm.sh', 'scripts/build_ym2610b_wasm.sh',
+    'scripts/build_ym2151_wasm.sh', 'scripts/build_okim6258_wasm.sh',
+    'scripts/build_ym2413_wasm.sh', 'scripts/build_ym3526_wasm.sh',
+    'scripts/build_ym3812_wasm.sh', 'scripts/build_ymf262_wasm.sh',
+    'scripts/build_y8950_wasm.sh', 'scripts/build_ay8910_wasm.sh',
+    'scripts/build_segapsg_wasm.sh', 'scripts/build_segapcm_wasm.sh',
+    'scripts/build_rf5c164_wasm.sh', 'scripts/build_pwm32x_wasm.sh',
+    'scripts/build_huc6280_wasm.sh', 'scripts/build_gameboy_apu_wasm.sh',
+    'scripts/build_nesapu_wasm.sh', 'scripts/build_spc_wasm.sh',
+    'scripts/build_k051649_wasm.sh', 'scripts/build_ym3438_wasm.sh',
+    'scripts/build_ymf276_wasm.sh', 'scripts/build_ymf288_wasm.sh',
+    'scripts/build_ymf278b_wasm.sh', 'scripts/build_nuked_opn2_wasm.sh',
+    'scripts/build_dx7_wasm.sh', 'wasm/dx7/dx7.cc', 'wasm/dx7/dx7.h',
+    'scripts/build_opn_variant_wasm.sh',
+    *('vendor/msfa/' + name for name in (
+        'aligned_buf.h', 'controllers.h', 'dx7note.cc', 'dx7note.h', 'env.cc',
+        'env.h', 'exp2.cc', 'exp2.h', 'fm_core.cc', 'fm_core.h',
+        'fm_op_kernel.cc', 'fm_op_kernel.h', 'freqlut.cc', 'freqlut.h',
+        'lfo.cc', 'lfo.h', 'module.h', 'patch.cc', 'patch.h', 'pitchenv.cc',
+        'pitchenv.h', 'resofilter.cc', 'resofilter.h', 'ringbuffer.cc',
+        'ringbuffer.h', 'sin.cc', 'sin.h', 'synth.h', 'synth_unit.cc',
+        'synth_unit.h', 'COPYING', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
+        'UPSTREAM.md')),
+    'vendor/mame-32x-pwm/LICENSE',
+    'vendor/nuked-opn2/LICENSE', 'vendor/nuked-opn2/README.md',
+    'vendor/nuked-opn2/ym3438.c', 'vendor/nuked-opn2/ym3438.h',
+    'vendor/mame-ay8910/LICENSE', 'vendor/mame-ay8910/ay8910.cpp',
+    'vendor/mame-ay8910/ay8910.h',
+    'vendor/mame-gameboy/LICENSE', 'vendor/mame-gameboy/gameboy_apu.cpp',
+    'vendor/mame-gameboy/gameboy_apu.h',
+    'vendor/mame-huc6280/LICENSE', 'vendor/mame-huc6280/huc6280.cpp',
+    'vendor/mame-huc6280/huc6280.h',
+    'vendor/mame-k051649/LICENSE', 'vendor/mame-k051649/README.md',
+    'vendor/mame-k051649/k051649.cpp', 'vendor/mame-k051649/k051649.h',
+    'vendor/mame-k051649/upstream/k051649.cpp',
+    'vendor/mame-k051649/upstream/k051649.h',
+    'vendor/mame-okim6258/LICENSE', 'vendor/mame-okim6258/okim6258.cpp',
+    'vendor/mame-okim6258/okim6258.h',
+    'vendor/mame-rf5c164/LICENSE', 'vendor/mame-rf5c164/rf5c164.cpp',
+    'vendor/mame-rf5c164/rf5c164.h',
+    'vendor/mame-segapcm/LICENSE', 'vendor/mame-segapcm/segapcm.cpp',
+    'vendor/mame-segapcm/segapcm.h',
+    'vendor/tetorica-nes/nes_core.cpp', 'vendor/tetorica-nes/nes_core.h',
+    'vendor/tetorica-nes/LICENSE-JSNES', 'vendor/tetorica-nes/LICENSE-FDS',
+    'vendor/tetorica-nes/AUTHORS-JSNES.md',
+    # Preserve the whole LGPL core source/notice tree, including the optional
+    # upstream source files that the accurate-DSP recipe does not compile.
+    *('vendor/snes-spc/' + name for name in (
+        'LICENSE', 'README.md', 'README.upstream.md', 'changes.txt',
+        'license.txt', 'readme.txt', 'snes_spc.txt',
+        'snes_spc/SNES_SPC.cpp', 'snes_spc/SNES_SPC.h',
+        'snes_spc/SNES_SPC_misc.cpp', 'snes_spc/SNES_SPC_state.cpp',
+        'snes_spc/SPC_CPU.h', 'snes_spc/SPC_DSP.cpp', 'snes_spc/SPC_DSP.h',
+        'snes_spc/SPC_Filter.cpp', 'snes_spc/SPC_Filter.h',
+        'snes_spc/blargg_common.h', 'snes_spc/blargg_config.h',
+        'snes_spc/blargg_endian.h', 'snes_spc/blargg_source.h',
+        'snes_spc/dsp.cpp', 'snes_spc/dsp.h', 'snes_spc/spc.cpp',
+        'snes_spc/spc.h')),
+    'vendor/ymfm/LICENSE',
+    'vendor/ymfm/chip_state.h', 'vendor/ymfm/ymfm.h',
+    'vendor/ymfm/ymfm_fm.h', 'vendor/ymfm/ymfm_fm.ipp',
+    *('vendor/ymfm/ymfm_' + chip + extension
+      for chip in ('adpcm', 'misc', 'opl', 'opm', 'opn', 'opq', 'opz', 'pcm', 'ssg')
+      for extension in ('.cpp', '.h')),
+    'vendor/ymfm/ymfm_opx.h',
+}
+LEGACY_SEGA_PSG = {'vendor/ymfm/segapsg.cpp', 'vendor/ymfm/segapsg.h'}
+SEPARATED_SEGA_PSG = {
+    'vendor/tetorica_sega_psg/segapsg.cpp', 'vendor/tetorica_sega_psg/segapsg.h',
+    'vendor/tetorica_sega_psg/LICENSE', 'vendor/tetorica_sega_psg/README.md',
+}
+POKEY_INPUTS = {
+    'wasm/pokey_wasm.cpp', 'scripts/build_pokey_wasm.sh',
+    'vendor/libvgm-pokey/pokey.cpp', 'vendor/libvgm-pokey/pokey.h',
+    'vendor/libvgm-pokey/LICENSE', 'vendor/libvgm-pokey/README.md',
+    'vendor/libvgm-pokey/upstream/pokey.c',
+    'vendor/libvgm-pokey/upstream/snapshot-manifest.json',
+}
 
 
 def digest(data):
@@ -56,7 +146,7 @@ def relative(value):
 
 def manifest_records(raw):
     manifest = read_json(raw)
-    require(manifest.get('schemaVersion') == 1 and manifest.get('kind') == 'source'
+    require(isinstance(manifest, dict) and manifest.get('schemaVersion') == 1 and manifest.get('kind') == 'source'
             and manifest.get('name') == NAME, 'Expected an SDK source-release manifest')
     require(isinstance(manifest.get('version'), str)
             and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.+_-]*', manifest['version']),
@@ -64,6 +154,16 @@ def manifest_records(raw):
     files = manifest.get('files')
     require(isinstance(files, dict) and REQUIRED <= set(files) and MANIFEST not in files,
             'SDK source release is incomplete')
+    # An update still verifies the previous immutable snapshot before replacing
+    # it. Accept complete historical or separated PSG inputs, never a mixture.
+    names = set(files)
+    # Historical fixed snapshots must remain verifiable before an update.
+    # A POKEY-capable release must include its adaptation and licensed original.
+    if POKEY_INPUTS & names:
+        require(POKEY_INPUTS <= names, 'SDK POKEY source release is incomplete')
+    require((LEGACY_SEGA_PSG <= names and not SEPARATED_SEGA_PSG & names)
+            or (SEPARATED_SEGA_PSG <= names and not LEGACY_SEGA_PSG & names),
+            'SDK source release is incomplete or mixes Sega PSG layouts')
     for name, record in files.items():
         relative(name)
         require(isinstance(record, dict) and type(record.get('size')) is int
@@ -81,7 +181,7 @@ def validate_payload(payload, manifest):
         require(len(data) == record['size'] and digest(data) == record['sha256'],
                 'SDK content hash/size mismatch: ' + name)
     metadata = read_json(payload['sdk.json'])
-    require(metadata.get('name') == NAME and metadata.get('version') == manifest['version'],
+    require(isinstance(metadata, dict) and metadata.get('name') == NAME and metadata.get('version') == manifest['version'],
             'SDK metadata and release manifest differ')
 
 
@@ -119,9 +219,11 @@ def check_installed(root=ROOT):
     pin_path = root / RECEIPT
     require(not pin_path.is_symlink(), 'SDK pin must be a regular file')
     pin = read_json(pin_path.read_bytes())
-    require(pin.get('schemaVersion') == 1 and pin.get('name') == NAME
-            and re.fullmatch('[0-9a-f]{40}', pin.get('sourceCommit', ''))
-            and re.fullmatch('[0-9a-f]{64}', pin.get('archiveSha256', '')),
+    require(isinstance(pin, dict) and pin.get('schemaVersion') == 1 and pin.get('name') == NAME
+            and isinstance(pin.get('sourceCommit'), str)
+            and re.fullmatch('[0-9a-f]{40}', pin['sourceCommit'])
+            and isinstance(pin.get('archiveSha256'), str)
+            and re.fullmatch('[0-9a-f]{64}', pin['archiveSha256']),
             'Invalid SDK pin receipt')
     payload = {}
     for path in directory.rglob('*'):
@@ -136,16 +238,32 @@ def check_installed(root=ROOT):
     require(manifest['version'] == pin.get('version') and len(payload) == pin.get('fileCount'),
             'SDK pin version/file count differs')
     validate_payload(payload, manifest)
+    validate_local_candidate(pin.get('localCandidate'), pin['sourceCommit'], manifest)
     return pin
 
 
-def import_archive(archive, checksum, source_commit, root=ROOT):
+def validate_local_candidate(candidate, source_commit, manifest):
+    if candidate is None:
+        return
+    require(isinstance(candidate, dict)
+            and set(candidate) == {'baseCommit', 'changedPaths'}
+            and candidate['baseCommit'] == source_commit,
+            'Invalid SDK local-candidate base commit')
+    paths = candidate['changedPaths']
+    require(isinstance(paths, list) and paths and all(isinstance(name, str) for name in paths)
+            and paths == sorted(set(paths)), 'Invalid SDK local-candidate changed paths')
+    for name in paths:
+        relative(name)
+        require(name in manifest['files'], 'Local-candidate changed path absent from source archive: ' + name)
+
+
+def import_archive(archive, checksum, source_commit, root=ROOT, *, local_changed_paths=None):
     require(re.fullmatch('[0-9a-f]{40}', source_commit) is not None,
             'Expected the declared 40-character SDK source commit')
     payload, manifest = archive_payload(archive, checksum)
     destination = root / SNAPSHOT
     receipt = root / RECEIPT
-    for path in (root / 'src-tauri', destination.parent):
+    for path in (destination.parent,):
         require(not path.is_symlink(), 'SDK parent must not be a symbolic link: ' + str(path))
     # Downstream changes belong outside this immutable snapshot. Refuse to
     # overwrite missing pin records or locally modified imported sources.
@@ -155,6 +273,13 @@ def import_archive(archive, checksum, source_commit, root=ROOT):
            'sourceCommit': source_commit, 'archiveName': archive.name,
            'archiveSha256': checksum, 'manifestSha256': digest(payload[MANIFEST]),
            'fileCount': len(payload)}
+    if local_changed_paths is not None:
+        # This is an immutable hash-pinned archive, but not the exact contents
+        # of sourceCommit. Label that revision as its base instead of implying
+        # a committed/tagged release that does not yet exist.
+        pin['localCandidate'] = {'baseCommit': source_commit,
+                                 'changedPaths': sorted(local_changed_paths)}
+        validate_local_candidate(pin['localCandidate'], source_commit, manifest)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.soundchip-sdk-', dir=destination.parent) as temporary:
         candidate = Path(temporary) / 'snapshot'
@@ -187,16 +312,20 @@ def main():
     parser.add_argument('--archive', type=Path, help='local SDK sources ZIP; no download is performed')
     parser.add_argument('--sha256', help='expected source-archive SHA-256')
     parser.add_argument('--source-commit', help='declared SDK source revision, recorded as provenance')
+    parser.add_argument('--local-changed-path', action='append',
+                        help='source path changed from --source-commit; marks an unpublished local candidate (repeatable)')
     args = parser.parse_args()
     if args.check:
-        if args.archive or args.sha256 or args.source_commit:
+        if args.archive or args.sha256 or args.source_commit or args.local_changed_path:
             parser.error('--check cannot be combined with import options')
         pin = check_installed()
     else:
         if not all((args.archive, args.sha256, args.source_commit)):
             parser.error('import requires --archive, --sha256 and --source-commit')
-        pin = import_archive(args.archive, args.sha256, args.source_commit)
-    print(f"SDK {pin['version']}: {pin['fileCount']} pinned files verified offline "
+        pin = import_archive(args.archive, args.sha256, args.source_commit,
+                             local_changed_paths=args.local_changed_path)
+    label = ' (unpublished local candidate; sourceCommit is its base)' if pin.get('localCandidate') else ''
+    print(f"SDK {pin['version']}{label}: {pin['fileCount']} pinned files verified offline "
           f"(archive SHA256 {pin['archiveSha256']})")
 
 

@@ -60,6 +60,11 @@ mod extra_opl;
 #[cfg(test)]
 #[path = "native_genesis_extra_opl_tests.rs"]
 mod extra_opl_tests;
+#[path = "native_genesis_extra_pokey.rs"]
+mod extra_pokey;
+#[cfg(test)]
+#[path = "native_genesis_extra_pokey_tests.rs"]
+mod extra_pokey_tests;
 #[path = "native_genesis_extra_psg.rs"]
 mod extra_psg;
 #[cfg(test)]
@@ -309,6 +314,7 @@ enum Action {
     ExtraOkim6258(Arc<extra_psg::Instance>, Arc<extra_okim6258::Prepared>),
     ExtraGameboy(Arc<extra_psg::Instance>, Arc<extra_gameboy::Prepared>),
     ExtraHuc6280(Arc<extra_psg::Instance>, Arc<extra_huc6280::Prepared>),
+    ExtraPokey(Arc<extra_psg::Instance>, Arc<extra_pokey::Prepared>),
     ExtraWonderSwan(Arc<extra_psg::Instance>, Arc<extra_wonderswan::Prepared>),
     ExtraDx7(Arc<extra_psg::Instance>, Arc<extra_dx7::Prepared>),
     ExtraPwm(Arc<extra_psg::Instance>, Arc<extra_pwm::Prepared>),
@@ -470,6 +476,10 @@ enum CommandAction {
     ExtraHuc6280 {
         instance: u64,
         message: extra_huc6280::Message,
+    },
+    ExtraPokey {
+        instance: u64,
+        message: extra_pokey::Message,
     },
     #[serde(rename = "extra-wonderswan")]
     ExtraWonderSwan {
@@ -663,6 +673,7 @@ impl Command {
             | CommandAction::ExtraOkim6258 { .. }
             | CommandAction::ExtraGameboy { .. }
             | CommandAction::ExtraHuc6280 { .. }
+            | CommandAction::ExtraPokey { .. }
             | CommandAction::ExtraWonderSwan { .. }
             | CommandAction::ExtraDx7 { .. }
             | CommandAction::ExtraPwm { .. }
@@ -881,6 +892,7 @@ impl Command {
 
 struct Shared {
     extra_psg: extra_psg::Shared,
+    pokey_mode: Option<&'static str>,
     mega_cd: bool,
     nuked: bool,
     genesis_engine: Option<&'static str>,
@@ -973,6 +985,11 @@ impl Shared {
         };
         Self {
             extra_psg: extra_psg::Shared::default(),
+            pokey_mode: match console {
+                Some("pokey") => Some("pokey"),
+                Some("pokey-dual") => Some("pokey-dual"),
+                _ => None,
+            },
             mega_cd,
             nuked,
             genesis_engine,
@@ -1223,6 +1240,7 @@ impl Shared {
                 CommandAction::ExtraOkim6258 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraGameboy { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraHuc6280 { message, .. } => Some(message.prepared_bytes()),
+                CommandAction::ExtraPokey { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraWonderSwan { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraDx7 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraPwm { message, .. } => Some(message.prepared_bytes()),
@@ -1455,6 +1473,21 @@ impl Shared {
                         );
                     }
                     Action::ExtraHuc6280(target, prepared)
+                } else if let CommandAction::ExtraPokey { instance, message } = &command.action {
+                    if command.frame > MAX_SAFE_INTEGER {
+                        return Err("Invalid native command frame".into());
+                    }
+                    let target = self
+                        .extra_psg
+                        .get(*instance, self.epoch.load(Ordering::Acquire))?;
+                    let prepared = target.pokey()?.prepare_message(message)?;
+                    if prepared.is_owner_cancel() && command.frame != 0 {
+                        return Err(
+                            "Native POKEY owner cancellation requires immediate frame zero"
+                                .into(),
+                        );
+                    }
+                    Action::ExtraPokey(target, prepared)
                 } else if let CommandAction::ExtraWonderSwan { instance, message } = &command.action {
                     if command.frame > MAX_SAFE_INTEGER {
                         return Err("Invalid native command frame".into());
@@ -2015,6 +2048,15 @@ impl Shared {
                     self.invalidation.fetch_add(1, Ordering::Release);
                 }
             }
+            if let Action::ExtraPokey(instance, command) = action {
+                if instance
+                    .pokey()
+                    .expect("POKEY action target")
+                    .commit_cancel(command)
+                {
+                    self.invalidation.fetch_add(1, Ordering::Release);
+                }
+            }
             if let Action::ExtraWonderSwan(instance, command) = action {
                 if instance
                     .wonderswan()
@@ -2180,6 +2222,7 @@ impl Shared {
                     Action::ExtraOkim6258(_, c) => Some(extra_psg::Payload::Okim6258(c.clone())),
                     Action::ExtraGameboy(_, c) => Some(extra_psg::Payload::Gameboy(c.clone())),
                     Action::ExtraHuc6280(_, c) => Some(extra_psg::Payload::Huc6280(c.clone())),
+                    Action::ExtraPokey(_, c) => Some(extra_psg::Payload::Pokey(c.clone())),
                     Action::ExtraWonderSwan(_, c) => {
                         Some(extra_psg::Payload::WonderSwan(c.clone()))
                     }
@@ -2214,6 +2257,7 @@ impl Shared {
                 | Action::ExtraOkim6258(instance, _)
                 | Action::ExtraGameboy(instance, _)
                 | Action::ExtraHuc6280(instance, _)
+                | Action::ExtraPokey(instance, _)
                 | Action::ExtraWonderSwan(instance, _)
                 | Action::ExtraDx7(instance, _)
                 | Action::ExtraPwm(instance, _)
@@ -2385,6 +2429,19 @@ impl Shared {
                         .collect();
                     instance.huc6280()?.retain(&prepared)
                 }
+                Action::ExtraPokey(_, _) => {
+                    let prepared: Vec<_> = actions
+                        .iter()
+                        .filter_map(|(action, owner)| {
+                            if let Action::ExtraPokey(target, command) = action {
+                                (target.id == instance.id).then(|| (command.clone(), *owner))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    instance.pokey()?.retain(&prepared)
+                }
                 Action::ExtraWonderSwan(_, _) => {
                     let prepared: Vec<_> = actions
                         .iter()
@@ -2538,6 +2595,7 @@ impl Shared {
                         | Action::ExtraOkim6258(target, _)
                         | Action::ExtraGameboy(target, _)
                         | Action::ExtraHuc6280(target, _)
+                        | Action::ExtraPokey(target, _)
                         | Action::ExtraWonderSwan(target, _)
                         | Action::ExtraDx7(target, _)
                         | Action::ExtraPwm(target, _)
@@ -2614,6 +2672,11 @@ impl Shared {
                 }
                 Action::ExtraHuc6280(instance, command) => {
                     let state = instance.huc6280().expect("HuC6280 action target");
+                    state.rollback(command.clone());
+                    let _ = state.status(self.frame.load(Ordering::Acquire));
+                }
+                Action::ExtraPokey(instance, command) => {
+                    let state = instance.pokey().expect("POKEY action target");
                     state.rollback(command.clone());
                     let _ = state.status(self.frame.load(Ordering::Acquire));
                 }
@@ -3231,6 +3294,47 @@ impl Shared {
         *sequence = next_sequence;
         status
     }
+    fn create_extra_pokey(
+        &self,
+        instance: u64,
+        clock: Option<u32>,
+    ) -> Result<extra_pokey::Status, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self
+            .extra_psg
+            .create_pokey(instance, epoch, self.rate, clock)
+        {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target.pokey()?.status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional POKEY install capacity"));
+        *sequence = next_sequence;
+        status
+    }
     fn create_extra_wonderswan(
         &self,
         instance: u64,
@@ -3773,6 +3877,15 @@ impl Shared {
         self.invalidation.fetch_add(1, Ordering::Release);
         Ok(())
     }
+    fn dispose_extra_pokey(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose_pokey(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
     fn dispose_extra_wonderswan(&self, instance: u64) -> Result<(), String> {
         let _producer = self
             .producer
@@ -4076,6 +4189,23 @@ impl Shared {
             return Err("Additional HuC6280 instance has expired".into());
         }
         target.huc6280()?.status(self.frame.load(Ordering::Acquire))
+    }
+    fn extra_pokey_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+    ) -> Result<extra_pokey::Status, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        if let Some(id) = after {
+            target.pokey()?.wait_applied(id)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional POKEY instance has expired".into());
+        }
+        target.pokey()?.status(self.frame.load(Ordering::Acquire))
     }
     fn extra_wonderswan_status(
         &self,
@@ -4522,6 +4652,14 @@ impl Shared {
                             .expect("HuC6280 action target")
                             .valid_event(command, event.sequence, event.owner)
                 }
+                Action::ExtraPokey(instance, command) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
+                        && instance.pokey().expect("POKEY action target").valid_event(
+                            command,
+                            event.sequence,
+                            event.owner,
+                        )
+                }
                 Action::WonderSwan(command) => self
                     .wonderswan
                     .as_ref()
@@ -4725,6 +4863,10 @@ impl Shared {
                 .huc6280()
                 .expect("HuC6280 action target")
                 .retire(command),
+            Action::ExtraPokey(instance, command) => instance
+                .pokey()
+                .expect("POKEY action target")
+                .retire(command),
             Action::ExtraWonderSwan(instance, command) => instance
                 .wonderswan()
                 .expect("WonderSwan action target")
@@ -4923,7 +5065,9 @@ impl Shared {
         Status {
             session: self.session,
             engine: self.genesis_engine,
-            mode: if self.pwm.is_some() {
+            mode: if let Some(mode) = self.pokey_mode {
+                mode
+            } else if self.pwm.is_some() {
                 if self.nuked {
                     "genesis-full-nuked"
                 } else {
@@ -5118,6 +5262,7 @@ struct DacStream {
 
 struct Renderer {
     extra_psg: extra_psg::Renderer,
+    pokey_mode: bool,
     core: Core,
     dx7: Option<dx7::Renderer>,
     nes: Option<nes::Renderer>,
@@ -5200,6 +5345,7 @@ impl Renderer {
     ) -> Result<Self, String> {
         Ok(Self {
             extra_psg: extra_psg::Renderer::default(),
+            pokey_mode: matches!(console, Some("pokey" | "pokey-dual")),
             core: if dx7
                 || nes
                 || console
@@ -5675,6 +5821,15 @@ impl Renderer {
                 self.extra_psg.apply_huc6280(&instance, &command, owner);
                 state.retire(command);
             }
+            Action::ExtraPokey(instance, command) => {
+                let state = instance.pokey().expect("POKEY action target");
+                if command.stops() {
+                    state.cancel_before(&command, sequence.saturating_add(1), owner);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.extra_psg.apply_pokey(&instance, &command, owner);
+                state.retire(command);
+            }
             Action::ExtraWonderSwan(instance, command) => {
                 let state = instance.wonderswan().expect("WonderSwan action target");
                 if command.stops() {
@@ -6085,6 +6240,7 @@ impl Renderer {
                             || self.snes.is_some()
                             || self.huc6280.is_some()
                             || self.wonderswan.is_some()
+                            || self.pokey_mode
                             || self.ym2608.is_some()
                             || self.ym2203.is_some()
                             || self.ym2610b.is_some()
@@ -6244,6 +6400,7 @@ impl Renderer {
                     Action::ExtraOkim6258(_, command) => command.starts(),
                     Action::ExtraGameboy(_, command) => command.starts(),
                     Action::ExtraHuc6280(_, command) => command.starts(),
+                    Action::ExtraPokey(_, command) => command.starts(),
                     Action::ExtraWonderSwan(_, command) => command.starts(),
                     Action::ExtraDx7(_, command) => command.starts(),
                     Action::ExtraPwm(_, command) => command.starts(),
@@ -6363,6 +6520,7 @@ impl Renderer {
             || self.snes.is_some()
             || self.huc6280.is_some()
             || self.wonderswan.is_some()
+            || self.pokey_mode
             || self.ym2608.is_some()
             || self.ym2203.is_some()
             || self.ym2610b.is_some()
@@ -6570,6 +6728,8 @@ impl NativeGenesis {
             "snes" => (false,false,false,Some("snes")),
             "pc-engine" | "huc6280" => (false,false,false,Some("huc6280")),
             "wonderswan" => (false,false,false,Some("wonderswan")),
+            "pokey" => (false,false,false,Some("pokey")),
+            "pokey-dual" => (false,false,false,Some("pokey-dual")),
             "pc98" | "ym2608" => (false,false,false,Some("ym2608")),
             "pc98-26" | "ym2203" => (false,false,false,Some("ym2203")),
             "neogeo" | "ym2610" => (false,false,false,Some("ym2610")),
@@ -6582,7 +6742,7 @@ impl NativeGenesis {
             "ym3526" => (false,false,false,Some("ym3526")),
             "ym3812" => (false,false,false,Some("ym3812")),
             "ymf262" => (false,false,false,Some("ymf262")),
-            _ => return Err("Native output supports Genesis, Mega CD, 32X, 32X Nuked, Genesis Nuked, DX7, NES, Game Boy, SNES, PC Engine, WonderSwan, PC98, PC98-26, Neo Geo, X68000, Master System, Game Gear, MSX, MSX Audio and DOS PC modes".into()),
+            _ => return Err("Native output supports Genesis, Mega CD, 32X, 32X Nuked, Genesis Nuked, DX7, NES, Game Boy, SNES, PC Engine, WonderSwan, POKEY, Dual POKEY, PC98, PC98-26, Neo Geo, X68000, Master System, Game Gear, MSX, MSX Audio and DOS PC modes".into()),
         })
     }
     fn start_mode(&self, mode: Option<&str>) -> Result<Status, String> {
@@ -6799,6 +6959,8 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
             Some("ym2203")
         } else if shared.huc6280.is_some() {
             Some("huc6280")
+        } else if let Some(mode) = shared.pokey_mode {
+            Some(mode)
         } else if shared.wonderswan.is_some() {
             Some("wonderswan")
         } else {
@@ -9309,6 +9471,17 @@ pub fn native_genesis_extra_huc6280_create(
     })
 }
 #[tauri::command]
+pub fn native_genesis_extra_pokey_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    clock: Option<u32>,
+) -> Result<extra_pokey::Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.create_extra_pokey(instance, clock))
+}
+#[tauri::command]
 pub fn native_genesis_extra_wonderswan_create(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, NativeGenesis>,
@@ -9428,6 +9601,16 @@ pub fn native_genesis_extra_huc6280_dispose(
 ) -> Result<(), String> {
     crate::allowed(&window)?;
     state.with_session(session, |shared| shared.dispose_extra_huc6280(instance))
+}
+#[tauri::command]
+pub fn native_genesis_extra_pokey_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_pokey(instance))
 }
 #[tauri::command]
 pub fn native_genesis_extra_wonderswan_dispose(
@@ -9565,6 +9748,23 @@ pub async fn native_genesis_extra_huc6280_status(
     let shared = state.session_shared(session)?;
     let status =
         tauri::async_runtime::spawn_blocking(move || shared.extra_huc6280_status(instance, after))
+            .await
+            .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+#[tauri::command]
+pub async fn native_genesis_extra_pokey_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+) -> Result<extra_pokey::Status, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status =
+        tauri::async_runtime::spawn_blocking(move || shared.extra_pokey_status(instance, after))
             .await
             .map_err(|error| error.to_string())??;
     state.with_session(session, |_| Ok(()))?;

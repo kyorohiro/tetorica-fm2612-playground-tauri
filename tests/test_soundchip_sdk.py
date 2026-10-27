@@ -27,7 +27,7 @@ class SoundchipSdkTests(unittest.TestCase):
         self.root.mkdir()
 
     def archive(self, *, version='0.1.0', alter=None):
-        payload = {name: ('pinned SDK source: ' + name).encode() for name in sdk.REQUIRED}
+        payload = {name: ('pinned SDK source: ' + name).encode() for name in sdk.REQUIRED | sdk.SEPARATED_SEGA_PSG}
         payload['sdk.json'] = json.dumps({'name': sdk.NAME, 'version': version}).encode()
         manifest = {'schemaVersion': 1, 'kind': 'source', 'name': sdk.NAME, 'version': version,
                     'files': {name: {'sha256': sdk.digest(data), 'size': len(data)}
@@ -51,6 +51,22 @@ class SoundchipSdkTests(unittest.TestCase):
     def install(self, **options):
         path, checksum = self.archive(**options)
         return sdk.import_archive(path, checksum, 'a' * 40, self.root)
+
+    def test_unpublished_candidate_records_base_commit_and_changed_paths(self):
+        path, checksum = self.archive()
+        pin = sdk.import_archive(path, checksum, 'a' * 40, self.root,
+                                 local_changed_paths=['sdk.json', 'LICENSE'])
+        self.assertEqual(pin['localCandidate'], {'baseCommit': 'a' * 40,
+                         'changedPaths': ['LICENSE', 'sdk.json']})
+        self.assertEqual(sdk.check_installed(self.root), pin)
+
+    def test_unpublished_candidate_rejects_unknown_or_unsafe_changed_paths(self):
+        path, checksum = self.archive()
+        for paths in [['../sdk.json'], ['not-in-release.cpp']]:
+            with self.subTest(paths=paths):
+                with self.assertRaises(ValueError):
+                    sdk.import_archive(path, checksum, 'a' * 40, self.root,
+                                       local_changed_paths=paths)
 
     def test_local_archive_import_check_idempotence_and_explicit_update(self):
         initial = self.install()

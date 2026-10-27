@@ -435,6 +435,16 @@ fn main() {
         .file("vendor/tetorica-soundchip-native/native/reference/tauri/native_genesis_huc6280.cpp")
         .warnings(false)
         .compile("tetorica_native_huc6280");
+    // POKEY extras and primary mode use independent fixed-SDK raw cores.
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/libvgm-pokey");
+    println!("cargo:rerun-if-changed=src/native_genesis_pokey.cpp");
+    println!("cargo:rerun-if-changed=src/native_genesis_pokey.h");
+    cc::Build::new().cpp(true).flag_if_supported("/EHsc").std("c++17").opt_level(2)
+        .flag_if_supported("-fwrapv").flag_if_supported("-fno-strict-aliasing").flag_if_supported("-ffp-contract=off")
+        .include("vendor/tetorica-soundchip-native/vendor/libvgm-pokey")
+        .file("src/native_genesis_pokey.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/libvgm-pokey/pokey.cpp")
+        .warnings(false).compile("tetorica_native_pokey");
     // WonderSwan shares one pinned raw SDK core between primary and extras.
     // Speaker DC/clock adaptation belongs to the application, not the SDK.
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/mame-wonderswan");

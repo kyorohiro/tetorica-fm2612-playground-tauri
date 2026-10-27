@@ -45,7 +45,7 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 
 ## Native音源SDK
 
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、WonderSwan、NES＋FDS、DX7、SNES／SPCとOPL系4種類
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、WonderSwan、POKEY、NES＋FDS、DX7、SNES／SPCとOPL系4種類
 （YM3526／YM3812／YMF262／Y8950）、代替Nuked YM2612は、自己完結した`tetorica-soundchip-native`のソース配布を
 `src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
 取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
@@ -94,7 +94,7 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 **Native (experimental)** を明示的に選べます。切替時は演奏を停止し、
 編集中のプロジェクトを引き継いでページを開き直します。選択だけではデバイスを開かず、
 RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
-Native選択中は、Genesis／Mega CD／32X／32X Nuked／NES＋FDS／DX7／Game Boy／WonderSwan／SNES／PC Engine／PC-98（YM2203／YM2608）／Neo Geo／Neo Geo（YM2610B）／X68000／Game Gear／Master System／MSX／MSX Audio／DOS PC（OPL／OPL2／OPL3）の対応Modeを選べます。
+Native選択中は、Genesis／Mega CD／32X／32X Nuked／NES＋FDS／DX7／Game Boy／WonderSwan／POKEY／Dual POKEY／SNES／PC Engine／PC-98（YM2203／YM2608）／Neo Geo／Neo Geo（YM2610B）／X68000／Game Gear／Master System／MSX／MSX Audio／DOS PC（OPL／OPL2／OPL3）の対応Modeを選べます。
 旧`genesis-nuked` URLでもNativeを選べます。Web Audioでは従来どおり全Modeを選べます。
 
 NativeはGenesis modeのYM2612＋Sega PSG、Main／Worker実行、音色・レジスター操作、Keyboard、
@@ -564,3 +564,9 @@ xvfb-run -a cargo test --manifest-path src-tauri/Cargo.toml native_input_selecti
 ```
 
 Git／HTTPS の依存ライセンスはアプリの `git-licenses.txt`、`git-js-licenses.txt` に同梱します。
+
+POKEYでは`pokey`（4CH）、Dual POKEYでは独立した`pokey`／`pokey2`（4CH×2）を使えます。
+MixerのIDも`pokey`と`pokey:2`に分かれ、追加の`await createSoundChip('pokey')`もNativeで使えます。
+単体Modeは1,789,790 Hz、2台ModeはAtari Tetris向けの1,789,773 Hzが既定です。
+各コアはSDKのBSD-3-Clause原本からビルドし、音声出力の10 Hz DC除去だけをアプリ側でBrowserと揃えます。
+生PCMのAPIは変更していません。クロックは生成時に決まり、変更する場合は新しいインスタンスを生成します。
