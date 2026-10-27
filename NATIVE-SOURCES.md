@@ -210,16 +210,25 @@ python3 scripts/prepare_native_sources.py
 
 ## Application audio sources
 
-The application-owned CD-DA and MSM5205 modules are bundled under
-`src-tauri/native-cdda/` and `src-tauri/native-msm5205/`. They compile their
-local C11 sources directly, independently of the fixed sound-chip SDK. Their
-`sources.json` pins and `scripts/sync_native_cdda.py --check` /
-`scripts/sync_native_msm5205.py --check` verify the exact source and license
-bytes without a parent checkout. MSM5205 retains its BSD-3-Clause libvgm
-attribution and explains its adaptation in `NOTICE.md`.
+CD-DA and MSM5205 compile their original C11 sources directly from the fixed
+SDK snapshot:
 
-PC Engine CD-ROM² mode mixes HuC6280 PSG, MSM5205 packed sample RAM and CD-DA
-on the existing audio callback. It is an audio environment, not a CPU, BIOS,
-DMA, SCSI or disc-image emulator. Main and Worker use the same system sources
-and independent Mixer inputs. The standalone source ZIP includes these cores,
-Rust scheduling/upload ownership, the imported frontend and all rebuild inputs.
+- `src-tauri/vendor/tetorica-soundchip-native/vendor/tetorica-cdda/`
+- `src-tauri/vendor/tetorica-soundchip-native/vendor/tetorica-msm5205/`
+
+The complete SDK release, source manifest and import receipt are verified with
+`python3 scripts/import_soundchip_sdk.py --check`. The compatibility commands
+`scripts/sync_native_cdda.py --check` and
+`scripts/sync_native_msm5205.py --check` additionally require the complete
+application-audio source/ABI/license inputs. They are read-only checks: update
+by importing a complete published SDK source ZIP, not by rewriting vendor
+files or copying cores from another checkout. No separate local C/H mirrors
+are compiled. The source bundle includes the fixed SDK's full sources,
+licenses and notices; MSM5205 retains its BSD-3-Clause libvgm attribution.
+
+The Rust scheduling/upload ownership, C ABI fixture and device callback remain
+in this application. PC Engine CD-ROM² mode mixes HuC6280 PSG, MSM5205 packed
+sample RAM and CD-DA on that same callback. It is an audio environment, not a
+CPU, BIOS, DMA, SCSI or disc-image emulator. This source-path migration changes
+no DSP, reference clocks, Mixer gains or runtime API. Main and Worker keep the
+same system sources and independent Mixer inputs.

@@ -113,6 +113,20 @@ POKEY_INPUTS = {
     'vendor/libvgm-pokey/upstream/snapshot-manifest.json',
 }
 
+APPLICATION_AUDIO_INPUTS = {
+    *(f'vendor/tetorica-{component}/{name}'
+      for component in ('cdda', 'msm5205')
+      for name in (f'{component}_pcm.c', f'{component}_pcm.h', 'LICENSE', 'NOTICE.md')),
+    'wasm/cdda_wasm.c', 'wasm/msm5205_wasm.c',
+    'scripts/build_cdda_wasm.sh', 'scripts/build_msm5205_wasm.sh',
+    'native/CMakeLists.txt', 'native/include/tetorica/cdda.h', 'native/include/tetorica/msm5205.h',
+    'native/tests/cdda_fixture.c', 'native/tests/msm5205_fixture.c',
+    'native/tests/pce_cd_fixture.cpp', 'native/examples/pcengine_cd_wav.cpp',
+}
+# Native CMake already exists in historical releases. Only a new module path
+# opts into the extension; old immutable pins must verify before replacement.
+APPLICATION_AUDIO_MARKERS = APPLICATION_AUDIO_INPUTS - {'native/CMakeLists.txt'}
+
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
@@ -161,6 +175,8 @@ def manifest_records(raw):
     # A POKEY-capable release must include its adaptation and licensed original.
     if POKEY_INPUTS & names:
         require(POKEY_INPUTS <= names, 'SDK POKEY source release is incomplete')
+    if APPLICATION_AUDIO_MARKERS & names:
+        require(APPLICATION_AUDIO_INPUTS <= names, 'SDK application audio source release is incomplete')
     require((LEGACY_SEGA_PSG <= names and not SEPARATED_SEGA_PSG & names)
             or (SEPARATED_SEGA_PSG <= names and not LEGACY_SEGA_PSG & names),
             'SDK source release is incomplete or mixes Sega PSG layouts')

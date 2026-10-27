@@ -1,4 +1,4 @@
-# Native SDKの取り込み — OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280／Game Boy／WonderSwan／NES＋FDS／DX7／SNES／SPC／Nuked YM2612
+# Native SDKの取り込み — CD-DA／MSM5205／POKEY／OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280／Game Boy／WonderSwan／NES＋FDS／DX7／SNES／SPC／Nuked YM2612
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
 YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、NES＋FDS、DX7、SNES／SPCと
@@ -10,15 +10,15 @@ submodule、ビルド中のGitHub取得を必要としません。
 
 | 項目 | 値 |
 | --- | --- |
-| SDK版 | `0.1.4` |
-| ソース配布 | `tetorica-soundchip-native-0.1.4-sources.zip` |
-| 配布ZIPのSHA-256 | `f173092241badd27c84d6846a69bd175375f080a57fdaf4983c56751c201f65e` |
-| SDKの元コミット | `6f8b872b6f35f5df619b2468d58da57037c96e07` |
+| SDK版 | `0.1.5` |
+| ソース配布 | `tetorica-soundchip-native-0.1.5-sources.zip` |
+| 配布ZIPのSHA-256 | `e37be75316a35a4159d8760afa9e4b86a9a4b8d4d24f674cc15e3e5e52c44309` |
+| SDKの元コミット | `3bb8d9ceffa50ad183d1ab856e031fe649425bca` |
 | 同梱先 | `src-tauri/vendor/tetorica-soundchip-native/` |
 | Tauri側の取り込み記録 | `src-tauri/soundchip-sdk.json` |
 
 取り込み記録は`schemaVersion: 1`で、`name`、`version`、`sourceCommit`、`archiveName`、
-`archiveSha256`、`manifestSha256`、`fileCount`を保存します。現在の同梱数は395ファイルです。
+`archiveSha256`、`manifestSha256`、`fileCount`を保存します。現在の同梱数は431ファイルです。
 `sourceCommit`は取り込み時に指定する由来の記録で、コミット署名や配布物の署名を検証したものではありません。
 取り込み時に期待するZIPのSHA-256を検証し、SDKマニフェストと各ファイルのサイズ／SHA-256を照合します。
 `--check`は元ZIPやネットワークを使わず、同梱マニフェストのハッシュと全ファイルを記録に照合します。
@@ -84,7 +84,7 @@ SDKのOPN providerがymfmのOPN実装と明示的なテンプレート実体化�
 
 YM2203とYM2608は、それぞれ選択中のPC-98音源と追加生成の両方で、同じSDK側のNative接続を使います。
 Neo Geoも選択中／追加音源のYM2610（FM 4CH）とYM2610B（FM 6CH）が一つのSDK接続を共有し、生成時に変種を選択します。
-これらの先行移行は同梱済みのSDK `0.1.0`へ参照を切り替えました。Nuked単体ターゲットを追加した`0.1.1`、Sega PSGを独立フォルダーへ分離した`0.1.2`を経て、現在はWonderSwanを収録した`0.1.4`を固定し、既存音源の音声計算を保持しています。
+これらの先行移行は同梱済みのSDK `0.1.0`へ参照を切り替えました。Nuked単体ターゲットを追加した`0.1.1`、Sega PSGを独立フォルダーへ分離した`0.1.2`を経て、現在はPOKEYとCD-DA／MSM5205も収録した公開済み`0.1.5`を固定し、既存音源の音声計算を保持しています。
 共有OPN／SSG／ADPCMはYM2612移行時からSDK側のものを一度だけ組み込んでおり、
 個別の移行用にもう一つ追加しません。既存のarchive順序を維持します。
 
@@ -314,9 +314,9 @@ SDKを更新するときだけ、検証したソースZIPを明示して取り�
 
 ```sh
 python3 scripts/import_soundchip_sdk.py \
-  --archive /path/to/tetorica-soundchip-native-0.1.4-sources.zip \
-  --sha256 f173092241badd27c84d6846a69bd175375f080a57fdaf4983c56751c201f65e \
-  --source-commit 6f8b872b6f35f5df619b2468d58da57037c96e07
+  --archive /path/to/tetorica-soundchip-native-0.1.5-sources.zip \
+  --sha256 e37be75316a35a4159d8760afa9e4b86a9a4b8d4d24f674cc15e3e5e52c44309 \
+  --source-commit 3bb8d9ceffa50ad183d1ab856e031fe649425bca
 python3 scripts/import_soundchip_sdk.py --check
 ```
 
@@ -1214,3 +1214,29 @@ C++377,424チェック、ASan／UBSan、Rust新規15件と全体741成功・4ign
 
 これは音声デバイスを開かないローカル検証です。新しい変更の5構成CIと実機聴音は次の作業です。
 以前のSDK取り込みCIはこの新接続を含みません。
+
+
+## SDK 0.1.5 — CD-DA／MSM5205の原本を固定SDKへ集約
+
+2026-10-28。公開済み`v0.1.5`のソースZIPを取り込み、431ファイルを照合しました。
+以前のローカル候補版を公開配布へ置き換え、`localCandidate`記録はありません。
+公開ZIPのSHA-256と元コミットは冒頭の表と`src-tauri/soundchip-sdk.json`に記録します。
+
+`src-tauri/build.rs`は、次のC11ファイルを固定SDKから直接コンパイルします。
+
+- `vendor/tetorica-soundchip-native/vendor/tetorica-cdda/cdda_pcm.c`
+- `vendor/tetorica-soundchip-native/vendor/tetorica-msm5205/msm5205_pcm.c`
+
+元のC ABIと対応ヘッダーをそのまま使い、`src-tauri/native-cdda/`と
+`src-tauri/native-msm5205/`の別原本は削除しました。
+`src-tauri/src/native_genesis_cdda.rs`／`native_genesis_msm5205.rs`が持つ
+アップロード・保持期間・イベント予約・音声callbackの担当は維持します。
+音声計算、クロック、Mixer倍率、JS公開APIを変える移行ではありません。
+既存SDKの共通C/C++／ヘッダー284入力が取り込み前後で同一であり、
+今回移した2モジュールのC／ヘッダー4入力も旧原本と同一であることを照合しました。
+
+互換コマンド`python3 scripts/sync_native_cdda.py --check`と
+`python3 scripts/sync_native_msm5205.py --check`は、固定SDKの全マニフェストと
+アプリ音源のC／ヘッダー／LICENSE／NOTICEを読み取り検証します。
+別checkoutからコピーしたり、SDK原本・ピンを書き換えたりしません。
+SDKの更新は、検証した公開ソースZIPをインポーターへ指定して行います。

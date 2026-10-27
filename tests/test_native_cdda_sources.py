@@ -1,52 +1,51 @@
-import json
+"""Fixed SDK application-audio guard; no old source mirror or parent needed."""
 from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
 
+import test_soundchip_sdk as fixture_module
+
 ROOT = Path(__file__).resolve().parents[1]
+COMPONENT = 'cdda'
 
 
-class NativeCddaSourceTests(unittest.TestCase):
-    def fixture(self, root):
-        (root / 'scripts').mkdir()
-        shutil.copyfile(ROOT / 'scripts/sync_native_cdda.py', root / 'scripts/sync_native_cdda.py')
-        shutil.copytree(ROOT / 'src-tauri/native-cdda', root / 'src-tauri/native-cdda')
+class NativeApplicationAudioSourceTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = fixture_module.SoundchipSdkTests(methodName='runTest')
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.root = self.fixture.root
+        self.pin = self.fixture.install(application_audio=True)
+        scripts = self.root / 'scripts'
+        scripts.mkdir()
+        for name in ('import_soundchip_sdk.py', 'verify_sdk_application_audio.py', f'sync_native_{COMPONENT}.py'):
+            shutil.copyfile(ROOT / 'scripts' / name, scripts / name)
 
-    def check(self, root, *args):
-        return subprocess.run([sys.executable, str(root / 'scripts/sync_native_cdda.py'), '--check', *args],
-                              cwd=root, capture_output=True, text=True)
+    def command(self, *args):
+        return subprocess.run([sys.executable, str(self.root / 'scripts' / f'sync_native_{COMPONENT}.py'), *args],
+                              cwd=self.root, capture_output=True, text=True)
 
-    def test_offline_source_pin_includes_license_and_rejects_modified_c(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.fixture(root)
-            valid = self.check(root)
-            self.assertEqual(valid.returncode, 0, valid.stderr)
-            source = root / 'src-tauri/native-cdda/cdda_pcm.c'
-            source.write_bytes(source.read_bytes() + b'\n/* changed source */\n')
-            changed = self.check(root)
-            self.assertNotEqual(changed.returncode, 0)
-            self.assertIn('source hash differs: cdda_pcm.c', changed.stderr)
+    def test_fixed_sdk_is_sufficient_and_tampered_compiled_source_is_rejected(self):
+        self.assertFalse((self.root / 'src-tauri' / f'native-{COMPONENT}').exists())
+        self.fixture.work.joinpath('sdk.zip').unlink()
+        valid = self.command('--check')
+        self.assertEqual(valid.returncode, 0, valid.stderr)
+        self.assertIn('verified fixed release', valid.stdout)
+        source = self.root / fixture_module.sdk.SNAPSHOT / f'vendor/tetorica-{COMPONENT}/{COMPONENT}_pcm.c'
+        source.write_bytes(source.read_bytes() + b'\n/* changed */\n')
+        changed = self.command('--check')
+        self.assertNotEqual(changed.returncode, 0)
+        self.assertIn('hash/size mismatch', changed.stderr)
 
-    def test_missing_license_pin_and_mismatching_comparison_checkout_are_rejected(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.fixture(root)
-            comparison = root / 'source'
-            shutil.copytree(root / 'src-tauri/native-cdda', comparison / 'native/cdda')
-            valid = self.check(root, '--source', str(comparison))
-            self.assertEqual(valid.returncode, 0, valid.stderr)
-            (comparison / 'native/cdda/LICENSE').write_text('different license')
-            changed = self.check(root, '--source', str(comparison))
-            self.assertNotEqual(changed.returncode, 0)
-            self.assertIn('differs from comparison checkout: LICENSE', changed.stderr)
-            pin = root / 'src-tauri/native-cdda/sources.json'
-            manifest = json.loads(pin.read_text())
-            del manifest['sha256']['LICENSE']
-            pin.write_text(json.dumps(manifest))
-            incomplete = self.check(root)
-            self.assertNotEqual(incomplete.returncode, 0)
-            self.assertIn('Invalid Native CD-DA source pin', incomplete.stderr)
+    def test_source_override_is_rejected_without_writes_and_missing_license_is_rejected(self):
+        receipt = self.root / fixture_module.sdk.RECEIPT
+        original = receipt.read_bytes()
+        rejected = self.command('--source', str(self.fixture.work))
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn('unrecognized arguments', rejected.stderr)
+        self.assertEqual(receipt.read_bytes(), original)
+        missing = self.root / fixture_module.sdk.SNAPSHOT / f'vendor/tetorica-{COMPONENT}/LICENSE'
+        missing.unlink()
+        self.assertNotEqual(self.command('--check').returncode, 0)

@@ -1,9 +1,0 @@
-{
-  "schemaVersion": 1,
-  "source": "hello_ymfm/native/cdda",
-  "sha256": {
-    "cdda_pcm.c": "30a039d4ad991b36f1a3e72191a05dd71159139254fe6e59fa53dbeaf0a91ccb",
-    "cdda_pcm.h": "8e2c6c7f5aa517acdda18897ae980d2afd3d6cbde088d331c6cbcf0eea9a8cc6",
-    "LICENSE": "d49c2f05a09d2d648c05a5af92240a5dc4059830bc29afbb8919c6d1ba76bf91"
-  }
-}

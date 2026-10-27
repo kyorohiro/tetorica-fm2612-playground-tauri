@@ -26,8 +26,9 @@ class SoundchipSdkTests(unittest.TestCase):
         self.root = self.work / 'standalone app'
         self.root.mkdir()
 
-    def archive(self, *, version='0.1.0', alter=None):
-        payload = {name: ('pinned SDK source: ' + name).encode() for name in sdk.REQUIRED | sdk.SEPARATED_SEGA_PSG}
+    def archive(self, *, version='0.1.0', alter=None, application_audio=False):
+        inputs = sdk.REQUIRED | sdk.SEPARATED_SEGA_PSG | (sdk.APPLICATION_AUDIO_INPUTS if application_audio else set())
+        payload = {name: ('pinned SDK source: ' + name).encode() for name in inputs}
         payload['sdk.json'] = json.dumps({'name': sdk.NAME, 'version': version}).encode()
         manifest = {'schemaVersion': 1, 'kind': 'source', 'name': sdk.NAME, 'version': version,
                     'files': {name: {'sha256': sdk.digest(data), 'size': len(data)}
@@ -189,3 +190,34 @@ class SoundchipSdkTests(unittest.TestCase):
             sdk.check_installed(self.root)
         with self.assertRaises(ValueError):
             self.install()
+
+    def test_historical_pin_can_update_to_complete_application_audio_without_a_candidate_label(self):
+        initial = self.install()
+        self.assertFalse(sdk.APPLICATION_AUDIO_MARKERS & set(json.loads((self.root / sdk.SNAPSHOT / sdk.MANIFEST).read_text())["files"]))
+        updated = self.install(version='0.2.0', application_audio=True)
+        self.assertEqual(sdk.check_installed(self.root), updated)
+        self.assertNotIn('localCandidate', updated)
+        self.assertNotEqual(initial['archiveSha256'], updated['archiveSha256'])
+        for name in sdk.APPLICATION_AUDIO_INPUTS:
+            self.assertTrue((self.root / sdk.SNAPSHOT / name).is_file(), name)
+
+    def test_partial_audio_extension_is_rejected_before_replacing_historical_pin(self):
+        initial = self.install()
+        for omitted in ('vendor/tetorica-cdda/LICENSE', 'vendor/tetorica-msm5205/msm5205_pcm.h',
+                        'wasm/msm5205_wasm.c', 'native/include/tetorica/cdda.h'):
+            with self.subTest(omitted=omitted):
+                def alter(entries):
+                    filtered = []
+                    for name, data, mode in entries:
+                        if name.endswith('/' + omitted):
+                            continue
+                        if name.endswith('/' + sdk.MANIFEST):
+                            manifest = json.loads(data)
+                            del manifest['files'][omitted]
+                            data = json.dumps(manifest).encode()
+                        filtered.append((name, data, mode))
+                    return filtered
+                path, checksum = self.archive(application_audio=True, alter=alter)
+                with self.assertRaisesRegex(ValueError, 'application audio source release is incomplete'):
+                    sdk.import_archive(path, checksum, 'b' * 40, self.root)
+                self.assertEqual(sdk.check_installed(self.root), initial)
