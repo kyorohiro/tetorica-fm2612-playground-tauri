@@ -77,6 +77,114 @@ fn energy(pcm: &[[f32; 2]]) -> f32 {
     pcm.iter().map(|p| p[0].abs() + p[1].abs()).sum()
 }
 
+fn compact_trace() -> Value {
+    json!({"version":1,"clock":3200000,"durationSamples":44100,
+        "events":[[0,0,0x91,8],[0,0,0x94,15],[0,0,0x90,34],[0,1,8,171],[0,2,0,6,3,4]],
+        "pcmData":[0,10,2,20,2,30]})
+}
+#[test]
+fn extra_wonderswan_compact_timeline_stays_charged_until_replacement_and_cancels_by_group() {
+    let (s, mut r) = new();
+    render(&s, &mut r, 1);
+    s.extra_psg.collect_retired().unwrap();
+    let baseline = s.extra_psg.memory_used();
+    send(
+        &s,
+        1,
+        vec![json!({"method":"prepare-timeline","trace":compact_trace()})],
+    );
+    render(&s, &mut r, 1);
+    s.extra_psg.collect_retired().unwrap();
+    assert!(
+        s.extra_psg.memory_used() > baseline,
+        "loaded compact bytes lost their budget permit"
+    );
+    s.enqueue(
+        1,
+        &[
+            command(
+                1,
+                500,
+                json!({"method":"play-timeline","token":1,"group":9}),
+            ),
+            command(1, 0, json!({"method":"stop-timeline","group":9})),
+        ],
+    )
+    .unwrap();
+    render(&s, &mut r, 600);
+    assert_eq!(state(&s, 1).timeline.token, 0);
+    send(
+        &s,
+        1,
+        vec![json!({"method":"play-timeline","token":2,"group":9})],
+    );
+    render(&s, &mut r, 4);
+    assert!(state(&s, 1).timeline.playing);
+    assert_eq!(state(&s, 1).clock, 3200000);
+    assert_eq!(state(&s, 1).memory[8], 171);
+    send(
+        &s,
+        1,
+        vec![json!({"method":"cancel-main-owner","targetGroup":9})],
+    );
+    render(&s, &mut r, 1);
+    assert!(state(&s, 1).timeline.cancelled);
+    assert!(!state(&s, 1).timeline.playing);
+    send(&s, 1, vec![json!({"method":"reset"})]);
+    render(&s, &mut r, 1);
+    s.extra_psg.collect_retired().unwrap();
+    assert_eq!(s.extra_psg.memory_used(), baseline);
+}
+#[test]
+fn extra_wonderswan_compact_timeline_manual_clock_and_density_fences_are_recoverable() {
+    let (s, mut r) = new();
+    send(&s, 1, vec![batch(0, 1, "on", tone(0), true)]);
+    render(&s, &mut r, 1);
+    assert!(s
+        .enqueue(
+            1,
+            &[command(
+                1,
+                0,
+                json!({"method":"prepare-timeline","trace":compact_trace()})
+            )]
+        )
+        .unwrap_err()
+        .contains("manually held"));
+    send(&s, 1, vec![off(0, 1, true)]);
+    render(&s, &mut r, 1);
+    let mut too_dense = compact_trace();
+    too_dense["events"] = json!((0..513).map(|_| vec![0, 0, 0x91, 8]).collect::<Vec<_>>());
+    assert!(s
+        .enqueue(
+            1,
+            &[command(
+                1,
+                0,
+                json!({"method":"prepare-timeline","trace":too_dense})
+            )]
+        )
+        .unwrap_err()
+        .contains("512 writes"));
+    send(
+        &s,
+        1,
+        vec![json!({"method":"prepare-timeline","trace":compact_trace()})],
+    );
+    render(&s, &mut r, 1);
+    send(&s, 1, vec![json!({"method":"play-timeline","token":3})]);
+    render(&s, &mut r, 1);
+    assert!(s
+        .enqueue(1, &[command(1, 0, json!({"method":"clock","hz":4000000}))])
+        .unwrap_err()
+        .contains("timeline"));
+    send(&s, 1, vec![json!({"method":"stop-timeline"})]);
+    render(&s, &mut r, 1);
+    send(&s, 1, vec![json!({"method":"clock","hz":4000000})]);
+    render(&s, &mut r, 1);
+    assert_eq!(state(&s, 1).clock, 4000000);
+}
+
 #[test]
 fn extra_wonderswan_instances_creation_clocks_ram_and_mixer_are_independent() {
     let (s, mut r) = new();

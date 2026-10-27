@@ -4,6 +4,7 @@ use super::{Owner, CAPACITY, MAX_SAFE_INTEGER, OWNERS};
 use crossbeam_queue::ArrayQueue;
 use serde::{Deserialize, Serialize};
 use std::{
+    cell::Cell,
     collections::HashSet,
     ffi::c_void,
     sync::{
@@ -15,6 +16,12 @@ use std::{
 pub const CLOCK: u32 = 3_072_000;
 const BATCH: usize = 512;
 const PENDING_BYTES: usize = 8 * 1024 * 1024;
+const TIMELINES: usize = 256;
+#[path = "native_genesis_wonderswan_timeline.rs"]
+mod timeline;
+pub const TIMELINE_BUSY: &str = "Native WonderSwan timeline is playing or pending";
+pub const TIMELINE_HELD: &str =
+    "Release the manually held WonderSwan voices before replacing or playing a timeline";
 extern "C" {
     fn native_wonderswan_core_size() -> usize;
     fn native_wonderswan_create(rate: u32, clock: u32) -> *mut c_void;
@@ -75,6 +82,13 @@ pub enum Method {
     Clock {
         hz: u32,
     },
+    PrepareTimeline {
+        trace: timeline::Input,
+    },
+    PlayTimeline {
+        token: u64,
+    },
+    StopTimeline,
     Mix {
         volume: f32,
         pan: f32,
@@ -122,6 +136,9 @@ enum Edit {
     SourceMute(u8),
     CancelMainOwner(u64),
     Batch(Vec<Op>, u8, Option<u64>, LeaseAction),
+    PrepareTimeline(Arc<timeline::Timeline>),
+    PlayTimeline(u64),
+    StopTimeline,
 }
 #[derive(Debug)]
 pub struct Prepared {
@@ -135,6 +152,8 @@ pub struct Prepared {
     clock_rejected: AtomicBool,
     audition_rejected: AtomicBool,
     clock_reserved: AtomicBool,
+    timeline_reserved: AtomicBool,
+    timeline_rejected: AtomicBool,
 }
 fn valid_id(id: Option<u64>) -> bool {
     id.is_none_or(|id| id > 0 && id <= MAX_SAFE_INTEGER)
@@ -186,10 +205,10 @@ fn validate_op(op: &Op) -> Result<(), String> {
 impl Message {
     pub fn prepared_bytes(&self) -> usize {
         std::mem::size_of::<Prepared>()
-            + if let Method::Batch { commands, .. } = &self.method {
-                commands.len() * std::mem::size_of::<Op>()
-            } else {
-                0
+            + match &self.method {
+                Method::Batch { commands, .. } => commands.len() * std::mem::size_of::<Op>(),
+                Method::PrepareTimeline { trace } => trace.bytes(),
+                _ => 0,
             }
     }
     pub fn prepare(&self) -> Result<Arc<Prepared>, String> {
@@ -248,6 +267,14 @@ impl Message {
                 }
                 Edit::Mix(*volume, *pan)
             }
+            Method::PrepareTimeline { trace } => Edit::PrepareTimeline(Arc::new(trace.prepare()?)),
+            Method::PlayTimeline { token } => {
+                if !valid_id(Some(*token)) {
+                    return Err("Invalid Native WonderSwan timeline token".into());
+                }
+                Edit::PlayTimeline(*token)
+            }
+            Method::StopTimeline => Edit::StopTimeline,
             Method::Batch {
                 commands,
                 channel,
@@ -341,6 +368,8 @@ impl Message {
             clock_rejected: AtomicBool::new(false),
             audition_rejected: AtomicBool::new(false),
             clock_reserved: AtomicBool::new(false),
+            timeline_reserved: AtomicBool::new(false),
+            timeline_rejected: AtomicBool::new(false),
         }))
     }
 }
@@ -350,23 +379,31 @@ impl Prepared {
         self.cancelled.load(Ordering::Acquire) as u8
             | ((self.clock_rejected.load(Ordering::Acquire) as u8) << 1)
             | ((self.audition_rejected.load(Ordering::Acquire) as u8) << 2)
+            | ((self.timeline_rejected.load(Ordering::Acquire) as u8) << 3)
     }
     pub fn is_owner_cancel(&self) -> bool {
         matches!(self.edit, Edit::CancelMainOwner(_))
     }
     pub fn starts(&self) -> bool {
         matches!(self.edit, Edit::Op(_))
+            || matches!(self.edit, Edit::PlayTimeline(_))
             || matches!(self.edit,Edit::Batch(_,_,_,action)if action!=LeaseAction::Off)
     }
     pub fn stops(&self) -> bool {
-        matches!(self.edit, Edit::Stop) && self.group.is_none()
+        matches!(self.edit, Edit::Stop | Edit::StopTimeline) && self.group.is_none()
+    }
+    pub fn payload_unused(&self) -> bool {
+        match &self.edit {
+            Edit::PrepareTimeline(trace) => Arc::strong_count(trace) == 1,
+            _ => true,
+        }
     }
     pub fn retained_bytes(&self) -> usize {
         std::mem::size_of::<Self>()
-            + if let Edit::Batch(ops, ..) = &self.edit {
-                ops.capacity() * std::mem::size_of::<Op>()
-            } else {
-                0
+            + match &self.edit {
+                Edit::Batch(ops, ..) => ops.capacity() * std::mem::size_of::<Op>(),
+                Edit::PrepareTimeline(trace) => trace.bytes(),
+                _ => 0,
             }
     }
 }
@@ -396,6 +433,8 @@ fn outcome(flags: u8) -> Result<(), String> {
         Err(CLOCK_HELD.into())
     } else if flags & 4 != 0 {
         Err("WonderSwan clock change is scheduled; audition after it is applied".into())
+    } else if flags & 8 != 0 {
+        Err(TIMELINE_BUSY.into())
     } else {
         Ok(())
     }
@@ -406,12 +445,22 @@ pub struct Shared {
     memory: [AtomicU8; 16384],
     authored_gates: AtomicU8,
     pending_clocks: AtomicU32,
+    pending_timelines: AtomicU32,
+    timeline_loaded: AtomicBool,
+    timeline_playing: AtomicBool,
+    timeline_ended: AtomicBool,
+    timeline_cancelled: AtomicBool,
+    timeline_position: AtomicU64,
+    timeline_duration: AtomicU64,
+    timeline_token: AtomicU64,
+    timeline_bytes: AtomicU64,
     clock: AtomicU32,
     rate: AtomicU32,
     mute: AtomicU8,
     held: AtomicU8,
     control: Mutex<Control>,
     retired: ArrayQueue<Arc<Prepared>>,
+    retired_timelines: ArrayQueue<Arc<timeline::Timeline>>,
     highest_id: AtomicU64,
     cancel_before: AtomicU64,
     owner_cancel_before: [AtomicU64; OWNERS],
@@ -424,12 +473,22 @@ impl Default for Shared {
             memory: std::array::from_fn(|_| AtomicU8::new(0)),
             authored_gates: AtomicU8::new(0),
             pending_clocks: AtomicU32::new(0),
+            pending_timelines: AtomicU32::new(0),
+            timeline_loaded: AtomicBool::new(false),
+            timeline_playing: AtomicBool::new(false),
+            timeline_ended: AtomicBool::new(false),
+            timeline_cancelled: AtomicBool::new(false),
+            timeline_position: AtomicU64::new(0),
+            timeline_duration: AtomicU64::new(0),
+            timeline_token: AtomicU64::new(0),
+            timeline_bytes: AtomicU64::new(0),
             clock: AtomicU32::new(CLOCK),
             rate: AtomicU32::new(0),
             mute: AtomicU8::new(0),
             held: AtomicU8::new(0),
             control: Mutex::new(Control::default()),
             retired: ArrayQueue::new(CAPACITY),
+            retired_timelines: ArrayQueue::new(TIMELINES),
             highest_id: AtomicU64::new(0),
             cancel_before: AtomicU64::new(0),
             owner_cancel_before: std::array::from_fn(|_| AtomicU64::new(0)),
@@ -438,11 +497,24 @@ impl Default for Shared {
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TimelineStatus {
+    pub loaded: bool,
+    pub playing: bool,
+    pub ended: bool,
+    pub cancelled: bool,
+    pub position_samples: u64,
+    pub duration_samples: u64,
+    pub token: u64,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChipStatus {
     pub clock: u32,
     pub held: Vec<u8>,
     pub source_mute_mask: u8,
     pub pending_clocks: u32,
+    pub pending_timelines: u32,
+    pub timeline: TimelineStatus,
     pub registers: Vec<u8>,
     pub authored_registers: Vec<u8>,
     pub memory: Vec<u8>,
@@ -480,6 +552,7 @@ impl Shared {
     }
     fn collect(&self, c: &mut Control) {
         while self.retired.pop().is_some() {}
+        while self.retired_timelines.pop().is_some() {}
         let Control {
             prepared,
             outcomes,
@@ -513,6 +586,39 @@ impl Shared {
             .lock()
             .map_err(|_| "Native WonderSwan control unavailable")?;
         self.collect(&mut c);
+        if c.prepared
+            .iter()
+            .filter(|v| matches!(v.edit, Edit::PrepareTimeline(_)))
+            .count()
+            + commands
+                .iter()
+                .filter(|(v, _)| matches!(v.edit, Edit::PrepareTimeline(_)))
+                .count()
+            > TIMELINES
+        {
+            return Err("Native WonderSwan timeline preparation queue is full (256)".into());
+        }
+        for (command, _) in commands {
+            if let Edit::PrepareTimeline(trace) = &command.edit {
+                trace.validate_density(self.rate.load(Ordering::Acquire).max(16000))?;
+            }
+        }
+        if commands
+            .iter()
+            .any(|(v, _)| matches!(v.edit, Edit::PrepareTimeline(_) | Edit::PlayTimeline(_)))
+            && self.held.load(Ordering::Acquire) != 0
+        {
+            return Err(TIMELINE_HELD.into());
+        }
+        if commands.iter().any(|(v, _)| {
+            matches!(
+                v.edit,
+                Edit::PrepareTimeline(_) | Edit::PlayTimeline(_) | Edit::Clock(_)
+            )
+        }) && self.timeline_playing.load(Ordering::Acquire)
+        {
+            return Err(TIMELINE_BUSY.into());
+        }
         if self.held.load(Ordering::Acquire) != 0
             && commands
                 .iter()
@@ -521,7 +627,8 @@ impl Shared {
             return Err(CLOCK_HELD.into());
         }
         if c.prepared.len() + commands.len() > CAPACITY
-            || c.prepared.iter().map(|v| v.retained_bytes()).sum::<usize>()
+            || self.timeline_bytes.load(Ordering::Acquire) as usize
+                + c.prepared.iter().map(|v| v.retained_bytes()).sum::<usize>()
                 + commands
                     .iter()
                     .map(|(v, _)| v.retained_bytes())
@@ -543,20 +650,32 @@ impl Shared {
             if matches!(v.edit, Edit::Clock(_)) && !v.clock_reserved.swap(true, Ordering::AcqRel) {
                 self.pending_clocks.fetch_add(1, Ordering::AcqRel);
             }
+            if matches!(v.edit, Edit::PrepareTimeline(_) | Edit::PlayTimeline(_))
+                && !v.timeline_reserved.swap(true, Ordering::AcqRel)
+            {
+                self.pending_timelines.fetch_add(1, Ordering::AcqRel);
+            }
             c.prepared.push(v.clone())
         }
         Ok(())
     }
     pub fn commit_cancel(&self, c: &Prepared) -> bool {
-        let Edit::CancelMainOwner(target) = c.edit else {
-            return false;
+        let (target, timeline_only) = match c.edit {
+            Edit::CancelMainOwner(target) => (target, false),
+            Edit::StopTimeline if c.group.is_some() => (c.group.unwrap(), true),
+            _ => return false,
         };
         let control = self
             .control
             .lock()
             .expect("WonderSwan control checked by transactional retain");
         for v in &control.prepared {
-            if v.group == Some(target) && !v.audition && !v.complete.load(Ordering::Acquire) {
+            if v.group == Some(target)
+                && !v.audition
+                && !v.complete.load(Ordering::Acquire)
+                && (!timeline_only
+                    || matches!(v.edit, Edit::PrepareTimeline(_) | Edit::PlayTimeline(_)))
+            {
                 v.cancelled.store(true, Ordering::Release);
             }
         }
@@ -600,6 +719,9 @@ impl Shared {
         if v.clock_reserved.swap(false, Ordering::AcqRel) {
             self.pending_clocks.fetch_sub(1, Ordering::AcqRel);
         }
+        if v.timeline_reserved.swap(false, Ordering::AcqRel) {
+            self.pending_timelines.fetch_sub(1, Ordering::AcqRel);
+        }
     }
     pub fn retire(&self, v: Arc<Prepared>) {
         self.finish_clock(&v);
@@ -634,7 +756,7 @@ impl Shared {
                     }
                 }
             }
-            Some(Edit::Reset) => {
+            Some(Edit::Reset | Edit::PlayTimeline(_)) => {
                 for address in 0..16384 {
                     publish_byte(address)
                 }
@@ -643,6 +765,16 @@ impl Shared {
             // status publication and voice cancellation cannot change it.
             _ => {}
         }
+        let dirty = renderer.timeline_dirty_count.replace(0);
+        if renderer.timeline_dirty_full.replace(false) {
+            for address in 0..16384 {
+                publish_byte(address);
+            }
+        } else {
+            for address in &renderer.timeline_dirty[..dirty] {
+                publish_byte(u32::from(address.get()));
+            }
+        }
         self.authored_gates
             .store(renderer.authored_gates, Ordering::Relaxed);
         self.clock.store(renderer.clock, Ordering::Relaxed);
@@ -650,6 +782,36 @@ impl Shared {
         self.mute.store(renderer.mute, Ordering::Relaxed);
         self.held
             .store(renderer.manual_mask(None, false), Ordering::Relaxed);
+        self.timeline_loaded
+            .store(renderer.timeline.is_some(), Ordering::Relaxed);
+        self.timeline_playing
+            .store(renderer.timeline_playing, Ordering::Relaxed);
+        self.timeline_ended
+            .store(renderer.timeline_ended, Ordering::Relaxed);
+        self.timeline_cancelled
+            .store(renderer.timeline_cancelled, Ordering::Relaxed);
+        self.timeline_token
+            .store(renderer.timeline_token, Ordering::Relaxed);
+        self.timeline_position.store(
+            (renderer.timeline_cursor.frame * 44100 / u64::from(renderer.rate)).min(
+                renderer
+                    .timeline
+                    .as_ref()
+                    .map_or(0, |t| u64::from(t.duration)),
+            ),
+            Ordering::Relaxed,
+        );
+        self.timeline_duration.store(
+            renderer
+                .timeline
+                .as_ref()
+                .map_or(0, |t| u64::from(t.duration)),
+            Ordering::Relaxed,
+        );
+        self.timeline_bytes.store(
+            renderer.timeline.as_ref().map_or(0, |t| t.bytes() as u64),
+            Ordering::Relaxed,
+        );
         if let Some(command) = command {
             self.finish_clock(command);
             command.complete.store(true, Ordering::Release);
@@ -682,6 +844,16 @@ impl Shared {
                         .collect(),
                     source_mute_mask: self.mute.load(Ordering::Relaxed),
                     pending_clocks: self.pending_clocks.load(Ordering::Relaxed),
+                    pending_timelines: self.pending_timelines.load(Ordering::Relaxed),
+                    timeline: TimelineStatus {
+                        loaded: self.timeline_loaded.load(Ordering::Relaxed),
+                        playing: self.timeline_playing.load(Ordering::Relaxed),
+                        ended: self.timeline_ended.load(Ordering::Relaxed),
+                        cancelled: self.timeline_cancelled.load(Ordering::Relaxed),
+                        position_samples: self.timeline_position.load(Ordering::Relaxed),
+                        duration_samples: self.timeline_duration.load(Ordering::Relaxed),
+                        token: self.timeline_token.load(Ordering::Relaxed),
+                    },
                     clock: self.clock(),
                     registers: self
                         .registers
@@ -741,6 +913,17 @@ pub struct Renderer {
     ramp: u32,
     rate: u32,
     clock: u32,
+    timeline: Option<Arc<timeline::Timeline>>,
+    timeline_cursor: timeline::Cursor,
+    timeline_playing: bool,
+    timeline_ended: bool,
+    timeline_cancelled: bool,
+    timeline_token: u64,
+    timeline_owner: Option<Owner>,
+    timeline_group: Option<u64>,
+    timeline_dirty: [Cell<u16>; 1024],
+    timeline_dirty_count: Cell<usize>,
+    timeline_dirty_full: Cell<bool>,
 }
 unsafe impl Send for Renderer {}
 impl Drop for Renderer {
@@ -771,6 +954,17 @@ impl Renderer {
             ramp: 0,
             rate,
             clock,
+            timeline: None,
+            timeline_cursor: timeline::Cursor::default(),
+            timeline_playing: false,
+            timeline_ended: false,
+            timeline_cancelled: false,
+            timeline_token: 0,
+            timeline_owner: None,
+            timeline_group: None,
+            timeline_dirty: std::array::from_fn(|_| Cell::new(0)),
+            timeline_dirty_count: Cell::new(0),
+            timeline_dirty_full: Cell::new(false),
         })
     }
     fn manual_mask(&self, voice: Option<u64>, audition: bool) -> u8 {
@@ -919,6 +1113,32 @@ impl Renderer {
         }
     }
     pub fn apply(&mut self, command: &Prepared, owner: Option<Owner>, shared: &Shared) {
+        if matches!(
+            command.edit,
+            Edit::PrepareTimeline(_) | Edit::PlayTimeline(_)
+        ) && self.manual_mask(None, false) != 0
+        {
+            command.clock_rejected.store(true, Ordering::Release);
+            shared.publish(self, Some(command));
+            return;
+        }
+        if (self.timeline_playing
+            && matches!(
+                command.edit,
+                Edit::PrepareTimeline(_)
+                    | Edit::PlayTimeline(_)
+                    | Edit::Clock(_)
+                    | Edit::Op(_)
+                    | Edit::Batch(..)
+            ))
+            || command.audition
+                && matches!(command.edit, Edit::Batch(_, _, _, LeaseAction::On))
+                && shared.pending_timelines.load(Ordering::Acquire) != 0
+        {
+            command.timeline_rejected.store(true, Ordering::Release);
+            shared.publish(self, Some(command));
+            return;
+        }
         if matches!(command.edit, Edit::Clock(_)) && self.manual_mask(None, false) != 0 {
             command.clock_rejected.store(true, Ordering::Release);
             shared.publish(self, Some(command));
@@ -941,6 +1161,7 @@ impl Renderer {
                         self.register(0x90) & (1 << ch) != 0 && self.foreign(ch, owner, None)
                     }) =>
             {
+                self.clear_timeline(shared);
                 unsafe { native_wonderswan_reset(self.ptr) }
                 self.owners.fill(None);
                 self.authored_gates = 0;
@@ -951,6 +1172,9 @@ impl Renderer {
                 self.mute = *mask;
             }
             Edit::CancelMainOwner(target) => {
+                if self.timeline_group == Some(*target) {
+                    self.stop_timeline();
+                }
                 for ch in 0..4 {
                     if self.owners[ch].is_some_and(|l| !l.audition && l.group == Some(*target)) {
                         self.release(ch)
@@ -958,6 +1182,11 @@ impl Renderer {
                 }
             }
             Edit::Stop => {
+                if (owner.is_none() || self.timeline_owner == owner)
+                    && (command.group.is_none() || self.timeline_group == command.group)
+                {
+                    self.stop_timeline();
+                }
                 if owner.is_none()
                     && command.group.is_none()
                     && (command.audition || self.manual_mask(None, false) == 0)
@@ -982,6 +1211,38 @@ impl Renderer {
                     self.clock = *hz;
                 }
             },
+            Edit::PrepareTimeline(trace) => {
+                self.clear_timeline(shared);
+                self.timeline = Some(trace.clone());
+            }
+            Edit::PlayTimeline(token) => {
+                if let Some(trace) = &self.timeline {
+                    unsafe {
+                        native_wonderswan_reset(self.ptr);
+                        native_wonderswan_set_clock(self.ptr, trace.clock);
+                        native_wonderswan_set_mute_mask(self.ptr, self.mute as u32);
+                    }
+                    self.clock = trace.clock;
+                    self.owners.fill(None);
+                    self.authored_gates = 0;
+                    self.timeline_cursor = timeline::Cursor::default();
+                    self.timeline_playing = true;
+                    self.timeline_ended = false;
+                    self.timeline_cancelled = false;
+                    self.timeline_token = *token;
+                    self.timeline_owner = owner;
+                    self.timeline_group = command.group;
+                } else {
+                    command.timeline_rejected.store(true, Ordering::Release);
+                }
+            }
+            Edit::StopTimeline => {
+                if (owner.is_none() || self.timeline_owner == owner)
+                    && (command.group.is_none() || self.timeline_group == command.group)
+                {
+                    self.stop_timeline();
+                }
+            }
             Edit::Mix(volume, pan) => {
                 self.targets = [
                     *volume * if *pan > 0.0 { 1.0 - *pan } else { 1.0 },
@@ -1044,6 +1305,10 @@ impl Renderer {
     }
     pub fn cancel_invalid(&mut self, valid: impl Fn(Option<Owner>) -> bool, shared: &Shared) {
         let mut changed = false;
+        if self.timeline_playing && !valid(self.timeline_owner) {
+            self.stop_timeline();
+            changed = true;
+        }
         for ch in 0..4 {
             if self.owners[ch].is_some_and(|l| !valid(l.owner)) {
                 self.release(ch);
@@ -1055,12 +1320,14 @@ impl Renderer {
         }
     }
     pub fn stop(&mut self, shared: &Shared) {
+        self.stop_timeline();
         unsafe { native_wonderswan_stop(self.ptr) };
         self.owners.fill(None);
         self.authored_gates = 0;
         shared.publish(self, None);
     }
     pub fn mix(&mut self, pcm: &mut [f32; 2]) {
+        self.advance_timeline();
         let mut sample = [0.0; 2];
         unsafe {
             native_wonderswan_sample(self.ptr, &mut sample[0], &mut sample[1]);
@@ -1073,6 +1340,102 @@ impl Renderer {
         }
         for ch in 0..2 {
             pcm[ch] += sample[ch] * self.gains[ch];
+        }
+    }
+    pub fn mix_additional(&mut self, pcm: &mut [f32; 2], shared: &Shared) {
+        let was_playing = self.timeline_playing;
+        self.mix(pcm);
+        if was_playing
+            && (!self.timeline_playing
+                || self.timeline_cursor.frame % 128 == 0
+                || self.timeline_dirty_count.get() != 0)
+        {
+            shared.publish(self, None);
+        }
+    }
+    fn clear_timeline(&mut self, shared: &Shared) {
+        self.stop_timeline();
+        if let Some(old) = self.timeline.take() {
+            shared
+                .retired_timelines
+                .push(old)
+                .unwrap_or_else(|_| unreachable!("Bounded WonderSwan timeline retirement"));
+        }
+        self.timeline_cursor = timeline::Cursor::default();
+        self.timeline_token = 0;
+        self.timeline_ended = false;
+        self.timeline_cancelled = false;
+    }
+    fn stop_timeline(&mut self) {
+        if self.timeline_playing {
+            self.timeline_playing = false;
+            self.timeline_cancelled = true;
+            for channel in 0..4 {
+                self.release(channel);
+            }
+        }
+        self.timeline_owner = None;
+        self.timeline_group = None;
+    }
+    fn advance_timeline(&mut self) {
+        if !self.timeline_playing {
+            return;
+        }
+        loop {
+            let next = self
+                .timeline
+                .as_ref()
+                .and_then(|trace| self.timeline_cursor.next(trace, self.rate));
+            let Some((kind, address, value)) = next else {
+                break;
+            };
+            self.current_group = self.timeline_group;
+            if kind == 0 {
+                self.write(
+                    &Op::Write {
+                        address,
+                        value,
+                        channel: None,
+                        control_mask: None,
+                    },
+                    self.timeline_owner,
+                    None,
+                    false,
+                    false,
+                );
+            } else {
+                self.write(
+                    &Op::Memory {
+                        address,
+                        value,
+                        channel: None,
+                    },
+                    self.timeline_owner,
+                    None,
+                    false,
+                    false,
+                );
+                let count = self.timeline_dirty_count.get();
+                if count < self.timeline_dirty.len() {
+                    self.timeline_dirty[count].set(address as u16);
+                    self.timeline_dirty_count.set(count + 1);
+                } else {
+                    self.timeline_dirty_full.set(true);
+                }
+            }
+            self.current_group = None;
+        }
+        let trace = self.timeline.as_ref().unwrap();
+        if self.timeline_cursor.frame >= trace.output_frame(trace.duration, self.rate) {
+            self.timeline_playing = false;
+            self.timeline_ended = true;
+            for channel in 0..4 {
+                self.release(channel);
+            }
+            self.timeline_owner = None;
+            self.timeline_group = None;
+        } else {
+            self.timeline_cursor.frame += 1;
         }
     }
 }

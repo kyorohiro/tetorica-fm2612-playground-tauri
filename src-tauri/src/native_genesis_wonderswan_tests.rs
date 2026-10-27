@@ -131,3 +131,84 @@ fn wonderswan_primary_mixed_family_enqueue_fails_before_applied_register_change(
         0
     );
 }
+
+fn compact_trace() -> Value {
+    json!({"version":1,"clock":3072000,"durationSamples":20,
+        "events":[[0,0,0x91,8],[0,0,0x94,15],[0,0,0x90,34],[0,1,7,165],[0,2,0,6,3,4],[4,0,0x89,99]],
+        "pcmData":[0,10,2,20,2,30]})
+}
+#[test]
+fn wonderswan_primary_compact_timeline_matches_exact_sample_writes_at_both_rates() {
+    for rate in [44100, 48000] {
+        let a = Shared::new_modes(rate, 1, false, false, false, Some("wonderswan"));
+        let b = Shared::new_modes(rate, 1, false, false, false, Some("wonderswan"));
+        let mut ra = Renderer::new_modes(rate, false, false, false, Some("wonderswan")).unwrap();
+        let mut rb = Renderer::new_modes(rate, false, false, false, Some("wonderswan")).unwrap();
+        send(
+            &a,
+            vec![json!({"method":"prepare-timeline","trace":compact_trace()})],
+        );
+        render(&a, &mut ra, 1);
+        render(&b, &mut rb, 1);
+        a.enqueue(
+            1,
+            &[command(300, json!({"method":"play-timeline","token":8}))],
+        )
+        .unwrap();
+        let frame = |sample: u64| 300 + (sample * u64::from(rate)).div_ceil(44100);
+        let mut expected = vec![
+            command(300, write(0x91, 8)),
+            command(300, write(0x94, 15)),
+            command(300, write(0x90, 34)),
+            command(300, json!({"method":"memory","address":7,"value":165})),
+        ];
+        for (sample, value) in [(0, 10), (2, 20), (4, 30), (4, 99)] {
+            expected.push(command(frame(sample), write(0x89, value)));
+        }
+        expected.push(command(frame(20), write(0x90, 32)));
+        b.enqueue(1, &expected).unwrap();
+        let actual = render(&a, &mut ra, 1000);
+        let reference = render(&b, &mut rb, 1000);
+        assert_eq!(actual, reference, "compact PCM changed at {rate} Hz");
+        let state = a.wonderswan.as_ref().unwrap().status(0).unwrap().wonderswan;
+        assert_eq!(state.memory[7], 165);
+        assert_eq!(state.registers[9], 99);
+        assert!(state.timeline.ended);
+        assert!(!state.timeline.playing);
+        assert_eq!(state.timeline.token, 8);
+    }
+}
+#[test]
+fn wonderswan_primary_compact_timeline_owner_cancel_retires_future_play_and_active_pcm() {
+    let (s, mut r) = setup();
+    send(
+        &s,
+        vec![json!({"method":"prepare-timeline","trace":compact_trace(),"group":9})],
+    );
+    render(&s, &mut r, 1);
+    s.enqueue(
+        1,
+        &[
+            command(500, json!({"method":"play-timeline","token":1,"group":9})),
+            command(0, json!({"method":"stop-timeline","group":9})),
+        ],
+    )
+    .unwrap();
+    render(&s, &mut r, 600);
+    let state = s.wonderswan.as_ref().unwrap().status(0).unwrap().wonderswan;
+    assert_eq!(state.timeline.token, 0);
+    assert!(!state.timeline.playing);
+    assert_eq!(state.registers[16] & 15, 0);
+    s.performance("start", 7, None).unwrap();
+    let mut start = command(0, json!({"method":"play-timeline","token":2}));
+    start.performance = Some(7);
+    start.owner = Some(1);
+    s.enqueue(1, &[start]).unwrap();
+    render(&s, &mut r, 3);
+    s.performance("cancel-owner", 7, Some(1)).unwrap();
+    render(&s, &mut r, 1);
+    let state = s.wonderswan.as_ref().unwrap().status(0).unwrap().wonderswan;
+    assert!(state.timeline.cancelled);
+    assert!(!state.timeline.playing);
+    assert_eq!(state.registers[16] & 15, 0);
+}

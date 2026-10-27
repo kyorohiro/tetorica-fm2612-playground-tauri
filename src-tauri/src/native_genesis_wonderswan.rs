@@ -33,6 +33,12 @@ impl Shared {
     pub fn retire(&self, command: Arc<Prepared>) {
         self.inner.retire(command)
     }
+    pub fn valid_event(&self, command: &Prepared, sequence: u64, owner: Option<Owner>) -> bool {
+        self.inner.valid_event(command, sequence, owner)
+    }
+    pub fn commit_cancel(&self, command: &Prepared) -> bool {
+        self.inner.commit_cancel(command)
+    }
     pub fn status(&self, frame: u64) -> Result<Status, String> {
         let status = self.inner.status(frame)?;
         Ok(Status {

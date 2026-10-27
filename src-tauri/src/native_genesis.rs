@@ -1095,6 +1095,17 @@ impl Shared {
                 "Native RF5C164 upload limit reached (64 KiB per batch, 8 MiB pending)".into(),
             );
         }
+        let wonderswan_bytes: usize = commands
+            .iter()
+            .filter_map(|command| match &command.action {
+                CommandAction::WonderSwan { message }
+                | CommandAction::ExtraWonderSwan { message, .. } => Some(message.prepared_bytes()),
+                _ => None,
+            })
+            .sum();
+        if wonderswan_bytes > 8 * 1024 * 1024 {
+            return Err("Native WonderSwan pending command limit reached (8 MiB)".into());
+        }
         // Bound aggregate PC98 uploads before cloning into retained callback
         // commands. Individual uploads are additionally limited to 64 KiB.
         let ym2608_upload_bytes: usize = commands
@@ -1986,6 +1997,15 @@ impl Shared {
             }
         }
         for (action, _) in &actions {
+            if let Action::WonderSwan(command) = action {
+                if self
+                    .wonderswan
+                    .as_ref()
+                    .is_some_and(|state| state.commit_cancel(command))
+                {
+                    self.invalidation.fetch_add(1, Ordering::Release);
+                }
+            }
             if let Action::ExtraHuc6280(instance, command) = action {
                 if instance
                     .huc6280()
@@ -4502,6 +4522,10 @@ impl Shared {
                             .expect("HuC6280 action target")
                             .valid_event(command, event.sequence, event.owner)
                 }
+                Action::WonderSwan(command) => self
+                    .wonderswan
+                    .as_ref()
+                    .is_some_and(|state| state.valid_event(command, event.sequence, event.owner)),
                 Action::ExtraWonderSwan(instance, command) => {
                     instance.valid(self.epoch.load(Ordering::Acquire))
                         && instance

@@ -398,7 +398,7 @@ impl Payload {
             Self::Okim6258(v) => Arc::strong_count(v) == 1,
             Self::Gameboy(v) => Arc::strong_count(v) == 1,
             Self::Huc6280(v) => Arc::strong_count(v) == 1,
-            Self::WonderSwan(v) => Arc::strong_count(v) == 1,
+            Self::WonderSwan(v) => Arc::strong_count(v) == 1 && v.payload_unused(),
             Self::Dx7(v) => Arc::strong_count(v) == 1,
             Self::Pwm(v) => Arc::strong_count(v) == 1,
             Self::Snes(v) => Arc::strong_count(v) == 1,
@@ -1883,7 +1883,9 @@ impl Renderer {
                     (Core::Okim6258(core), _) => core.mix(pcm),
                     (Core::Gameboy(core), _) => core.mix(pcm),
                     (Core::Huc6280(core), _) => core.mix(pcm),
-                    (Core::WonderSwan(core), _) => core.mix(pcm),
+                    (Core::WonderSwan(core), State::WonderSwan(state)) => {
+                        core.mix_additional(pcm, state)
+                    }
                     (Core::Dx7(core), _) => core.mix(pcm),
                     (Core::Pwm(core), State::Pwm(state)) => core.mix_additional(pcm, state),
                     (Core::Snes(core), State::Snes(state)) => core.mix_additional(pcm, state),
