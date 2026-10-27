@@ -889,6 +889,223 @@ mod tests {
         assert!(shared.check_session(8).is_err());
     }
     #[test]
+    fn mega_cd_four_sources_sum_on_one_clock_and_keep_transport_and_global_stop_separate() {
+        use super::super::{Command, Renderer, Shared};
+        // Exercise the real Mega-CD callback, not four unrelated generators.
+        // Individual renderers establish that FM, PSG and PCM each contribute;
+        // a three-source renderer then isolates CD-DA's exact PCM addition.
+        fn commands(fm: bool, psg: bool, rf: bool) -> Vec<Command> {
+            let mut values = vec![serde_json::json!({
+                "frame":0,"type":"mix","gainUnits":"source",
+                "fmLeft":0.2,"fmRight":0.2,"psgLeft":0.15,"psgRight":0.15,"master":0.5,
+            })];
+            if fm {
+                for slot in [0u8, 4, 8, 12] {
+                    for (register, value) in [
+                        (0x30 + slot, 1),
+                        (0x40 + slot, if slot == 12 { 30 } else { 127 }),
+                        (0x50 + slot, 31),
+                        (0x60 + slot, 0),
+                        (0x70 + slot, 0),
+                        (0x80 + slot, 15),
+                    ] {
+                        values.push(serde_json::json!({"frame":0,"type":"write","port":0,"register":register,"value":value}));
+                    }
+                }
+                for (register, value) in [
+                    (0xb0, 7),
+                    (0xb4, 0xc0),
+                    (0xa4, 0x22),
+                    (0xa0, 0x84),
+                    (0x28, 0xf0),
+                ] {
+                    values.push(serde_json::json!({"frame":0,"type":"write","port":0,"register":register,"value":value}));
+                }
+            }
+            if psg {
+                for value in [0x8eu8, 0x0f, 0x9c] {
+                    values.push(serde_json::json!({"frame":0,"type":"psg-write","value":value}));
+                }
+            }
+            if rf {
+                let mut bytes: Vec<u8> = (0..128)
+                    .map(|i| {
+                        let value = (std::f64::consts::TAU * i as f64 / 128.0).sin();
+                        (value.abs() * 40.0).round() as u8 | if value >= 0.0 { 0x80 } else { 0 }
+                    })
+                    .collect();
+                bytes.extend([0xff; 32]);
+                values.push(serde_json::json!({"frame":0,"type":"rf5c164-load-memory","offset":0,"data":bytes}));
+                values.push(
+                    serde_json::json!({"frame":0,"type":"rf5c164-mix","left":0.2,"right":0.2}),
+                );
+                for (register, value) in [
+                    (7, 0xc0),
+                    (0, 100),
+                    (1, 0xff),
+                    (2, 0),
+                    (3, 8),
+                    (4, 0),
+                    (5, 0),
+                    (6, 0),
+                ] {
+                    values.push(serde_json::json!({"frame":0,"type":"rf5c164-write","register":register,"value":value}));
+                }
+                values.push(serde_json::json!({"frame":0,"type":"rf5c164-key-on","channel":0}));
+            }
+            values
+                .into_iter()
+                .map(|value| serde_json::from_value(value).unwrap())
+                .collect()
+        }
+        for rate in [44_100, 48_000] {
+            let shared = Shared::new_mode(rate, 21, true);
+            let reference = Shared::new_mode(rate, 22, true);
+            let isolated: Vec<_> = (0..3)
+                .map(|i| Shared::new_mode(rate, 30 + i, true))
+                .collect();
+            let mut actual = Renderer::new_mode(rate, true).unwrap();
+            let mut three = Renderer::new_mode(rate, true).unwrap();
+            let mut singles: Vec<_> = (0..3)
+                .map(|_| Renderer::new_mode(rate, true).unwrap())
+                .collect();
+            shared.enqueue(21, &commands(true, true, true)).unwrap();
+            reference.enqueue(22, &commands(true, true, true)).unwrap();
+            for (i, state) in isolated.iter().enumerate() {
+                state
+                    .enqueue(30 + i as u64, &commands(i == 0, i == 1, i == 2))
+                    .unwrap();
+            }
+            let data: Vec<u8> = (0..10_000)
+                .flat_map(|_| [4096i16.to_le_bytes(), (-2048i16).to_le_bytes()].concat())
+                .collect();
+            let upload = shared
+                .cdda
+                .store
+                .lock()
+                .unwrap()
+                .begin(0, data.len(), "original-four-source".into())
+                .unwrap()
+                .upload;
+            shared
+                .cdda
+                .store
+                .lock()
+                .unwrap()
+                .chunk(0, upload, 0, &data)
+                .unwrap();
+            shared.cdda_finalize(upload).unwrap();
+            shared
+                .cdda_action(1024, Control::Play { source_frame: 0 })
+                .unwrap();
+            shared
+                .cdda_action(
+                    1536,
+                    Control::Mix {
+                        volume: 1.0,
+                        mute: true,
+                        pan: 0.0,
+                    },
+                )
+                .unwrap();
+            shared
+                .cdda_action(
+                    2048,
+                    Control::Mix {
+                        volume: 0.5,
+                        mute: false,
+                        pan: 0.0,
+                    },
+                )
+                .unwrap();
+            shared.cdda_action(2560, Control::Stop).unwrap();
+            actual.prepare(&shared);
+            three.prepare(&reference);
+            for (renderer, state) in singles.iter_mut().zip(&isolated) {
+                renderer.prepare(state);
+            }
+            let mut energies = [0.0f64; 3];
+            let mut peak = 0.0f32;
+            for frame in 0..3500 {
+                let a = actual.sample(&shared);
+                let b = three.sample(&reference);
+                let mut sum = [0.0f32; 2];
+                for (i, (renderer, state)) in singles.iter_mut().zip(&isolated).enumerate() {
+                    let single = renderer.sample(state);
+                    for channel in 0..2 {
+                        sum[channel] += single[channel];
+                    }
+                    if frame >= 1024 {
+                        energies[i] += single[0] as f64 * single[0] as f64;
+                    }
+                }
+                // Native master is applied once after every source is mixed.
+                let gain = if (1024..1536).contains(&frame) {
+                    1.0
+                } else if (2048..2560).contains(&frame) {
+                    0.5
+                } else {
+                    0.0
+                };
+                let addition = [0.125 * gain * 0.5, -0.0625 * gain * 0.5];
+                for channel in 0..2 {
+                    assert!(
+                        (b[channel] - sum[channel]).abs() < 2e-6,
+                        "three-source sum {rate}/{frame}/{channel}"
+                    );
+                    assert!(
+                        (a[channel] - b[channel] - addition[channel]).abs() < 2e-6,
+                        "four-source sum, CD-DA mute/Stop {rate}/{frame}/{channel}: {a:?} vs {b:?}"
+                    );
+                    assert!(a[channel].is_finite());
+                    peak = peak.max(a[channel].abs());
+                }
+            }
+            assert!(
+                energies.iter().all(|energy| *energy > 1e-5),
+                "each real chip must sound: {energies:?}"
+            );
+            assert!(
+                peak > 0.03 && peak < 0.75,
+                "four-source signal has headroom: {peak}"
+            );
+            actual.publish_primary(&shared);
+            let status = shared.cdda.status(rate).unwrap();
+            assert_eq!(status.state, "ready");
+            assert!(status.loaded);
+            assert_eq!(status.position_frames, 0);
+            assert_eq!(status.output_frame, 3500);
+            assert_eq!(status.volume, 0.5);
+            assert!(!status.mute);
+            let rf =
+                serde_json::to_value(shared.rf5c164.status(rate, actual.frame).unwrap()).unwrap();
+            assert_eq!(
+                rf["channels"][0]["active"], true,
+                "CD-DA Stop preserves PCM"
+            );
+            // Model Runtime Stop's existing epoch barrier; a future CD-DA
+            // start cannot wake the cleared bus after all four sources fade.
+            shared
+                .cdda_action(4000, Control::Play { source_frame: 0 })
+                .unwrap();
+            shared.epoch.fetch_add(1, Ordering::AcqRel);
+            shared.cdda.store.lock().unwrap().invalidate();
+            actual.prepare(&shared);
+            for _ in 0..rate / 10 {
+                actual.sample(&shared);
+            }
+            assert!((0..1024).all(|_| actual.sample(&shared) == [0.0; 2]));
+            actual.publish_primary(&shared);
+            assert!(!shared.cdda.status(rate).unwrap().loaded);
+            assert_eq!(shared.stopped_epoch.load(Ordering::Acquire), 1);
+            assert_eq!(shared.pending.load(Ordering::Acquire), 0);
+            let rf =
+                serde_json::to_value(shared.rf5c164.status(rate, actual.frame).unwrap()).unwrap();
+            assert_eq!(rf["mask"], 255, "global Stop releases every PCM voice");
+            eprintln!("Mega-CD {rate}: four-source peak={peak:.8}, isolated FM/PSG/RF energies={energies:?}; CD-DA mute/Stop preserved chips, global Stop exact zero");
+        }
+    }
+    #[test]
     fn native_stop_invalidates_uploads_and_queued_starts_and_releases_sources_off_callback() {
         let shared = super::super::Shared::new(48_000, 1);
         let mut renderer = super::super::Renderer::new(48_000).unwrap();
