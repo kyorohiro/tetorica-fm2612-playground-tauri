@@ -83,6 +83,23 @@ fn native_dx7_sources() -> (std::path::PathBuf, Vec<std::path::PathBuf>) {
 }
 
 fn main() {
+    // Application-owned CD-DA transport, shared verbatim with the Web worklet.
+    println!("cargo:rerun-if-changed=native-cdda");
+    cc::Build::new()
+        .file("native-cdda/cdda_pcm.c")
+        .include("native-cdda")
+        .std("c11")
+        .warnings(true)
+        .compile("tetorica_native_cdda");
+    println!("cargo:rerun-if-changed=native-msm5205");
+    println!("cargo:rerun-if-changed=src/native_genesis_msm5205_fixture.c");
+    cc::Build::new()
+        .file("native-msm5205/msm5205_pcm.c")
+        .file("src/native_genesis_msm5205_fixture.c")
+        .include("native-msm5205")
+        .std("c11")
+        .warnings(true)
+        .compile("tetorica_native_msm5205");
     // Native C++ wrappers catch allocation failures before returning across Rust FFI.
     // Enable standard exception unwinding for all MSVC C++ translation units.
     println!("cargo:rerun-if-changed=native-genesis");
