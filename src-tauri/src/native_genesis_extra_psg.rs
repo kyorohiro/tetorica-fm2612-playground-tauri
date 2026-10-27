@@ -1501,6 +1501,7 @@ impl Default for Renderer {
 }
 impl Renderer {
     pub fn install_at(&mut self, instance: Arc<Instance>, frame: u64) {
+        unsafe {if let Core::Pokey(core)=instance.callback_core(){core.set_frame(frame);}}
         unsafe {
             if let Core::Pwm(core) = instance.callback_core() {
                 core.set_frame(frame);
@@ -1938,7 +1939,7 @@ impl Renderer {
                     (Core::Okim6258(core), _) => core.mix(pcm),
                     (Core::Gameboy(core), _) => core.mix(pcm),
                     (Core::Huc6280(core), _) => core.mix(pcm),
-                    (Core::Pokey(core), _) => core.mix(pcm),
+                    (Core::Pokey(core), State::Pokey(state)) => core.mix_additional(pcm,state),
                     (Core::WonderSwan(core), State::WonderSwan(state)) => {
                         core.mix_additional(pcm, state)
                     }

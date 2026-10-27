@@ -12,6 +12,11 @@ use std::{
     },
 };
 
+#[path = "native_genesis_pokey_timeline.rs"]
+mod timeline;
+pub const TIMELINE_BUSY: &str = "Native POKEY timeline is playing or pending";
+pub const TIMELINE_HELD: &str =
+    "Release the manually held POKEY voices before replacing or playing a timeline";
 pub const CLOCK: u32 = 1_789_790;
 const BATCH: usize = 512;
 const PENDING_BYTES: usize = 8 * 1024 * 1024;
@@ -58,6 +63,15 @@ pub enum Method {
         channel: u8,
     },
     Reset,
+    PrepareTimeline {
+        trace: timeline::Input,
+    },
+    PlayTimeline {
+        token: u64,
+        #[serde(rename = "startFrame")]
+        start_frame: Option<u64>,
+    },
+    StopTimeline,
     Barrier,
     SetRetainedLevel {
         channel: u8,
@@ -113,6 +127,9 @@ pub enum LeaseAction {
 enum Edit {
     Op(Op),
     Reset,
+    PrepareTimeline(Arc<timeline::Timeline>),
+    PlayTimeline(u64, Option<u64>),
+    StopTimeline,
     Barrier,
     SetRetainedLevel(u8, u8),
     ChannelMute(u8, bool),
@@ -134,6 +151,11 @@ pub struct Prepared {
     cancelled: AtomicBool,
     clock_rejected: AtomicBool,
     fixed_clock_rejected: AtomicBool,
+    timeline_rejected: AtomicBool,
+    timeline_held: AtomicBool,
+    timeline_late: AtomicBool,
+    timeline_range: AtomicBool,
+    timeline_reserved: AtomicBool,
 }
 fn valid_id(id: Option<u64>) -> bool {
     id.is_none_or(|id| id > 0 && id <= MAX_SAFE_INTEGER)
@@ -164,6 +186,8 @@ impl Message {
         std::mem::size_of::<Prepared>()
             + if let Method::Batch { commands, .. } = &self.method {
                 commands.len() * std::mem::size_of::<Op>()
+            } else if let Method::PrepareTimeline { trace } = &self.method {
+                trace.bytes()
             } else {
                 0
             }
@@ -184,6 +208,16 @@ impl Message {
             }),
             Method::KeyOff { channel } => Edit::Op(Op::KeyOff { channel: *channel }),
             Method::Reset => Edit::Reset,
+            Method::PrepareTimeline { trace } => Edit::PrepareTimeline(Arc::new(trace.prepare()?)),
+            Method::PlayTimeline { token, start_frame } => {
+                if !valid_id(Some(*token))
+                    || start_frame.is_some_and(|frame| frame > MAX_SAFE_INTEGER)
+                {
+                    return Err("Invalid Native POKEY timeline start".into());
+                }
+                Edit::PlayTimeline(*token, *start_frame)
+            }
+            Method::StopTimeline => Edit::StopTimeline,
             Method::Barrier => Edit::Barrier,
             Method::SetRetainedLevel { channel, level } => {
                 if *channel > 3 || *level > 15 {
@@ -268,6 +302,11 @@ impl Message {
             cancelled: AtomicBool::new(false),
             clock_rejected: AtomicBool::new(false),
             fixed_clock_rejected: AtomicBool::new(false),
+            timeline_rejected: AtomicBool::new(false),
+            timeline_held: AtomicBool::new(false),
+            timeline_late: AtomicBool::new(false),
+            timeline_range: AtomicBool::new(false),
+            timeline_reserved: AtomicBool::new(false),
         }))
     }
 }
@@ -278,21 +317,27 @@ impl Prepared {
         self.cancelled.load(Ordering::Acquire) as u8
             | ((self.clock_rejected.load(Ordering::Acquire) as u8) << 1)
             | ((self.fixed_clock_rejected.load(Ordering::Acquire) as u8) << 2)
+            | ((self.timeline_rejected.load(Ordering::Acquire) as u8) << 3)
+            | ((self.timeline_held.load(Ordering::Acquire) as u8) << 4)
+            | ((self.timeline_late.load(Ordering::Acquire) as u8) << 5)
+            | ((self.timeline_range.load(Ordering::Acquire) as u8) << 6)
     }
     pub fn is_owner_cancel(&self) -> bool {
         matches!(self.edit, Edit::CancelMainOwner(_))
     }
     pub fn starts(&self) -> bool {
-        matches!(self.edit, Edit::Op(_))
+        matches!(self.edit, Edit::Op(_) | Edit::PlayTimeline(..))
             || matches!(self.edit,Edit::Batch(_,_,_,action)if action!=LeaseAction::Off)
     }
     pub fn stops(&self) -> bool {
-        matches!(self.edit, Edit::Stop) && self.group.is_none()
+        matches!(self.edit, Edit::Stop | Edit::StopTimeline) && self.group.is_none()
     }
     pub fn retained_bytes(&self) -> usize {
         std::mem::size_of::<Self>()
             + if let Edit::Batch(ops, ..) = &self.edit {
                 ops.capacity() * std::mem::size_of::<Op>()
+            } else if let Edit::PrepareTimeline(trace) = &self.edit {
+                trace.bytes()
             } else {
                 0
             }
@@ -322,6 +367,14 @@ fn outcome(flags: u8) -> Result<(), String> {
         Err("Native POKEY command was cancelled before it applied".into())
     } else if flags & 4 != 0 {
         Err("Create a new POKEY instance to change its clock".into())
+    } else if flags & 64 != 0 {
+        Err("Native POKEY timeline start frame is invalid or late".into())
+    } else if flags & 32 != 0 {
+        Err("Native POKEY timeline startFrame is in the past".into())
+    } else if flags & 16 != 0 {
+        Err(TIMELINE_HELD.into())
+    } else if flags & 8 != 0 {
+        Err(TIMELINE_BUSY.into())
     } else if flags & 2 != 0 {
         Err(CLOCK_HELD.into())
     } else {
@@ -337,6 +390,17 @@ pub struct Shared {
     rate: AtomicU32,
     mute: AtomicU8,
     held: AtomicU8,
+    pending_timelines: AtomicU32,
+    timeline_loaded: AtomicBool,
+    timeline_playing: AtomicBool,
+    timeline_ended: AtomicBool,
+    timeline_cancelled: AtomicBool,
+    timeline_position: AtomicU64,
+    timeline_duration: AtomicU64,
+    timeline_token: AtomicU64,
+    timeline_start: AtomicU64,
+    timeline_bytes: AtomicU64,
+    retired_timelines: ArrayQueue<Arc<timeline::Timeline>>,
     control: Mutex<Control>,
     retired: ArrayQueue<Arc<Prepared>>,
     highest_id: AtomicU64,
@@ -354,6 +418,17 @@ impl Default for Shared {
             rate: AtomicU32::new(0),
             mute: AtomicU8::new(0),
             held: AtomicU8::new(0),
+            pending_timelines: AtomicU32::new(0),
+            timeline_loaded: AtomicBool::new(false),
+            timeline_playing: AtomicBool::new(false),
+            timeline_ended: AtomicBool::new(false),
+            timeline_cancelled: AtomicBool::new(false),
+            timeline_position: AtomicU64::new(0),
+            timeline_duration: AtomicU64::new(0),
+            timeline_token: AtomicU64::new(0),
+            timeline_start: AtomicU64::new(0),
+            timeline_bytes: AtomicU64::new(0),
+            retired_timelines: ArrayQueue::new(256),
             control: Mutex::new(Control::default()),
             retired: ArrayQueue::new(CAPACITY),
             highest_id: AtomicU64::new(0),
@@ -361,6 +436,18 @@ impl Default for Shared {
             owner_cancel_before: std::array::from_fn(|_| AtomicU64::new(0)),
         }
     }
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineStatus {
+    pub loaded: bool,
+    pub playing: bool,
+    pub ended: bool,
+    pub cancelled: bool,
+    pub position_samples: u64,
+    pub duration_samples: u64,
+    pub token: u64,
+    pub start_frame: u64,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -373,6 +460,8 @@ pub struct ChipStatus {
     pub levels: Vec<u8>,
     pub initialized: bool,
     pub pending_commands: Vec<u64>,
+    pub pending_timelines: u32,
+    pub timeline: TimelineStatus,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -384,7 +473,14 @@ pub struct Status {
 }
 impl Shared {
     pub fn prepare_message(&self, m: &Message) -> Result<Arc<Prepared>, String> {
-        m.prepare()
+        let prepared = m.prepare()?;
+        if let Edit::PrepareTimeline(trace) = &prepared.edit {
+            if trace.clock != self.clock() {
+                return Err("Create a new POKEY instance to change its clock".into());
+            }
+            trace.validate_density(self.rate.load(Ordering::Acquire))?;
+        }
+        Ok(prepared)
     }
     pub fn clock(&self) -> u32 {
         self.clock.load(Ordering::Acquire)
@@ -405,6 +501,7 @@ impl Shared {
     }
     fn collect(&self, c: &mut Control) {
         while self.retired.pop().is_some() {}
+        while self.retired_timelines.pop().is_some() {}
         let Control {
             prepared,
             outcomes,
@@ -438,6 +535,38 @@ impl Shared {
             .lock()
             .map_err(|_| "Native POKEY control unavailable")?;
         self.collect(&mut c);
+        if commands
+            .iter()
+            .any(|(v, _)| matches!(v.edit, Edit::PrepareTimeline(_) | Edit::PlayTimeline(..)))
+            && self.held.load(Ordering::Acquire) != 0
+        {
+            return Err(TIMELINE_HELD.into());
+        }
+        if self.timeline_playing.load(Ordering::Acquire)
+            && commands.iter().any(|(v, _)| {
+                matches!(
+                    v.edit,
+                    Edit::PrepareTimeline(_)
+                        | Edit::PlayTimeline(..)
+                        | Edit::Op(_)
+                        | Edit::Batch(..)
+                )
+            })
+        {
+            return Err(TIMELINE_BUSY.into());
+        }
+        if c.prepared
+            .iter()
+            .filter(|v| matches!(v.edit, Edit::PrepareTimeline(_)))
+            .count()
+            + commands
+                .iter()
+                .filter(|(v, _)| matches!(v.edit, Edit::PrepareTimeline(_)))
+                .count()
+            > 256
+        {
+            return Err("Native POKEY timeline preparation queue is full".into());
+        }
         if self.held.load(Ordering::Acquire) != 0
             && commands
                 .iter()
@@ -451,6 +580,7 @@ impl Shared {
                     .iter()
                     .map(|(v, _)| v.retained_bytes())
                     .sum::<usize>()
+                + self.timeline_bytes.load(Ordering::Acquire) as usize
                 > PENDING_BYTES
         {
             return Err("Native POKEY pending command limit reached (8 MiB)".into());
@@ -464,6 +594,11 @@ impl Shared {
         for (v, _) in commands {
             if let Some(id) = v.id {
                 self.highest_id.fetch_max(id, Ordering::AcqRel);
+            }
+            if matches!(v.edit, Edit::PrepareTimeline(_) | Edit::PlayTimeline(..))
+                && !v.timeline_reserved.swap(true, Ordering::AcqRel)
+            {
+                self.pending_timelines.fetch_add(1, Ordering::AcqRel);
             }
             c.prepared.push(v.clone())
         }
@@ -522,6 +657,9 @@ impl Shared {
         if !v.complete.load(Ordering::Acquire) {
             v.cancelled.store(true, Ordering::Release)
         }
+        if v.timeline_reserved.swap(false, Ordering::AcqRel) {
+            self.pending_timelines.fetch_sub(1, Ordering::AcqRel);
+        }
         v.complete.store(true, Ordering::Release);
         v.retired.store(true, Ordering::Release);
         self.retired
@@ -545,6 +683,38 @@ impl Shared {
         self.mute.store(renderer.mute, Ordering::Relaxed);
         self.held
             .store(renderer.manual_mask(None, false), Ordering::Relaxed);
+        self.timeline_loaded
+            .store(renderer.timeline.is_some(), Ordering::Relaxed);
+        self.timeline_playing
+            .store(renderer.timeline_playing, Ordering::Relaxed);
+        self.timeline_ended
+            .store(renderer.timeline_ended, Ordering::Relaxed);
+        self.timeline_cancelled
+            .store(renderer.timeline_cancelled, Ordering::Relaxed);
+        self.timeline_position.store(
+            (renderer.timeline_cursor.frame * 44100 / u64::from(renderer.rate)).min(
+                renderer
+                    .timeline
+                    .as_ref()
+                    .map_or(0, |t| u64::from(t.duration)),
+            ),
+            Ordering::Relaxed,
+        );
+        self.timeline_duration.store(
+            renderer
+                .timeline
+                .as_ref()
+                .map_or(0, |t| u64::from(t.duration)),
+            Ordering::Relaxed,
+        );
+        self.timeline_token
+            .store(renderer.timeline_token, Ordering::Relaxed);
+        self.timeline_start
+            .store(renderer.timeline_start, Ordering::Relaxed);
+        self.timeline_bytes.store(
+            renderer.timeline.as_ref().map_or(0, |t| t.bytes() as u64),
+            Ordering::Relaxed,
+        );
         if let Some(command) = command {
             command.complete.store(true, Ordering::Release);
         }
@@ -592,6 +762,17 @@ impl Shared {
                         .map(|v| v.load(Ordering::Relaxed))
                         .collect(),
                     initialized: true,
+                    pending_timelines: self.pending_timelines.load(Ordering::Relaxed),
+                    timeline: TimelineStatus {
+                        loaded: self.timeline_loaded.load(Ordering::Relaxed),
+                        playing: self.timeline_playing.load(Ordering::Relaxed),
+                        ended: self.timeline_ended.load(Ordering::Relaxed),
+                        cancelled: self.timeline_cancelled.load(Ordering::Relaxed),
+                        position_samples: self.timeline_position.load(Ordering::Relaxed),
+                        duration_samples: self.timeline_duration.load(Ordering::Relaxed),
+                        token: self.timeline_token.load(Ordering::Relaxed),
+                        start_frame: self.timeline_start.load(Ordering::Relaxed),
+                    },
                     pending_commands: registry
                         .prepared
                         .iter()
@@ -624,6 +805,17 @@ pub struct Renderer {
     targets: [f32; 2],
     ramp: u32,
     rate: u32,
+    frame: u64,
+    timeline: Option<Arc<timeline::Timeline>>,
+    timeline_cursor: timeline::Cursor,
+    timeline_playing: bool,
+    timeline_started: bool,
+    timeline_ended: bool,
+    timeline_cancelled: bool,
+    timeline_token: u64,
+    timeline_start: u64,
+    timeline_owner: Option<Owner>,
+    timeline_group: Option<u64>,
 }
 unsafe impl Send for Renderer {}
 impl Drop for Renderer {
@@ -646,7 +838,21 @@ impl Renderer {
             targets: [1.0; 2],
             ramp: 0,
             rate,
+            frame: 0,
+            timeline: None,
+            timeline_cursor: timeline::Cursor::default(),
+            timeline_playing: false,
+            timeline_started: false,
+            timeline_ended: false,
+            timeline_cancelled: false,
+            timeline_token: 0,
+            timeline_start: 0,
+            timeline_owner: None,
+            timeline_group: None,
         })
+    }
+    pub fn set_frame(&mut self, frame: u64) {
+        self.frame = frame;
     }
     fn state(&self) -> CoreState {
         let mut state = CoreState::default();
@@ -752,6 +958,28 @@ impl Renderer {
         }
     }
     pub fn apply(&mut self, command: &Prepared, owner: Option<Owner>, shared: &Shared) {
+        if matches!(
+            command.edit,
+            Edit::PrepareTimeline(_) | Edit::PlayTimeline(..)
+        ) && self.manual_mask(None, false) != 0
+        {
+            command.timeline_held.store(true, Ordering::Release);
+            shared.publish(self, Some(command));
+            return;
+        }
+        if self.timeline_playing
+            && matches!(
+                command.edit,
+                Edit::PrepareTimeline(_) | Edit::PlayTimeline(..) | Edit::Op(_) | Edit::Batch(..)
+            )
+            || command.audition
+                && matches!(command.edit, Edit::Batch(_, _, _, LeaseAction::On))
+                && shared.pending_timelines.load(Ordering::Acquire) != 0
+        {
+            command.timeline_rejected.store(true, Ordering::Release);
+            shared.publish(self, Some(command));
+            return;
+        }
         if !command.audition
             && matches!(command.edit, Edit::Clock(_))
             && self.manual_mask(None, false) != 0
@@ -764,6 +992,7 @@ impl Renderer {
         match &command.edit {
             Edit::Op(op) => self.write(op, owner, None, command.audition, false),
             Edit::Reset if self.manual_mask(None, command.audition) == 0 => {
+                self.clear_timeline(shared);
                 unsafe { native_pokey_reset(self.ptr) }
                 self.owners.fill(None);
                 self.mute = 0;
@@ -786,6 +1015,9 @@ impl Renderer {
                 self.mute = *mask;
             }
             Edit::CancelMainOwner(target) => {
+                if self.timeline_group == Some(*target) {
+                    self.stop_timeline();
+                }
                 for ch in 0..4 {
                     if self.owners[ch].is_some_and(|l| !l.audition && l.group == Some(*target)) {
                         self.release(ch)
@@ -793,6 +1025,11 @@ impl Renderer {
                 }
             }
             Edit::Stop => {
+                if (owner.is_none() || self.timeline_owner == owner)
+                    && (command.group.is_none() || self.timeline_group == command.group)
+                {
+                    self.stop_timeline();
+                }
                 if owner.is_none()
                     && command.group.is_none()
                     && (command.audition || self.manual_mask(None, false) == 0)
@@ -809,6 +1046,48 @@ impl Renderer {
                             self.release(ch)
                         }
                     }
+                }
+            }
+            Edit::PrepareTimeline(trace) => {
+                self.clear_timeline(shared);
+                self.timeline = Some(trace.clone());
+            }
+            Edit::PlayTimeline(token, start) => {
+                if self.timeline.is_none() {
+                    command.timeline_rejected.store(true, Ordering::Release);
+                } else if start.is_some_and(|f| f < self.frame) {
+                    command.timeline_late.store(true, Ordering::Release);
+                } else if self.timeline.as_ref().is_some_and(|trace| {
+                    start
+                        .unwrap_or(self.frame)
+                        .checked_add(trace.output_frame(trace.duration, self.rate))
+                        .is_none_or(|end| end > MAX_SAFE_INTEGER)
+                }) {
+                    command.timeline_range.store(true, Ordering::Release);
+                } else {
+                    // Admission silences the previous score immediately. The
+                    // new score still receives a fresh core/speaker reset at
+                    // its exact start frame, with the monitor mutes retained.
+                    unsafe {
+                        native_pokey_stop(self.ptr);
+                    }
+                    self.owners.fill(None);
+                    self.timeline_started = false;
+                    self.timeline_cursor = timeline::Cursor::default();
+                    self.timeline_playing = true;
+                    self.timeline_ended = false;
+                    self.timeline_cancelled = false;
+                    self.timeline_token = *token;
+                    self.timeline_start = start.unwrap_or(self.frame);
+                    self.timeline_owner = owner;
+                    self.timeline_group = command.group;
+                }
+            }
+            Edit::StopTimeline => {
+                if (owner.is_none() || self.timeline_owner == owner)
+                    && (command.group.is_none() || self.timeline_group == command.group)
+                {
+                    self.stop_timeline();
                 }
             }
             Edit::Clock(hz) => {
@@ -878,6 +1157,10 @@ impl Renderer {
     }
     pub fn cancel_invalid(&mut self, valid: impl Fn(Option<Owner>) -> bool, shared: &Shared) {
         let mut changed = false;
+        if self.timeline_playing && !valid(self.timeline_owner) {
+            self.stop_timeline();
+            changed = true;
+        }
         for ch in 0..4 {
             if self.owners[ch].is_some_and(|l| !valid(l.owner)) {
                 self.release(ch);
@@ -886,6 +1169,90 @@ impl Renderer {
         }
         if changed {
             shared.publish(self, None);
+        }
+    }
+    pub fn mix_additional(&mut self, pcm: &mut [f32; 2], shared: &Shared) {
+        let was_playing = self.timeline_playing;
+        self.advance_timeline();
+        self.mix(pcm);
+        self.frame += 1;
+        if was_playing && (!self.timeline_playing || self.frame % 128 == 0) {
+            shared.publish(self, None);
+        }
+    }
+    fn clear_timeline(&mut self, shared: &Shared) {
+        self.stop_timeline();
+        if let Some(old) = self.timeline.take() {
+            shared
+                .retired_timelines
+                .push(old)
+                .unwrap_or_else(|_| unreachable!("Bounded POKEY timeline retirement"));
+        }
+        self.timeline_cursor = timeline::Cursor::default();
+        self.timeline_token = 0;
+        self.timeline_ended = false;
+        self.timeline_cancelled = false;
+    }
+    fn stop_timeline(&mut self) {
+        if self.timeline_playing {
+            self.timeline_playing = false;
+            self.timeline_cancelled = true;
+            for ch in 0..4 {
+                self.release(ch);
+            }
+        }
+        self.timeline_owner = None;
+        self.timeline_group = None;
+    }
+    fn advance_timeline(&mut self) {
+        if !self.timeline_playing || self.frame < self.timeline_start {
+            return;
+        }
+        if !self.timeline_started {
+            unsafe {
+                native_pokey_reset(self.ptr);
+                native_pokey_set_mute_mask(self.ptr, self.mute as u32);
+            }
+            self.owners.fill(None);
+            self.timeline_started = true;
+        }
+        loop {
+            let next = self
+                .timeline
+                .as_ref()
+                .and_then(|t| self.timeline_cursor.next(t, self.rate));
+            let Some((register, value)) = next else {
+                break;
+            };
+            self.current_group = self.timeline_group;
+            self.write(
+                &Op::Write {
+                    register,
+                    value,
+                    channel: None,
+                },
+                self.timeline_owner,
+                None,
+                false,
+                false,
+            );
+            self.current_group = None;
+        }
+        if self.timeline_cursor.frame
+            >= self
+                .timeline
+                .as_ref()
+                .map_or(0, |t| t.output_frame(t.duration, self.rate))
+        {
+            self.timeline_playing = false;
+            self.timeline_ended = true;
+            for ch in 0..4 {
+                self.release(ch);
+            }
+            self.timeline_owner = None;
+            self.timeline_group = None;
+        } else {
+            self.timeline_cursor.frame += 1;
         }
     }
     pub fn mix(&mut self, pcm: &mut [f32; 2]) {
