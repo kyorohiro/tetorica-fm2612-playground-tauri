@@ -1,8 +1,8 @@
-# Native SDKの取り込み — CD-DA／MSM5205／POKEY／OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280／Game Boy／WonderSwan／NES＋FDS／DX7／SNES／SPC／Nuked YM2612
+# Native SDKの取り込み — PS1 SPU／CD-DA／MSM5205／POKEY／OPN系／YM2151／OKIM6258／YM2413／OPL系／AY／Sega PSG／RF5C164／32X PWM／HuC6280／Game Boy／WonderSwan／NES＋FDS／DX7／SNES／SPC／Nuked YM2612
 
 Tauriは、固定した`tetorica-soundchip-native`のソース配布をリポジトリ内へ同梱して
 YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、NES＋FDS、DX7、SNES／SPCと
-OPL系4種類（YM3526／YM3812／YMF262／Y8950）、WonderSwan、代替Nuked YM2612をビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
+OPL系4種類（YM3526／YM3812／YMF262／Y8950）、WonderSwan、代替Nuked YM2612とPS1 SPUをビルドします。通常のcheckoutに必要な音源ソースが含まれ、SDKの別checkoutや
 submodule、ビルド中のGitHub取得を必要としません。
 この手順書は最初のYM2612移行時のファイル名を保持し、その後の音源の移行も記録しています。
 
@@ -10,15 +10,17 @@ submodule、ビルド中のGitHub取得を必要としません。
 
 | 項目 | 値 |
 | --- | --- |
-| SDK版 | `0.1.5` |
-| ソース配布 | `tetorica-soundchip-native-0.1.5-sources.zip` |
-| 配布ZIPのSHA-256 | `e37be75316a35a4159d8760afa9e4b86a9a4b8d4d24f674cc15e3e5e52c44309` |
-| SDKの元コミット | `3bb8d9ceffa50ad183d1ab856e031fe649425bca` |
+| SDK版 | `0.1.6` |
+| ソース配布 | `tetorica-soundchip-native-0.1.6-sources.zip` |
+| 公開先 | [SDK v0.1.6](https://github.com/kyorohiro/tetorica-soundchip-native/releases/tag/v0.1.6) |
+| 配布ZIPのSHA-256 | `2e6126935756c517d10cc6849977fb0132387e7abf6160185c341ea67b4fcc17` |
+| 配布manifestのSHA-256 | `e0a86268aaa3dbbb2bf0567bf2a11925bf8da785b846b58ea4b8f71d280adfeb` |
+| SDKの元コミット | `ba2a52943f0ac43b02b57f07b48ffb8b3ccb54f6` |
 | 同梱先 | `src-tauri/vendor/tetorica-soundchip-native/` |
 | Tauri側の取り込み記録 | `src-tauri/soundchip-sdk.json` |
 
 取り込み記録は`schemaVersion: 1`で、`name`、`version`、`sourceCommit`、`archiveName`、
-`archiveSha256`、`manifestSha256`、`fileCount`を保存します。現在の同梱数は431ファイルです。
+`archiveSha256`、`manifestSha256`、`fileCount`を保存します。現在の同梱数は455ファイルです。
 `sourceCommit`は取り込み時に指定する由来の記録で、コミット署名や配布物の署名を検証したものではありません。
 取り込み時に期待するZIPのSHA-256を検証し、SDKマニフェストと各ファイルのサイズ／SHA-256を照合します。
 `--check`は元ZIPやネットワークを使わず、同梱マニフェストのハッシュと全ファイルを記録に照合します。
@@ -37,6 +39,7 @@ SDK `0.1.4`にはWonderSwanのraw C++コアとWASM bridgeも含まれます。
 
 | 用途 | SDK内のパス |
 | --- | --- |
+| 選択中／独立追加PS1 SPUに共通のinstrumentコア | `vendor/mame-ps1-spu/`の`ps1_spu.cpp`、`spu.cpp`、`spu_tables.cpp`、`spureverb.cpp`と対応ヘッダー |
 | Genesis主音源のYM2612接続 | `wasm/ym2612_wasm.cpp` |
 | Genesis Nuked／32X Nukedと独立追加Nuked YM2612の接続 | `native/reference/tauri/native_genesis_nuked.cpp`と`.inc`、`native_genesis_ym2612.h` |
 | NukedのBrowser共通C wrapperとコア | `wasm/nuked_opn2_wasm.c`、`vendor/nuked-opn2/ym3438.c`と対応ヘッダー |
@@ -84,7 +87,7 @@ SDKのOPN providerがymfmのOPN実装と明示的なテンプレート実体化�
 
 YM2203とYM2608は、それぞれ選択中のPC-98音源と追加生成の両方で、同じSDK側のNative接続を使います。
 Neo Geoも選択中／追加音源のYM2610（FM 4CH）とYM2610B（FM 6CH）が一つのSDK接続を共有し、生成時に変種を選択します。
-これらの先行移行は同梱済みのSDK `0.1.0`へ参照を切り替えました。Nuked単体ターゲットを追加した`0.1.1`、Sega PSGを独立フォルダーへ分離した`0.1.2`を経て、現在はPOKEYとCD-DA／MSM5205も収録した公開済み`0.1.5`を固定し、既存音源の音声計算を保持しています。
+これらの先行移行は同梱済みのSDK `0.1.0`へ参照を切り替えました。Nuked単体ターゲットを追加した`0.1.1`、Sega PSGを独立フォルダーへ分離した`0.1.2`を経て、現在はPOKEY、CD-DA／MSM5205とPS1 SPUも収録した公開版`0.1.6`を固定し、既存音源の音声計算を保持しています。
 共有OPN／SSG／ADPCMはYM2612移行時からSDK側のものを一度だけ組み込んでおり、
 個別の移行用にもう一つ追加しません。既存のarchive順序を維持します。
 
@@ -314,9 +317,9 @@ SDKを更新するときだけ、検証したソースZIPを明示して取り�
 
 ```sh
 python3 scripts/import_soundchip_sdk.py \
-  --archive /path/to/tetorica-soundchip-native-0.1.5-sources.zip \
-  --sha256 e37be75316a35a4159d8760afa9e4b86a9a4b8d4d24f674cc15e3e5e52c44309 \
-  --source-commit 3bb8d9ceffa50ad183d1ab856e031fe649425bca
+  --archive /path/to/tetorica-soundchip-native-0.1.6-sources.zip \
+  --sha256 2e6126935756c517d10cc6849977fb0132387e7abf6160185c341ea67b4fcc17 \
+  --source-commit ba2a52943f0ac43b02b57f07b48ffb8b3ccb54f6
 python3 scripts/import_soundchip_sdk.py --check
 ```
 
@@ -1240,3 +1243,16 @@ C++377,424チェック、ASan／UBSan、Rust新規15件と全体741成功・4ign
 アプリ音源のC／ヘッダー／LICENSE／NOTICEを読み取り検証します。
 別checkoutからコピーしたり、SDK原本・ピンを書き換えたりしません。
 SDKの更新は、検証した公開ソースZIPをインポーターへ指定して行います。
+
+## SDK 0.1.6 — PS1 SPU instrumentの固定ソース配布
+
+SDK `0.1.6`はPS1 SPUを独立したinstrument区分で収録します。
+選択中PS1 modeと追加SPUは、冒頭の表に記録した同じSDK配布の
+`vendor/mame-ps1-spu/`にある4個のC++17単位を一度だけコンパイルして共有します。
+24 voice、512 KiB RAM、44,100 Hz stereo PCMのC ABIを使い、
+予約・sample upload・所有権・出力レート変換・device callbackはTauri側で担当します。
+SDKの汎用chip区分やnpm package-rootの`createSoundChip()`へPS1を追加する変更ではありません。
+
+取り込み記録には公開ソースZIP、配布manifest、元コミットの固定値を保存します。
+`--local-changed-path`を指定せず公開ZIPを取り込み、`localCandidate`を残しません。
+この固定版の記録と、過去のSDK更新に対するCI・ローカル試験の記録は区別します。

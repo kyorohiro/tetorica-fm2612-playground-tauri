@@ -22,11 +22,68 @@ export const PLAYGROUND_MIXER_CALIBRATION = freeze({
   "measuredExtraRoutes": 22,
   "measuredEngineRoutes": 1,
   "measuredPrimaryRoutes": 28,
-  "unmeasuredKinds": [
-    "wonderswan",
-    "pokey",
-    "ps1"
-  ]
+  "unmeasuredKinds": [],
+  "extensions": {
+    "ps1": {
+      "version": 1,
+      "gainUnits": "source",
+      "referenceFrequencyHz": 440,
+      "targetAmplitude": 0.12881777435541153,
+      "referenceAmplitude": 0.1494140625,
+      "codecHeadroom": 0.875,
+      "measuredPs1Captures": 48,
+      "measuredAnchorCaptures": 8,
+      "canonical": {
+        "engine": "chromium",
+        "sampleRate": 48000,
+        "execution": "main"
+      },
+      "baselineSha256": "9c5129ad176aa4895ff14da345dc0f3ac49588f5255062fa76329b21f28ea234"
+    },
+    "wonderswan": {
+      "version": 1,
+      "gainUnits": "source",
+      "referenceFrequencyHz": 440,
+      "targetAmplitude": 0.12881777435541153,
+      "referenceAmplitude": 0.1494140625,
+      "codecHeadroom": 1,
+      "measuredWonderSwanCaptures": 48,
+      "measuredAnchorCaptures": 8,
+      "canonical": {
+        "engine": "chromium",
+        "sampleRate": 48000,
+        "execution": "main"
+      },
+      "baselineSha256": "9c5129ad176aa4895ff14da345dc0f3ac49588f5255062fa76329b21f28ea234"
+    },
+    "pokey": {
+      "version": 1,
+      "gainUnits": "source",
+      "referenceFrequencyHz": 440,
+      "measurementMetric": "acRms",
+      "waveform": "square",
+      "targetAcRms": 0.06993434306195019,
+      "targetAmplitude": 0.12881777435541153,
+      "referenceAmplitude": 0.1494140625,
+      "codecHeadroom": 1,
+      "measuredPokeyCaptures": 96,
+      "measuredAnchorCaptures": 8,
+      "measuredPsgCaptures": 8,
+      "measuredDualCases": 8,
+      "measuredDualCaptures": 16,
+      "listeningReference": {
+        "kind": "segapsg",
+        "gain": 0.35,
+        "rawAcRms": 0.19981240874842915
+      },
+      "canonical": {
+        "engine": "chromium",
+        "sampleRate": 48000,
+        "execution": "main"
+      },
+      "baselineSha256": "9c5129ad176aa4895ff14da345dc0f3ac49588f5255062fa76329b21f28ea234"
+    }
+  }
 });
 export const PLAYGROUND_MIXER_LISTENING_LEVELS = freeze({
   "segapsg": 0.35,
@@ -128,15 +185,15 @@ const factoryDefaults = freeze({
     },
     {
       "name": "wonderswan",
-      "volume": 1
+      "volume": 1.172528
     },
     {
       "name": "pokey",
-      "volume": 1
+      "volume": 0.413033
     },
     {
       "name": "ps1",
-      "volume": 1
+      "volume": 0.128832
     }
   ]
 });
@@ -551,7 +608,7 @@ const factoryModes = freeze({
         "id": "wonderswan",
         "name": "wonderswan",
         "settings": {
-          "volume": 1
+          "volume": 1.172528
         }
       }
     ]
@@ -563,7 +620,7 @@ const factoryModes = freeze({
         "id": "pokey",
         "name": "pokey",
         "settings": {
-          "volume": 1
+          "volume": 0.413033
         }
       }
     ]
@@ -575,14 +632,14 @@ const factoryModes = freeze({
         "id": "pokey",
         "name": "pokey",
         "settings": {
-          "volume": 1
+          "volume": 0.413033
         }
       },
       {
         "id": "pokey:2",
         "name": "pokey",
         "settings": {
-          "volume": 1
+          "volume": 0.413034
         }
       }
     ]
@@ -594,7 +651,7 @@ const factoryModes = freeze({
         "id": "ps1",
         "name": "ps1",
         "settings": {
-          "volume": 1
+          "volume": 0.128832
         }
       }
     ]
