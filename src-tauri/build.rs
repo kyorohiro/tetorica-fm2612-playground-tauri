@@ -456,12 +456,19 @@ fn main() {
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/libvgm-pokey");
     println!("cargo:rerun-if-changed=src/native_genesis_pokey.cpp");
     println!("cargo:rerun-if-changed=src/native_genesis_pokey.h");
-    cc::Build::new().cpp(true).flag_if_supported("/EHsc").std("c++17").opt_level(2)
-        .flag_if_supported("-fwrapv").flag_if_supported("-fno-strict-aliasing").flag_if_supported("-ffp-contract=off")
+    cc::Build::new()
+        .cpp(true)
+        .flag_if_supported("/EHsc")
+        .std("c++17")
+        .opt_level(2)
+        .flag_if_supported("-fwrapv")
+        .flag_if_supported("-fno-strict-aliasing")
+        .flag_if_supported("-ffp-contract=off")
         .include("vendor/tetorica-soundchip-native/vendor/libvgm-pokey")
         .file("src/native_genesis_pokey.cpp")
         .file("vendor/tetorica-soundchip-native/vendor/libvgm-pokey/pokey.cpp")
-        .warnings(false).compile("tetorica_native_pokey");
+        .warnings(false)
+        .compile("tetorica_native_pokey");
     // WonderSwan shares one pinned raw SDK core between primary and extras.
     // Speaker DC/clock adaptation belongs to the application, not the SDK.
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/mame-wonderswan");
@@ -538,5 +545,22 @@ fn main() {
         .file("native-livefx/quickjs-ng/quickjs-amalgam.c")
         .warnings(false)
         .compile("tetorica_quickjs_ng");
+    // PS1 primary and independent instances share this once-compiled SDK core.
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/mame-ps1-spu");
+    cc::Build::new()
+        .cpp(true)
+        .flag_if_supported("/EHsc")
+        .std("c++17")
+        .opt_level(2)
+        .flag_if_supported("-fwrapv")
+        .flag_if_supported("-fno-strict-aliasing")
+        .flag_if_supported("-ffp-contract=off")
+        .include("vendor/tetorica-soundchip-native/vendor/mame-ps1-spu")
+        .file("vendor/tetorica-soundchip-native/vendor/mame-ps1-spu/ps1_spu.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/mame-ps1-spu/spu.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/mame-ps1-spu/spu_tables.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/mame-ps1-spu/spureverb.cpp")
+        .warnings(false)
+        .compile("tetorica_native_ps1_spu");
     tauri_build::build()
 }

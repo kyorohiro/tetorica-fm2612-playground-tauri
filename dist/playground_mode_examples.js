@@ -14,6 +14,7 @@ const opnbExamples = [
   '/examples/neogeo/neogeo-opnb-duet.js',
   '/examples/neogeo/neogeo-opnb-sections.js',
   '/examples/neogeo/neogeo-sampler.js',
+  '/examples/neogeo/neogeo-adpcm-a-drums.js',
 ];
 const definitions = {
   genesis: null,
@@ -23,11 +24,13 @@ const definitions = {
   'pc98-26': ['/examples/pc98/pc98-opn-melody.js', '/examples/pc98/pc98-opn-ssg.js'],
   pc98: ['/examples/pc98/pc98-opna-groove.js', '/examples/pc98/pc98-opna-sections.js', '/examples/pc98/pc98-sampler.js'],
   neogeo: opnbExamples,
-  'neogeo-b': ['/examples/neogeo/neogeo-opnb-sections.js', '/examples/neogeo/neogeo-b-six-channel.js', '/examples/neogeo/neogeo-sampler.js'],
+  'neogeo-b': ['/examples/neogeo/neogeo-opnb-sections.js', '/examples/neogeo/neogeo-b-six-channel.js', '/examples/neogeo/neogeo-sampler.js', '/examples/neogeo/neogeo-adpcm-a-drums.js'],
   wonderswan: ['/examples/wonderswan/ws-four-voices.js','/examples/wonderswan/ws-stereo.js','/examples/wonderswan/ws-noise-sweep.js'],
   gameboy: ['/examples/gameboy/gameboy-mode-pulse.js', '/examples/gameboy/gameboy-mode-wave.js', '/examples/gameboy/gameboy-sampler.js'],
   nes: ['/examples/nes/nes-mode-pulse.js','/examples/nes/nes-mode-fds.js','/examples/nes/nes-mode-rhythm.js'],
-  snes: ['/examples/snes/snes-mode-brr.js','/examples/snes/snes-mode-stereo.js'],
+  ps1: ['/examples/ps1/ps1-stereo-voices.js','/examples/ps1/ps1-adpcm-wave.js',
+    '/examples/ps1/ps1-pcm-adpcm.js','/examples/ps1/ps1-sampler.js'],
+  snes: ['/examples/snes/snes-mode-brr.js','/examples/snes/snes-mode-stereo.js','/examples/snes/snes-pcm-brr.js'],
   x68000: ['/examples/x68000/x68000-mode-opm.js','/examples/x68000/x68000-mode-adpcm.js'],
   'pc-engine': ['/examples/pc-engine/pce-mode-wave.js','/examples/pc-engine/pce-mode-stereo.js','/examples/pc-engine/pce-mode-noise.js','/examples/pc-engine/pce-cdda.js'],
   'pc-engine-cd': ['/examples/pc-engine/pce-cd-three-sources.js','/examples/pc-engine/pce-cdda.js','/examples/pc-engine/pce-mode-stereo.js'],

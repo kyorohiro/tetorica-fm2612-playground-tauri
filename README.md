@@ -45,7 +45,7 @@ Tauri アプリのバージョンは、この ZIP の取り込みでは変更し
 
 ## Native音源SDK
 
-YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、WonderSwan、POKEY、NES＋FDS、DX7、SNES／SPCとOPL系4種類
+YM2612、YM2203、YM2608、YM2610／YM2610B、YM2151、OKIM6258、YM2413、AY-3-8910、Sega PSG、RF5C164、32X PWM、HuC6280、Game Boy、WonderSwan、POKEY、PS1 SPU、NES＋FDS、DX7、SNES／SPCとOPL系4種類
 （YM3526／YM3812／YMF262／Y8950）、代替Nuked YM2612は、自己完結した`tetorica-soundchip-native`のソース配布を
 `src-tauri/vendor/tetorica-soundchip-native/`へ同梱してビルドします。
 取り込み版・配布ZIPのSHA-256・元コミットは`src-tauri/soundchip-sdk.json`に固定し、
@@ -72,8 +72,9 @@ Nuked YM2612もSDKのNative接続・Browser共通C wrapperとコアを使いま�
 CD-DAとMSM5205も同じ固定SDKのC11ソースから直接ビルドし、Rustの再生制御・音声クロック・Mixer値は維持します。
 Sega PSGはSDK内の`vendor/tetorica_sega_psg/`へ独立したTetoricaのBSD-3-Clause実装です。音声計算と共通providerの数は維持します。
 Genesisのgain・DC除去・PSG混合、機種用接続と`NativePsgCore`のレート変換、Rustの予約・所有権管理、CPAL、ミキサー／FXとWebViewのAPIはアプリ側に残ります。
-通常の23音源IDに加えて、Genesis Nuked／32X Nukedと追加生成YM2612のNukedエンジンもSDK参照です。機種用の補助処理はアプリ側に残ります。
+これらの音源IDに加えて、Genesis Nuked／32X Nukedと追加生成YM2612のNukedエンジンもSDK参照です。機種用の補助処理はアプリ側に残ります。
 WonderSwanはSDKのrawコアを一度だけビルドし、選択中音源と独立追加音源で共有します。スピーカー出力補正・レート変換・所有制御はアプリ側の新しい接続で行います。
+PS1も同じ固定SDKの`vendor/mame-ps1-spu/`を一度だけビルドし、選択中音源と独立追加音源で共有します。詳細は[Native PS1接続](docs/native_ps1.md)を参照してください。
 固定した版と更新手順、共有providerの範囲は[Native SDKの取り込み](docs/native-sdk-ym2612.md)を参照してください。
 
 ## DX7
@@ -95,7 +96,7 @@ Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音
 **Native (experimental)** を明示的に選べます。切替時は演奏を停止し、
 編集中のプロジェクトを引き継いでページを開き直します。選択だけではデバイスを開かず、
 RunまたはKeyboardでの試聴時に開始します。通常のアプリ起動はWeb Audioです。
-Native選択中は、Genesis／Mega CD／32X／32X Nuked／NES＋FDS／DX7／Game Boy／WonderSwan／POKEY／Dual POKEY／SNES／PC Engine／PC-98（YM2203／YM2608）／Neo Geo／Neo Geo（YM2610B）／X68000／Game Gear／Master System／MSX／MSX Audio／DOS PC（OPL／OPL2／OPL3）の対応Modeを選べます。
+Native選択中は、Genesis／Mega CD／32X／32X Nuked／NES＋FDS／DX7／Game Boy／WonderSwan／POKEY／Dual POKEY／PS1／SNES／PC Engine／PC-98（YM2203／YM2608）／Neo Geo／Neo Geo（YM2610B）／X68000／Game Gear／Master System／MSX／MSX Audio／DOS PC（OPL／OPL2／OPL3）の対応Modeを選べます。
 旧`genesis-nuked` URLでもNativeを選べます。Web Audioでは従来どおり全Modeを選べます。
 
 NativeはGenesis modeのYM2612＋Sega PSG、Main／Worker実行、音色・レジスター操作、Keyboard、
@@ -104,6 +105,13 @@ DAC・サンプル・noise、組込みFX・JavaScriptの`liveFx`、Audioモニ�
 CPALの音声コールバックで生成・変換・ミックスしてシステム既定の出力機器へ送ります。
 AudioWorklet／WebSocketでPCMを転送する現行Audifyとは別の経路です。
 Nativeを使う間はWeb Audio用のAudio outputメニューを表示しません。
+
+PS1では`spu`／`await useSoundChip('ps1')`と、独立した`await createSoundChip('ps1')`をNativeで使えます。
+24声・512 KiB RAM、ADPCMアップロード、Main／Worker、Keyboard、SPUタブのPCM波形・ADSR・リバーブ編集に対応します。
+44,100 HzのC++コアを出力機器のサンプルレートへ変換します。StopはRAM・音色・リバーブ設定を保持して発音と残響を消します。
+`reset()`は音色・エフェクト設定を初期化し、`reset({clearRam:true})`はサンプルバンクも消します。
+PSF・PlayStationのCPU・CD/XA再生には対応しません。冷えた状態での長いサンプルの発音と実機での聴き比べは、引き続き確認対象です。
+接続仕様・制約・ソースの場所は[Native PS1接続](docs/native_ps1.md)に記録しています。
 
 WonderSwanでは`ws`／`await useSoundChip('wonderswan')`と、独立した`await createSoundChip('wonderswan')`をNativeで使えます。
 Main／Worker、4CH Keyboard、波形／左右音量／Noise／Sweepの編集、16 KiB RAM、Voice PCM、clock変更に対応します。

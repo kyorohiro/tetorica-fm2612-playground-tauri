@@ -26,8 +26,8 @@ class SoundchipSdkTests(unittest.TestCase):
         self.root = self.work / 'standalone app'
         self.root.mkdir()
 
-    def archive(self, *, version='0.1.0', alter=None, application_audio=False):
-        inputs = sdk.REQUIRED | sdk.SEPARATED_SEGA_PSG | (sdk.APPLICATION_AUDIO_INPUTS if application_audio else set())
+    def archive(self, *, version='0.1.0', alter=None, application_audio=False, ps1=False):
+        inputs = sdk.REQUIRED | sdk.SEPARATED_SEGA_PSG | (sdk.APPLICATION_AUDIO_INPUTS if application_audio else set()) | (sdk.PS1_INPUTS if ps1 else set())
         payload = {name: ('pinned SDK source: ' + name).encode() for name in inputs}
         payload['sdk.json'] = json.dumps({'name': sdk.NAME, 'version': version}).encode()
         manifest = {'schemaVersion': 1, 'kind': 'source', 'name': sdk.NAME, 'version': version,
@@ -52,6 +52,15 @@ class SoundchipSdkTests(unittest.TestCase):
     def install(self, **options):
         path, checksum = self.archive(**options)
         return sdk.import_archive(path, checksum, 'a' * 40, self.root)
+
+    def test_ps1_source_closure_cannot_drop_any_vendor_or_recipe_member(self):
+        for missing in sorted(sdk.PS1_INPUTS):
+            def alter(entries):
+                return [entry for entry in entries if not entry[0].endswith('/' + missing)]
+            path, checksum = self.archive(version='0.1.6', ps1=True, alter=alter)
+            with self.assertRaises(ValueError):
+                sdk.import_archive(path, checksum, 'a' * 40, self.root)
+            self.assertFalse((self.root / sdk.SNAPSHOT).exists())
 
     def test_unpublished_candidate_records_base_commit_and_changed_paths(self):
         path, checksum = self.archive()

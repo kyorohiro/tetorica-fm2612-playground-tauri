@@ -15,6 +15,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[path = "native_genesis_cdda.rs"]
+pub mod cdda;
 #[cfg(test)]
 #[path = "native_genesis_consoles_tests.rs"]
 mod consoles_tests;
@@ -65,6 +67,8 @@ mod extra_pokey;
 #[cfg(test)]
 #[path = "native_genesis_extra_pokey_tests.rs"]
 mod extra_pokey_tests;
+#[path = "native_genesis_extra_ps1.rs"]
+mod extra_ps1;
 #[path = "native_genesis_extra_psg.rs"]
 mod extra_psg;
 #[cfg(test)]
@@ -129,18 +133,21 @@ mod livefx;
 mod master_system;
 #[path = "native_genesis_media.rs"]
 mod media;
-#[path = "native_genesis_cdda.rs"]
-pub mod cdda;
-#[path = "native_genesis_msm5205.rs"]
-pub mod msm5205;
 #[path = "native_genesis_monitor.rs"]
 mod monitor;
+#[path = "native_genesis_msm5205.rs"]
+pub mod msm5205;
 #[path = "native_genesis_msx.rs"]
 mod msx;
 #[path = "native_genesis_nes.rs"]
 mod nes;
 #[path = "native_genesis_opl.rs"]
 mod opl;
+#[path = "native_genesis_ps1.rs"]
+mod ps1;
+#[cfg(test)]
+#[path = "native_genesis_ps1_tests.rs"]
+mod ps1_tests;
 #[path = "native_genesis_snes.rs"]
 mod snes;
 #[path = "native_genesis_wonderswan.rs"]
@@ -324,6 +331,7 @@ enum Action {
     ExtraHuc6280(Arc<extra_psg::Instance>, Arc<extra_huc6280::Prepared>),
     ExtraPokey(Arc<extra_psg::Instance>, Arc<extra_pokey::Prepared>),
     ExtraWonderSwan(Arc<extra_psg::Instance>, Arc<extra_wonderswan::Prepared>),
+    ExtraPs1(Arc<extra_psg::Instance>, Arc<extra_ps1::Prepared>),
     ExtraDx7(Arc<extra_psg::Instance>, Arc<extra_dx7::Prepared>),
     ExtraPwm(Arc<extra_psg::Instance>, Arc<extra_pwm::Prepared>),
     ExtraSnes(Arc<extra_psg::Instance>, Arc<extra_snes::Prepared>),
@@ -338,6 +346,7 @@ enum Action {
     Snes(Arc<snes::Prepared>),
     Huc6280(Arc<huc6280::Prepared>),
     WonderSwan(Arc<wonderswan::Prepared>),
+    Ps1(Arc<ps1::Prepared>),
     Ym2608(Arc<ym2608::Prepared>),
     Ym2203(Arc<ym2203::Prepared>),
     Ym2610b(Arc<ym2610b::Prepared>),
@@ -494,6 +503,11 @@ enum CommandAction {
         instance: u64,
         message: extra_wonderswan::Message,
     },
+    #[serde(rename = "extra-ps1")]
+    ExtraPs1 {
+        instance: u64,
+        message: extra_ps1::Message,
+    },
     ExtraDx7 {
         instance: u64,
         message: extra_dx7::Message,
@@ -548,6 +562,10 @@ enum CommandAction {
     #[serde(rename = "wonderswan")]
     WonderSwan {
         message: wonderswan::Message,
+    },
+    #[serde(rename = "ps1")]
+    Ps1 {
+        message: ps1::Message,
     },
     Ym2608 {
         message: ym2608::Message,
@@ -683,6 +701,7 @@ impl Command {
             | CommandAction::ExtraHuc6280 { .. }
             | CommandAction::ExtraPokey { .. }
             | CommandAction::ExtraWonderSwan { .. }
+            | CommandAction::ExtraPs1 { .. }
             | CommandAction::ExtraDx7 { .. }
             | CommandAction::ExtraPwm { .. }
             | CommandAction::ExtraSnes { .. }
@@ -699,6 +718,11 @@ impl Command {
             CommandAction::Snes { ref message } => Action::Snes(message.prepare()?),
             CommandAction::Huc6280 { ref message } => Action::Huc6280(message.prepare()?),
             CommandAction::WonderSwan { ref message } => Action::WonderSwan(message.prepare()?),
+            CommandAction::Ps1 { ref message } => {
+                let prepared=message.prepare()?;
+                if prepared.is_owner_cancel()&&self.frame!=0{return Err("Native PS1 owner cancellation requires immediate frame zero".into());}
+                Action::Ps1(prepared)
+            },
             CommandAction::Ym2608 { ref message } => Action::Ym2608(message.prepare()?),
             CommandAction::Ym2203 { ref message } => Action::Ym2203(message.prepare()?),
             CommandAction::Ym2610b { ref message } => Action::Ym2610b(message.prepare()?),
@@ -916,6 +940,7 @@ struct Shared {
     snes: Option<Box<snes::Shared>>,
     huc6280: Option<Box<huc6280::Shared>>,
     wonderswan: Option<Box<wonderswan::Shared>>,
+    ps1: Option<Box<ps1::Shared>>,
     wonderswan_initial_clock: u32,
     ym2608: Option<Box<ym2608::Shared>>,
     ym2203: Option<Box<ym2203::Shared>>,
@@ -1012,6 +1037,7 @@ impl Shared {
             huc6280: (console == Some("huc6280")).then(|| Box::new(huc6280::Shared::default())),
             wonderswan: (console == Some("wonderswan"))
                 .then(|| Box::new(wonderswan::Shared::default())),
+            ps1: (console == Some("ps1")).then(|| Box::new(ps1::Shared::default())),
             wonderswan_initial_clock: extra_wonderswan::CLOCK,
             ym2608: (console == Some("ym2608")).then(|| Box::new(ym2608::Shared::default())),
             ym2203: (console == Some("ym2203")).then(|| Box::new(ym2203::Shared::default())),
@@ -1135,6 +1161,18 @@ impl Shared {
         if wonderswan_bytes > 8 * 1024 * 1024 {
             return Err("Native WonderSwan pending command limit reached (8 MiB)".into());
         }
+        let ps1_bytes: usize = commands
+            .iter()
+            .filter_map(|command| match &command.action {
+                CommandAction::Ps1 { message } | CommandAction::ExtraPs1 { message, .. } => {
+                    Some(message.prepared_bytes())
+                }
+                _ => None,
+            })
+            .sum();
+        if ps1_bytes > 8 * 1024 * 1024 {
+            return Err("Native PS1 pending command limit reached (8 MiB)".into());
+        }
         // Bound aggregate PC98 uploads before cloning into retained callback
         // commands. Individual uploads are additionally limited to 64 KiB.
         let ym2608_upload_bytes: usize = commands
@@ -1254,6 +1292,7 @@ impl Shared {
                 CommandAction::ExtraHuc6280 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraPokey { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraWonderSwan { message, .. } => Some(message.prepared_bytes()),
+                CommandAction::ExtraPs1 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraDx7 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraPwm { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraSnes { message, .. } => Some(message.prepared_bytes()),
@@ -1500,6 +1539,12 @@ impl Shared {
                         );
                     }
                     Action::ExtraPokey(target, prepared)
+                } else if let CommandAction::ExtraPs1 { instance, message } = &command.action {
+                    if command.frame > MAX_SAFE_INTEGER {return Err("Invalid native command frame".into());}
+                    let target=self.extra_psg.get(*instance,self.epoch.load(Ordering::Acquire))?;
+                    let prepared=target.ps1()?.prepare_message(message)?;
+                    if prepared.is_owner_cancel()&&command.frame!=0{return Err("Native PS1 owner cancellation requires immediate frame zero".into());}
+                    Action::ExtraPs1(target,prepared)
                 } else if let CommandAction::ExtraWonderSwan { instance, message } = &command.action {
                     if command.frame > MAX_SAFE_INTEGER {
                         return Err("Invalid native command frame".into());
@@ -1639,6 +1684,9 @@ impl Shared {
                 if matches!(&action, Action::WonderSwan(_)) && self.wonderswan.is_none() {
                     return Err("Native WonderSwan requires wonderswan mode".into());
                 }
+                if matches!(&action, Action::Ps1(_)) && self.ps1.is_none() {
+                    return Err("Native PS1 requires ps1 mode".into());
+                }
                 if matches!(&action, Action::Ym2608(_)) && self.ym2608.is_none() {
                     return Err("Native YM2608 requires PC98 mode".into());
                 }
@@ -1695,6 +1743,7 @@ impl Shared {
                     || self.snes.is_some()
                     || self.huc6280.is_some()
                     || self.wonderswan.is_some()
+            || self.ps1.is_some()
                     || self.ym2608.is_some()
                     || self.ym2203.is_some()
                     || self.ym2610b.is_some()
@@ -1846,6 +1895,23 @@ impl Shared {
                 .iter()
                 .filter_map(|(action, _)| {
                     if let Action::WonderSwan(command) = action {
+                        Some(command.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Err(error) = chip.retain(&prepared) {
+                self.rollback_extra_psg(&actions);
+                self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
+                return Err(error);
+            }
+        }
+        if let Some(chip) = &self.ps1 {
+            let prepared: Vec<_> = actions
+                .iter()
+                .filter_map(|(action, _)| {
+                    if let Action::Ps1(command) = action {
                         Some(command.clone())
                     } else {
                         None
@@ -2051,6 +2117,15 @@ impl Shared {
                     self.invalidation.fetch_add(1, Ordering::Release);
                 }
             }
+            if let Action::Ps1(command) = action {
+                if self
+                    .ps1
+                    .as_ref()
+                    .is_some_and(|state| state.commit_cancel(command))
+                {
+                    self.invalidation.fetch_add(1, Ordering::Release);
+                }
+            }
             if let Action::ExtraHuc6280(instance, command) = action {
                 if instance
                     .huc6280()
@@ -2073,6 +2148,15 @@ impl Shared {
                 if instance
                     .wonderswan()
                     .expect("WonderSwan action target")
+                    .commit_cancel(command)
+                {
+                    self.invalidation.fetch_add(1, Ordering::Release);
+                }
+            }
+            if let Action::ExtraPs1(instance, command) = action {
+                if instance
+                    .ps1()
+                    .expect("PS1 action target")
                     .commit_cancel(command)
                 {
                     self.invalidation.fetch_add(1, Ordering::Release);
@@ -2238,6 +2322,7 @@ impl Shared {
                     Action::ExtraWonderSwan(_, c) => {
                         Some(extra_psg::Payload::WonderSwan(c.clone()))
                     }
+                    Action::ExtraPs1(_, c) => Some(extra_psg::Payload::Ps1(c.clone())),
                     Action::ExtraDx7(_, c) => Some(extra_psg::Payload::Dx7(c.clone())),
                     Action::ExtraPwm(_, c) => Some(extra_psg::Payload::Pwm(c.clone())),
                     Action::ExtraSnes(_, c) => Some(extra_psg::Payload::Snes(c.clone())),
@@ -2271,6 +2356,7 @@ impl Shared {
                 | Action::ExtraHuc6280(instance, _)
                 | Action::ExtraPokey(instance, _)
                 | Action::ExtraWonderSwan(instance, _)
+                | Action::ExtraPs1(instance, _)
                 | Action::ExtraDx7(instance, _)
                 | Action::ExtraPwm(instance, _)
                 | Action::ExtraSnes(instance, _)
@@ -2467,6 +2553,19 @@ impl Shared {
                         .collect();
                     instance.wonderswan()?.retain(&prepared)
                 }
+                Action::ExtraPs1(_, _) => {
+                    let prepared: Vec<_> = actions
+                        .iter()
+                        .filter_map(|(action, owner)| {
+                            if let Action::ExtraPs1(target, command) = action {
+                                (target.id == instance.id).then(|| (command.clone(), *owner))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    instance.ps1()?.retain(&prepared)
+                }
                 Action::ExtraDx7(_, _) => {
                     let prepared: Vec<_> = actions
                         .iter()
@@ -2609,6 +2708,7 @@ impl Shared {
                         | Action::ExtraHuc6280(target, _)
                         | Action::ExtraPokey(target, _)
                         | Action::ExtraWonderSwan(target, _)
+                        | Action::ExtraPs1(target, _)
                         | Action::ExtraDx7(target, _)
                         | Action::ExtraPwm(target, _)
                         | Action::ExtraSnes(target, _)
@@ -2694,6 +2794,11 @@ impl Shared {
                 }
                 Action::ExtraWonderSwan(instance, command) => {
                     let state = instance.wonderswan().expect("WonderSwan action target");
+                    state.rollback(command.clone());
+                    let _ = state.status(self.frame.load(Ordering::Acquire));
+                }
+                Action::ExtraPs1(instance, command) => {
+                    let state = instance.ps1().expect("PS1 action target");
                     state.rollback(command.clone());
                     let _ = state.status(self.frame.load(Ordering::Acquire));
                 }
@@ -3492,6 +3597,40 @@ impl Shared {
         *sequence = next_sequence;
         status
     }
+    fn create_extra_ps1(&self, instance: u64) -> Result<extra_ps1::Status, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self.extra_psg.create_ps1(instance, epoch, self.rate) {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target.ps1()?.status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional PS1 install capacity"));
+        *sequence = next_sequence;
+        status
+    }
     fn create_extra_spc(&self, instance: u64) -> Result<extra_spc::Status, String> {
         let mut sequence = self
             .producer
@@ -3907,6 +4046,15 @@ impl Shared {
         self.invalidation.fetch_add(1, Ordering::Release);
         Ok(())
     }
+    fn dispose_extra_ps1(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose_ps1(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
     fn dispose_extra_dx7(&self, instance: u64) -> Result<(), String> {
         let _producer = self
             .producer
@@ -4237,6 +4385,24 @@ impl Shared {
         target
             .wonderswan()?
             .status(self.frame.load(Ordering::Acquire))
+    }
+    fn extra_ps1_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+        ram: bool,
+    ) -> Result<extra_ps1::Status, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        if let Some(id) = after {
+            target.ps1()?.wait_applied(id)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional PS1 instance has expired".into());
+        }
+        target.ps1()?.status_after(self.frame.load(Ordering::Acquire),after,ram)
     }
     fn extra_dx7_status(
         &self,
@@ -4684,11 +4850,22 @@ impl Shared {
                     .wonderswan
                     .as_ref()
                     .is_some_and(|state| state.valid_event(command, event.sequence, event.owner)),
+                Action::Ps1(command) => self
+                    .ps1
+                    .as_ref()
+                    .is_some_and(|state| state.valid_event(command, event.sequence, event.owner)),
                 Action::ExtraWonderSwan(instance, command) => {
                     instance.valid(self.epoch.load(Ordering::Acquire))
                         && instance
                             .wonderswan()
                             .expect("WonderSwan action target")
+                            .valid_event(command, event.sequence, event.owner)
+                }
+                Action::ExtraPs1(instance, command) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
+                        && instance
+                            .ps1()
+                            .expect("PS1 action target")
                             .valid_event(command, event.sequence, event.owner)
                 }
                 Action::ExtraDx7(instance, command) => {
@@ -4891,6 +5068,9 @@ impl Shared {
                 .wonderswan()
                 .expect("WonderSwan action target")
                 .retire(command),
+            Action::ExtraPs1(instance, command) => {
+                instance.ps1().expect("PS1 action target").retire(command)
+            }
             Action::ExtraDx7(instance, command) => {
                 instance.dx7().expect("DX7 action target").retire(command)
             }
@@ -4948,6 +5128,11 @@ impl Shared {
             }
             Action::WonderSwan(command) => {
                 if let Some(chip) = &self.wonderswan {
+                    chip.retire(command);
+                }
+            }
+            Action::Ps1(command) => {
+                if let Some(chip) = &self.ps1 {
                     chip.retire(command);
                 }
             }
@@ -5117,6 +5302,8 @@ impl Shared {
                 "pc98-26"
             } else if self.huc6280.is_some() {
                 "huc6280"
+            } else if self.ps1.is_some() {
+                "ps1"
             } else if self.wonderswan.is_some() {
                 "wonderswan"
             } else if self.dx7.is_some() {
@@ -5312,6 +5499,7 @@ struct Renderer {
     snes: Option<snes::Renderer>,
     huc6280: Option<huc6280::Renderer>,
     wonderswan: Option<wonderswan::Renderer>,
+    ps1: Option<ps1::Renderer>,
     ym2608: Option<ym2608::Renderer>,
     ym2203: Option<ym2203::Renderer>,
     ym2610b: Option<ym2610b::Renderer>,
@@ -5431,6 +5619,11 @@ impl Renderer {
                     rate,
                     wonderswan_clock,
                 )?)
+            } else {
+                None
+            },
+            ps1: if console == Some("ps1") {
+                Some(ps1::Renderer::new(rate)?)
             } else {
                 None
             },
@@ -5599,6 +5792,9 @@ impl Renderer {
             if let (Some(chip), Some(state)) = (&mut self.wonderswan, &shared.wonderswan) {
                 chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
+            if let (Some(chip), Some(state)) = (&mut self.ps1, &shared.ps1) {
+                chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
+            }
             if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
                 chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
@@ -5690,6 +5886,9 @@ impl Renderer {
             chip.publish(state);
         }
         if let (Some(chip), Some(state)) = (&self.wonderswan, &shared.wonderswan) {
+            chip.publish(state);
+        }
+        if let (Some(chip), Some(state)) = (&self.ps1, &shared.ps1) {
             chip.publish(state);
         }
         if let (Some(chip), Some(state)) = (&self.ym2608, &shared.ym2608) {
@@ -5907,6 +6106,15 @@ impl Renderer {
                 self.extra_psg.apply_wonderswan(&instance, &command, owner);
                 state.retire(command);
             }
+            Action::ExtraPs1(instance, command) => {
+                let state = instance.ps1().expect("PS1 action target");
+                if command.stops() {
+                    state.cancel_before(&command, sequence.saturating_add(1), owner);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.extra_psg.apply_ps1(&instance, &command, owner);
+                state.retire(command);
+            }
             Action::ExtraDx7(instance, command) => {
                 let state = instance.dx7().expect("DX7 action target");
                 if command.stops() {
@@ -6035,6 +6243,15 @@ impl Renderer {
                     chip.apply(&command, owner, state);
                 }
                 shared.retire_action(Action::WonderSwan(command));
+            }
+            Action::Ps1(command) => {
+                if command.stops() {
+                    shared.cancel_nes_before(owner, sequence.saturating_add(1));
+                }
+                if let (Some(chip), Some(state)) = (&mut self.ps1, &shared.ps1) {
+                    chip.apply(&command, owner, state);
+                }
+                shared.retire_action(Action::Ps1(command));
             }
             Action::Ym2608(command) => {
                 if command.stops() {
@@ -6308,6 +6525,7 @@ impl Renderer {
                             || self.snes.is_some()
                             || self.huc6280.is_some()
                             || self.wonderswan.is_some()
+                            || self.ps1.is_some()
                             || self.pokey_mode
                             || self.ym2608.is_some()
                             || self.ym2203.is_some()
@@ -6340,6 +6558,9 @@ impl Renderer {
                         if let (Some(chip), Some(state)) =
                             (&mut self.wonderswan, &shared.wonderswan)
                         {
+                            chip.stop(state);
+                        }
+                        if let (Some(chip), Some(state)) = (&mut self.ps1, &shared.ps1) {
                             chip.stop(state);
                         }
                         if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
@@ -6474,6 +6695,7 @@ impl Renderer {
                     Action::ExtraHuc6280(_, command) => command.starts(),
                     Action::ExtraPokey(_, command) => command.starts(),
                     Action::ExtraWonderSwan(_, command) => command.starts(),
+                    Action::ExtraPs1(_, command) => command.starts(),
                     Action::ExtraDx7(_, command) => command.starts(),
                     Action::ExtraPwm(_, command) => command.starts(),
                     Action::ExtraSnes(_, command) => command.starts(),
@@ -6489,6 +6711,7 @@ impl Renderer {
                     Action::Snes(command) => command.starts(),
                     Action::Huc6280(command) => command.starts(),
                     Action::WonderSwan(command) => command.starts(),
+                    Action::Ps1(command) => command.starts(),
                     Action::Ym2608(command) => command.starts(),
                     Action::Ym2203(command) => command.starts(),
                     Action::Ym2610b(command) => command.starts(),
@@ -6540,6 +6763,9 @@ impl Renderer {
             chip.mix(&mut pcm);
         }
         if let Some(chip) = &mut self.wonderswan {
+            chip.mix(&mut pcm);
+        }
+        if let Some(chip) = &mut self.ps1 {
             chip.mix(&mut pcm);
         }
         if let Some(chip) = &mut self.ym2608 {
@@ -6594,6 +6820,7 @@ impl Renderer {
             || self.snes.is_some()
             || self.huc6280.is_some()
             || self.wonderswan.is_some()
+            || self.ps1.is_some()
             || self.pokey_mode
             || self.ym2608.is_some()
             || self.ym2203.is_some()
@@ -6644,6 +6871,9 @@ impl Renderer {
                     chip.stop(state);
                 }
                 if let (Some(chip), Some(state)) = (&mut self.wonderswan, &shared.wonderswan) {
+                    chip.stop(state);
+                }
+                if let (Some(chip), Some(state)) = (&mut self.ps1, &shared.ps1) {
                     chip.stop(state);
                 }
                 if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
@@ -6804,6 +7034,7 @@ impl NativeGenesis {
             "snes" => (false,false,false,Some("snes")),
             "pc-engine" | "pc-engine-cd" | "huc6280" => (false,false,false,Some("huc6280")),
             "wonderswan" => (false,false,false,Some("wonderswan")),
+            "ps1" => (false,false,false,Some("ps1")),
             "pokey" => (false,false,false,Some("pokey")),
             "pokey-dual" => (false,false,false,Some("pokey-dual")),
             "pc98" | "ym2608" => (false,false,false,Some("ym2608")),
@@ -6818,7 +7049,7 @@ impl NativeGenesis {
             "ym3526" => (false,false,false,Some("ym3526")),
             "ym3812" => (false,false,false,Some("ym3812")),
             "ymf262" => (false,false,false,Some("ymf262")),
-            _ => return Err("Native output supports Genesis, Mega CD, 32X, 32X Nuked, Genesis Nuked, DX7, NES, Game Boy, SNES, PC Engine, PC Engine CD, WonderSwan, POKEY, Dual POKEY, PC98, PC98-26, Neo Geo, X68000, Master System, Game Gear, MSX, MSX Audio and DOS PC modes".into()),
+            _ => return Err("Native output supports Genesis, Mega CD, 32X, 32X Nuked, Genesis Nuked, DX7, NES, Game Boy, SNES, PC Engine, PC Engine CD, WonderSwan, POKEY, Dual POKEY, PC98, PC98-26, Neo Geo, X68000, Master System, Game Gear, MSX, MSX Audio, DOS PC and PS1 modes".into()),
         })
     }
     fn start_mode(&self, mode: Option<&str>) -> Result<Status, String> {
@@ -7037,6 +7268,8 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
             Some("huc6280")
         } else if let Some(mode) = shared.pokey_mode {
             Some(mode)
+        } else if shared.ps1.is_some() {
+            Some("ps1")
         } else if shared.wonderswan.is_some() {
             Some("wonderswan")
         } else {
@@ -7212,6 +7445,32 @@ pub async fn native_genesis_wonderswan_status(
                 chip.wait_applied(id)?;
             }
             chip.status(shared.frame.load(Ordering::Acquire))
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+#[tauri::command]
+pub async fn native_genesis_ps1_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    after: Option<u64>,
+    ram: Option<bool>,
+) -> Result<ps1::Status, String> {
+    crate::allowed(&window)?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.with_session(session, |shared| {
+            let chip = shared.ps1.as_ref().ok_or("Native ps1 requires ps1 mode")?;
+            if let Some(id) = after {
+                chip.wait_applied(id)?;
+            }
+            chip.status_after(
+                shared.frame.load(Ordering::Acquire),
+                after,
+                ram.unwrap_or(false),
+            )
         })
     })
     .await
@@ -9601,6 +9860,16 @@ pub fn native_genesis_extra_snes_create(
     state.with_session(session, |shared| shared.create_extra_snes(instance))
 }
 #[tauri::command]
+pub fn native_genesis_extra_ps1_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<extra_ps1::Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.create_extra_ps1(instance))
+}
+#[tauri::command]
 pub fn native_genesis_extra_spc_create(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, NativeGenesis>,
@@ -9697,6 +9966,16 @@ pub fn native_genesis_extra_wonderswan_dispose(
 ) -> Result<(), String> {
     crate::allowed(&window)?;
     state.with_session(session, |shared| shared.dispose_extra_wonderswan(instance))
+}
+#[tauri::command]
+pub fn native_genesis_extra_ps1_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_ps1(instance))
 }
 #[tauri::command]
 pub fn native_genesis_extra_dx7_dispose(
@@ -9861,6 +10140,24 @@ pub async fn native_genesis_extra_wonderswan_status(
     })
     .await
     .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+#[tauri::command]
+pub async fn native_genesis_extra_ps1_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+    ram: Option<bool>,
+) -> Result<extra_ps1::Status, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status =
+        tauri::async_runtime::spawn_blocking(move || shared.extra_ps1_status(instance, after,ram.unwrap_or(false)))
+            .await
+            .map_err(|error| error.to_string())??;
     state.with_session(session, |_| Ok(()))?;
     Ok(status)
 }

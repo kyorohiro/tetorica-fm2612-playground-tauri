@@ -113,6 +113,16 @@ POKEY_INPUTS = {
     'vendor/libvgm-pokey/upstream/snapshot-manifest.json',
 }
 
+PS1_INPUTS = {
+    'scripts/build_ps1_spu_wasm.sh', 'tests/ps1_spu_wasm_smoke.mjs',
+    'native/include/tetorica/ps1_spu.h',
+    *('vendor/mame-ps1-spu/' + name for name in (
+        'ps1_spu.cpp', 'ps1_spu.h', 'spu.cpp', 'spu.h', 'spu_tables.cpp',
+        'spureverb.cpp', 'spureverb.h', 'standalone_support.h', 'LICENSE', 'README.md',
+        'upstream/spu.cpp', 'upstream/spu.h', 'upstream/spu_tables.cpp',
+        'upstream/spureverb.cpp', 'upstream/spureverb.h', 'upstream/REVISION',
+        'upstream/SHA256SUMS')),
+}
 APPLICATION_AUDIO_INPUTS = {
     *(f'vendor/tetorica-{component}/{name}'
       for component in ('cdda', 'msm5205')
@@ -173,6 +183,8 @@ def manifest_records(raw):
     names = set(files)
     # Historical fixed snapshots must remain verifiable before an update.
     # A POKEY-capable release must include its adaptation and licensed original.
+    if PS1_INPUTS & names:
+        require(PS1_INPUTS <= names, 'SDK PS1 SPU source release is incomplete')
     if POKEY_INPUTS & names:
         require(POKEY_INPUTS <= names, 'SDK POKEY source release is incomplete')
     if APPLICATION_AUDIO_MARKERS & names:

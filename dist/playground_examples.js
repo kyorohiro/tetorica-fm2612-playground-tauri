@@ -12,6 +12,7 @@ export const MODE_DEFAULT_CODES = {
   "wonderswan": "// WonderSwan: four voices with independent 32-sample, 4-bit waveforms.\n// Open the WonderSwan tab to draw waves, then audition any channel with Keyboard.\nconst wave = Array.from({length: 32}, (_, i) => Math.round(7.5 + 7.5 * Math.sin(2 * Math.PI * i / 32)));\nfor (let channel = 0; channel < 4; channel++) {\n  ws.setWaveform(channel, wave);\n  ws.setVolume(channel, 10, 10);\n}\nsetBpm(120);\nliveLoop('wonderswan-four-voices', async () => {\n  for (const notes of [\n    ['C5', 'E4', 'C3', 'G3'], ['E5', 'G4', 'C3', 'E3'],\n    ['G5', 'B4', 'G2', 'D3'], ['D5', 'G4', 'G2', 'B2'],\n  ]) {\n    notes.forEach((note, channel) => ws.noteOn(channel, note));\n    await beat(0.8);\n    ws.allNotesOff();\n    await beat(0.2);\n  }\n});\n",
   "gameboy": "// Select Mode: Game Boy. Main / Worker use the same built-in APU.\n// pulse: channels 0/1, wave: channel 2, noise: channel 3.\nsetBpm(120);\ngameboy.pulse.setVoice(0, {\n  duty: 0.25, volume: 9, envelope: {direction: 'down', period: 0},\n});\n\nliveLoop('melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    gameboy.pulse.noteOn(0, note);\n    await beat(0.4);\n    gameboy.pulse.keyOff(0);\n    await beat(0.1);\n  }\n});\n\n// Other voices: gameboy.wave.noteOn('C3'), gameboy.noise.keyOn().\n// Configure them through gameboy.wave / gameboy.noise before starting.\n// Global play() is an FM shortcut in OPN modes; Game Boy uses its own API.\n",
   "nes": "// Select Mode: NES + FDS. Built-in pulse voices use physical channels 0/1.\nsetBpm(120);\nnes.pulse.setVoice(0, {duty:0.25, volume:8});\n\nliveLoop('nes-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    nes.pulse.noteOn(0, note);\n    await beat(0.4);\n    nes.pulse.noteOff(0);\n    await beat(0.1);\n  }\n});\n\n// Other voices: nes.triangle.noteOn('C3'), nes.noise.noteOn(), nes.fds.noteOn('C4').\n",
+  "ps1": "// PlayStation SPU: 24 ADPCM voices, 512 KiB RAM, 44,100 Hz native audio.\n// An original looping sample is ready on every voice; Keyboard also works before Run.\n// Open SPU to inspect the sample and edit a physical voice.\nsetBpm(120);\nspu.setPreset(0, {sample:0, volumeLeft:0.8, volumeRight:0.6, adsr2:8});\nliveLoop('ps1-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    spu.noteOn(0, note);\n    await beat(0.8);\n    spu.keyOff(0);\n    await beat(0.2);\n  }\n});\n",
   "snes": "// Select Mode: SNES. CPU-free S-DSP; original BRR, no game files needed.\nsetBpm(120);\nconst leadSample = await livePrepare('snes-mode-lead-brr', async () => {\n  const brrBytes = new Uint8Array([0xc3, 0x13, 0x57, 0x75, 0x31, 0xfd, 0xb9, 0x9b, 0xdf]);\n  // One looping block = 16 samples at native 32,000 Hz: base frequency 2,000 Hz.\n  return snes.loadBRR(brrBytes, {baseFrequencyHz:2000, loopStartSamples:0});\n});\nsnes.setPreset(0, {\n  sample:leadSample, adsr1:0x8e, adsr2:0xe0, gain:127, // Short hardware attack avoids an abrupt onset.\n  volumeLeft:80, volumeRight:80,\n});\n\nliveLoop('snes-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    snes.noteOn(0, note);\n    await beat(0.4);\n    snes.noteOff(0);\n    await beat(0.1);\n  }\n});\n\n// Eight physical voices, numbered 0..7. Assign a BRR sample before setting pitch.\n",
   "x68000": "// Select Mode: X68000. Built-in YM2151, channels 0..7; operators M1/C1/M2/C2.\nsetBpm(120);\nopm.setAlgo(0, 7);\nopm.setPan(0, true, true);\nopm.setOperator(0, 3, {mul:1, tl:32, ar:31, d1r:0, d2r:0, d1l:0, rr:15});\n\nliveLoop('x68000-opm-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    opm.setNote(0, note);\n    opm.keyOn(0, 8); // Only C2, one of algorithm 7's four parallel carriers.\n    await beat(0.4);\n    opm.keyOff(0);\n    await beat(0.1);\n  }\n});\n\n// The built-in adpcm device is the X68000's mono OKIM6258.\n",
   "pc-engine": "// Select Mode: PC Engine. Six 32-entry, five-bit wavetable voices.\nsetBpm(120);\npce.setWaveform(0, Array.from({length:32}, (_, index) =>\n  Math.round(15.5 + 15.5 * Math.sin(index * Math.PI / 16))));\npce.setVolume(0, 26); // Hardware volume 0..31.\npce.setPan(0, 15, 15); // Independent left/right balances 0..15.\n\nliveLoop('pce-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'B4', 'C5', 'G4', 'E4', 'D4']) {\n    // Keep the waveform running between notes; hard key cuts can click.\n    pce.noteOn(0, note);\n    await beat(0.5);\n  }\n});\n\n// Uploading a waveform stops its channel. Channels 4/5 can also generate noise.\n",
@@ -487,6 +488,11 @@ export const EXAMPLE_FILES = [
     "data": "// Independent YM2608; no need to change the Playground chip selector.\n// Uses the bundled BSD-3-Clause Tetorica synthetic rhythm sounds.\n// These sounds differ from Yamaha's original ROM.\nconst ym2608 = await createSoundChip('ym2608');\ntry {\n  ym2608.reset();\n  const rhythm = ym2608.rhythm;\n  rhythm.setVolume(48);\n  for (let voice = 0; voice < 6; voice++) {\n    rhythm.setVoice(voice, {volume: 24, left: true, right: true});\n    rhythm.keyOn(voice);\n    await sleep(0.75);\n  }\n  for (let step = 0; step < 8; step++) {\n    rhythm.keyOn([step % 2 ? 'snare' : 'bassDrum', 'hiHat']);\n    await sleep(0.25);\n  }\n} finally {\n  ym2608.dispose();\n}\n"
   },
   {
+    "path": "/examples/neogeo/neogeo-adpcm-a-drums.js",
+    "name": "neogeo-adpcm-a-drums",
+    "data": "// Select Mode: Neo Geo (YM2610) or Neo Geo (YM2610B).\n// Six original mono drums → ADPCM-A ROM. No external samples or extra chips.\n// ADPCM-A has six one-shot voices at clock/432, without pitch or loop controls.\nawait livePrepare(`neogeo-adpcm-a-drums-${fm.clock}`, async () => {\n  const rate = fm.clock / 432;\n  const lengths = [0.25, 0.16, 0.07, 0.21, 0.1, 0.11];\n  let noiseState = 0x12345678;\n  function makeDrum(voice) {\n    const pcm = new Float32Array(Math.ceil(rate * lengths[voice]));\n    let phase = 0, previousNoise = 0;\n    for (let i = 0; i < pcm.length; i++) {\n      const time = i / rate;\n      noiseState ^= noiseState << 13; noiseState ^= noiseState >>> 17; noiseState ^= noiseState << 5;\n      const noise = (noiseState >>> 0) / 0x80000000 - 1;\n      const highNoise = (noise - previousNoise) * 0.5;\n      previousNoise = noise;\n      let value;\n      if (voice === 0) { // Kick: descending oscillator, not a recorded sample.\n        phase += 2 * Math.PI * (48 + 115 * Math.exp(-time * 35)) / rate;\n        value = 0.6 * Math.sin(phase) * Math.exp(-time * 18);\n      } else if (voice === 1) { // Snare: noise and a short drum head.\n        value = (0.32 * noise + 0.15 * Math.sin(2 * Math.PI * 185 * time)) * Math.exp(-time * 30);\n      } else if (voice === 2) { // Closed hat.\n        value = 0.3 * highNoise * Math.exp(-time * 70);\n      } else if (voice === 3) { // Tom.\n        phase += 2 * Math.PI * (100 + 45 * Math.exp(-time * 25)) / rate;\n        value = 0.48 * Math.sin(phase) * Math.exp(-time * 22);\n      } else if (voice === 4) { // Wood block.\n        value = 0.2 * (Math.sin(2 * Math.PI * 720 * time) +\n          0.5 * Math.sin(2 * Math.PI * 1040 * time)) * Math.exp(-time * 55);\n      } else { // Shaker.\n        value = 0.28 * highNoise * Math.exp(-time * 35) *\n          (0.65 + 0.35 * Math.sin(2 * Math.PI * 70 * time));\n      }\n      // Start at zero; end at zero before the encoder pads to a ROM boundary.\n      const fade = Math.min(1, i / (rate * 0.001), (pcm.length - 1 - i) / (rate * 0.008));\n      pcm[i] = value * fade;\n    }\n    return encodeAdpcmA(pcm);\n  }\n  const encoded = lengths.map((_, voice) => makeDrum(voice));\n  const rom = new Uint8Array(encoded.reduce((size, entry) => size + entry.bytes.length, 0));\n  let address = 0;\n  const ranges = encoded.map(entry => {\n    const start = address;\n    rom.set(entry.bytes, start);\n    address += entry.bytes.length;\n    return {start, end:address}; // Exclusive end; both ends are 256-byte aligned.\n  });\n  adpcmA.keyOff([0, 1, 2, 3, 4, 5]);\n  await adpcmA.loadMemory(rom);\n  ranges.forEach((range, voice) => adpcmA.setSample(voice, range));\n  log(`Six ADPCM-A drums: ${rom.length} ROM bytes at ${rate.toFixed(2)} Hz`);\n});\n// These are chip voice levels, independent of your Mixer preset.\nadpcmA.setVolume(56);\nfor (let voice = 0; voice < 6; voice++) {\n  adpcmA.setVoice(voice, {volume:27, left:true, right:true});\n}\nsetBpm(120);\nconst steps = [\n  [0, 2], [5], [2], [5], [1, 2], [5], [3, 2], [5],\n  [0, 2], [5], [0, 2], [5], [1, 2, 4], [5], [3, 2], [4, 5],\n];\nliveLoop('neogeo-six-drum-voices', async () => {\n  for (const voices of steps) {\n    adpcmA.keyOn(voices); // Re-trigger selected voices; each stops at its own ROM end.\n    await beat(0.25);\n  }\n});\n"
+  },
+  {
     "path": "/examples/neogeo/neogeo-b-six-channel.js",
     "name": "neogeo-b-six-channel",
     "data": "// Select Mode: Neo Geo (YM2610B). This uses all six FM channels.\nsetBpm(120);\nconst channels = /** @type {const} */ ([CH1, CH2, CH3, CH4, CH5, CH6]);\nfor (const channel of channels) {\n  fm.setPreset(channel, FM_PRESETS['one-op-basic']);\n}\n\nliveLoop('six-channel-chords', async () => {\n  for (const chord of [\n    ['C3', 'G3', 'C4', 'E4', 'G4', 'B4'],\n    ['A2', 'E3', 'A3', 'C4', 'E4', 'G4'],\n    ['F2', 'C3', 'F3', 'A3', 'C4', 'E4'],\n    ['G2', 'D3', 'G3', 'B3', 'D4', 'F4'],\n  ]) {\n    for (let i = 0; i < channels.length; i++) {\n      fm.noteOn(channels[i], chord[i]);\n    }\n    await beat(0.75);\n    for (const channel of channels) fm.keyOff(channel);\n    await beat(0.25);\n  }\n});\n"
@@ -555,6 +561,31 @@ export const EXAMPLE_FILES = [
     "path": "/examples/snes/snes-mode-stereo.js",
     "name": "snes-mode-stereo",
     "data": "// Select Mode: SNES. Two tuned BRR voices, independently balanced left/right.\nsetBpm(110);\nconst duetSample = await livePrepare('snes-mode-duet-brr', async () =>\n  snes.loadBRR(new Uint8Array([0xc3, 0x13, 0x57, 0x75, 0x31, 0xfd, 0xb9, 0x9b, 0xdf]),\n    {baseFrequencyHz:2000, loopStartSamples:0}));\nsnes.setPreset(0, {\n  sample:duetSample, adsr1:0x8e, adsr2:0xe0, gain:127,\n  volumeLeft:75, volumeRight:15,\n});\nsnes.setPreset(1, {\n  sample:duetSample, adsr1:0x8e, adsr2:0xe0, gain:127,\n  volumeLeft:15, volumeRight:60,\n});\n\nliveLoop('snes-stereo-duet', async () => {\n  const leadLine = ['C4', 'E4', 'G4', 'C5', 'B4', 'G4', 'E4', 'D4'];\n  const bassLine = ['C3', 'C3', 'C3', 'C3', 'G2', 'G2', 'G2', 'G2'];\n  for (let step = 0; step < leadLine.length; step++) {\n    snes.noteOn(0, leadLine[step]); snes.noteOn(1, bassLine[step]);\n    await beat(0.4);\n    snes.noteOff(0); snes.noteOff(1);\n    await beat(0.1);\n  }\n});\n"
+  },
+  {
+    "path": "/examples/snes/snes-pcm-brr.js",
+    "name": "snes-pcm-brr",
+    "data": "// Original mono PCM → BRR → eight-voice SNES S-DSP. No sample files needed.\n// encodeBrr preserves sample indices; it does not resample or infer tuning.\nconst snes = await useSoundChip('snes');\nconst tone = await livePrepare('snes-pcm-brr', async () => {\n  // One 128-frame cycle at the native 32,000 Hz is exactly 250 Hz.\n  const pcm = Float32Array.from({length:128}, (_, i) =>\n    0.75 * Math.sin(2 * Math.PI * i / 128));\n  // Loop length and start must be aligned to 16 source samples.\n  const loopStartSamples = 0;\n  const encoded = encodeBrr(pcm, {loopStartSamples});\n  log(`PCM ${encoded.sourceFrames} frames → BRR ${encoded.brr.length} bytes; ` +\n    `raw reconstruction SNR ${encoded.metrics.snrDb?.toFixed(1) ?? 'exact'} dB`);\n  // BRR carries no root note: declare its frequency at PITCH=4096.\n  return snes.loadBRR(encoded.brr, {\n    baseFrequencyHz:32000 / pcm.length,\n    loopStartSamples,\n  });\n});\nsnes.setPreset(0, {\n  sample:tone, adsr1:0x8f, adsr2:0xe0, gain:127,\n  volumeLeft:80, volumeRight:80,\n});\nsetBpm(120);\n\nliveLoop('snes-pcm-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'C5', 'G4', 'E4']) {\n    snes.setNote(0, note);\n    snes.keyOn(0);\n    await beat(0.4);\n    snes.keyOff(0);\n    await beat(0.1);\n  }\n});\n"
+  },
+  {
+    "path": "/examples/ps1/ps1-adpcm-wave.js",
+    "name": "ps1-adpcm-wave",
+    "data": "// Author four PSX ADPCM packets directly: 112 decoded frames of a triangle.\n// This is an original filter-0 fixture, not a general PCM encoder.\nconst packets = new Uint8Array(64);\nfor (let block = 0; block < 4; block++) {\n  const at = block * 16;\n  packets[at] = 4; // Predictor 0, shift 4.\n  packets[at + 1] = block === 0 ? 6 : block === 3 ? 3 : 2;\n  for (let i = 0; i < 28; i++) {\n    const phase = (block * 28 + i) / 112;\n    const value = Math.round(7 * (1 - 4 * Math.abs(phase - 0.5)));\n    packets[at + 2 + (i >> 1)] |= (value & 15) << ((i & 1) * 4);\n  }\n}\nconst triangle = await spu.loadADPCM(packets, {baseFrequencyHz:44100 / 112, loopStartSamples:0});\nspu.setPreset(1, {sample:triangle, volumeLeft:0.7, volumeRight:0.7, adsr2:8});\nsetBpm(120);\nliveLoop('ps1-triangle', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'C5']) {\n    spu.noteOn(1, note); await beat(0.8);\n    spu.keyOff(1); await beat(0.2);\n  }\n});\n"
+  },
+  {
+    "path": "/examples/ps1/ps1-pcm-adpcm.js",
+    "name": "ps1-pcm-adpcm",
+    "data": "// Original mono PCM → PlayStation SPU ADPCM. No sample files needed.\n// Encoding preserves source indices; it does not resample, normalize or tune.\nconst ps1 = await useSoundChip('ps1');\nconst tone = await livePrepare('ps1-pcm-adpcm', async () => {\n  // Four 28-frame packets make one cycle: 44100 / 112 Hz at PITCH=4096.\n  const period = 112;\n  const pcm = Float32Array.from({length:period}, (_, i) =>\n    0.65 * Math.sin(2 * Math.PI * i / period));\n  // Loop start and looping PCM length must be aligned to 28 source frames.\n  const loopStartSamples = 0;\n  const encoded = encodePs1Adpcm(pcm, {loopStartSamples});\n  log(`PCM ${encoded.sourceFrames} frames → SPU ADPCM ${encoded.adpcm.length} bytes; ` +\n    `raw reconstruction SNR ${encoded.metrics.snrDb?.toFixed(1) ?? 'exact'} dB`);\n  // ADPCM stores no root note. Declare its frequency at hardware PITCH=4096.\n  return ps1.loadADPCM(encoded.adpcm, {\n    baseFrequencyHz:44100 / period,\n    loopStartSamples,\n  });\n});\nps1.setPreset(0, {sample:tone, volumeLeft:0.65, volumeRight:0.55, adsr2:8});\nsetBpm(120);\n\nliveLoop('ps1-pcm-melody', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'C5', 'G4', 'E4']) {\n    ps1.noteOn(0, note);\n    await beat(0.4);\n    ps1.keyOff(0);\n    await beat(0.1);\n  }\n});\n"
+  },
+  {
+    "path": "/examples/ps1/ps1-sampler.js",
+    "name": "ps1-sampler",
+    "data": "// Edit /samples/sampler.sample.json in Sample Editor, then Run → Keyboard.\n// ファイル／マイク／描いた波形をPS1の楽器にして、Guitar／PCキーで演奏します。\n// PS1 conversion uses mono 44,100 Hz and shows applied 28-frame loop boundaries.\nconst audio = await inputAudio({\n  asset:'/samples/sampler.sample.json', edit:false, target:'ps1',\n});\nif (audio) {\n  keyboard.bind('ps1-sampler', await createSampleInstrument(audio, {target:'ps1'}));\n  log('PS1 sampler ready: open Keyboard to play. Edit the saved sample to change its loop or root note.');\n}\n"
+  },
+  {
+    "path": "/examples/ps1/ps1-stereo-voices.js",
+    "name": "ps1-stereo-voices",
+    "data": "// Two physical SPU voices share the original sample, with independent stereo gains.\nsetBpm(120);\nspu.setPreset(0, {sample:0, volumeLeft:0.9, volumeRight:0.25, adsr2:9});\nspu.setPreset(23, {sample:0, volumeLeft:0.25, volumeRight:0.9, adsr2:9});\nliveLoop('ps1-stereo', async () => {\n  for (const note of ['C4', 'E4', 'G4', 'C5']) {\n    spu.noteOn(0, note);\n    spu.noteOn(23, 'C3');\n    await beat(0.8);\n    spu.keyOff(0); spu.keyOff(23);\n    await beat(0.2);\n  }\n});\n"
   },
   {
     "path": "/examples/pc-engine/pce-cd-three-sources.js",
@@ -756,12 +787,14 @@ export const MODE_EXAMPLE_FILES = Object.fromEntries(Object.entries({
   "neogeo": [
     "/examples/neogeo/neogeo-opnb-duet.js",
     "/examples/neogeo/neogeo-opnb-sections.js",
-    "/examples/neogeo/neogeo-sampler.js"
+    "/examples/neogeo/neogeo-sampler.js",
+    "/examples/neogeo/neogeo-adpcm-a-drums.js"
   ],
   "neogeo-b": [
     "/examples/neogeo/neogeo-opnb-sections.js",
     "/examples/neogeo/neogeo-b-six-channel.js",
-    "/examples/neogeo/neogeo-sampler.js"
+    "/examples/neogeo/neogeo-sampler.js",
+    "/examples/neogeo/neogeo-adpcm-a-drums.js"
   ],
   "wonderswan": [
     "/examples/wonderswan/ws-four-voices.js",
@@ -778,9 +811,16 @@ export const MODE_EXAMPLE_FILES = Object.fromEntries(Object.entries({
     "/examples/nes/nes-mode-fds.js",
     "/examples/nes/nes-mode-rhythm.js"
   ],
+  "ps1": [
+    "/examples/ps1/ps1-stereo-voices.js",
+    "/examples/ps1/ps1-adpcm-wave.js",
+    "/examples/ps1/ps1-pcm-adpcm.js",
+    "/examples/ps1/ps1-sampler.js"
+  ],
   "snes": [
     "/examples/snes/snes-mode-brr.js",
-    "/examples/snes/snes-mode-stereo.js"
+    "/examples/snes/snes-mode-stereo.js",
+    "/examples/snes/snes-pcm-brr.js"
   ],
   "x68000": [
     "/examples/x68000/x68000-mode-opm.js",

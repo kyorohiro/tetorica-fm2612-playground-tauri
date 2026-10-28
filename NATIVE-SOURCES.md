@@ -137,7 +137,18 @@ The first integration keeps clocks fixed at creation; two-core primary modes
 use the same bounded callback rack as additional `createSoundChip('pokey')`.
 Global Stop retires these core identities; the host restores silent primary
 instances with fresh IDs, retained authoring values and visible Mixer settings.
-All twenty-four ordinary sound-chip IDs and the alternative Nuked YM2612 engine
+Selected PS1 SPU and independent `createSoundChip('ps1')` devices share one
+compilation of the SDK's `vendor/mame-ps1-spu/ps1_spu.cpp`, `spu.cpp`,
+`spu_tables.cpp`, and `spureverb.cpp` in `tetorica_native_ps1_spu`. The BSD source,
+standalone adaptation notes, complete license and provenance are included in the
+fixed SDK. `src-tauri/src/native_genesis_extra_ps1.rs` owns separate handles,
+512 KiB RAM, 24 voice leases and the 44.1 kHz-to-device resampler; the primary
+wrapper reuses that implementation. Rust retains bounded command payloads,
+explicit coherent RAM captures, Mixer ramps, cancellation and Stop restoration.
+No Browser WASM or JavaScript audio rendering runs in this Native path. The
+inherited core still allocates decoded caches on cold playback and private
+reverb storage on reset; details are in [the PS1 connection guide](docs/native_ps1.md).
+All supported sound-chip IDs and the alternative Nuked YM2612 engine
 now consume the SDK at these boundaries; machine-specific helpers remain local. The
 [SDK adoption guide](docs/native-sdk-ym2612.md) lists the
 consumed paths, pinned archive hash and deliberate offline update procedure.
