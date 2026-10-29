@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.7 — PlayStation SPU live instrument controls (unreleased)
+
+- Replace linear voice interpolation with PS1 four-point Gaussian interpolation using the documented 512 hardware coefficients, 8-bit phase, separate signed product rounding, and persistent three-sample history across packets/loops and skipped source frames. Noise bypasses the filter. The C ABI is unchanged.
+- Add explicit `ps1_spu_refresh_envelope` for changing a running envelope's rate without restarting sample playback or resetting its current level. Raw ADSR register writes retain their key-on-latched behavior.
+- Add opt-in `ps1_spu_audition_key` with per-voice, 128-frame transition ramps and a minimum duration for fast manual releases. Programmed slow and infinite release settings are preserved. Raw KON/KOFF playback remains unchanged.
+- Keep latched Release rates separate from the manual minimum duration, so manual Off and repeated/raw KOFF do not implicitly apply deferred ADSR edits. The next actual KON or explicit envelope refresh applies the new values. Cover held Attack/Decay/Sustain, both RR 31-to-0 directions, next-KON latching, long/infinite releases and foreign-channel continuity in the real-core fixture.
+- Export both extensions in Native and WASM, and cover their guards, phase/level continuity, reset and cancelled transitions in the Native fixture. These are instrument controls, not hardware-register accuracy claims.
+- This entry describes local development; source archive creation does not publish a release.
+
 ## 0.1.6 — PlayStation SPU instrument
 
 - Collect the existing BSD-3-Clause standalone MAME-derived SPU adaptation and pristine upstream sources, preserving all imported bytes, notices and SHA-256 provenance. No MAME framework, BIOS, game files or downloads are needed.

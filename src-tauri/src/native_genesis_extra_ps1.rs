@@ -26,6 +26,8 @@ extern "C" {
     fn ps1_spu_load_ram(ptr: *mut c_void, address: u32, data: *const u8, length: u32) -> i32;
     fn ps1_spu_read_ram(ptr: *mut c_void, address: u32, data: *mut u8, length: u32) -> i32;
     fn ps1_spu_render(ptr: *mut c_void, left: *mut f32, right: *mut f32, frames: u32) -> i32;
+    fn ps1_spu_refresh_envelope(ptr: *mut c_void, channel: u32) -> i32;
+    fn ps1_spu_audition_key(ptr: *mut c_void, channel: u32, on: i32) -> i32;
 }
 #[derive(Clone, Debug, Deserialize)]
 pub struct Message {
@@ -77,9 +79,28 @@ pub enum Method {
     },
 }
 #[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(tag = "method", rename_all = "kebab-case")]
+#[serde(tag = "method", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Op {
-    Write { register: u16, value: u16 },
+    Write {
+        register: u16,
+        value: u16,
+        #[serde(default, deserialize_with = "deserialize_mask")]
+        mask: Option<u16>,
+    },
+    RefreshEnvelope {
+        channel: u8,
+        #[serde(default, rename = "ifChanged")]
+        if_changed: bool,
+    },
+    AuditionKey {
+        channel: u8,
+        on: bool,
+    },
+}
+fn deserialize_mask<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u16>, D::Error> {
+    u16::deserialize(deserializer).map(Some)
 }
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -118,7 +139,27 @@ fn local(register: u16) -> Option<usize> {
     (register < 0x180).then_some(register as usize / 16)
 }
 fn validate(op: &Op) -> Result<(), String> {
-    let Op::Write { register, value } = *op;
+    let (register, value) = match *op {
+        Op::Write {
+            register,
+            value,
+            mask,
+        } => {
+            if mask.is_some_and(|mask| {
+                mask == 0 || register >= 0x180 || !matches!(register % 16, 8 | 10)
+            }) {
+                return Err("PS1 register masks require an ADSR word and nonzero mask".into());
+            }
+            (register, value)
+        }
+        Op::RefreshEnvelope { channel, .. } | Op::AuditionKey { channel, .. } => {
+            return if channel < 24 {
+                Ok(())
+            } else {
+                Err("Native PS1 channels must be 0–23".into())
+            };
+        }
+    };
     if register > 0x3fe || register & 1 != 0 {
         return Err("Native PS1 registers must be even byte offsets 0–1022".into());
     }
@@ -156,6 +197,7 @@ impl Message {
                 let op = Op::Write {
                     register: *register,
                     value: *value,
+                    mask: None,
                 };
                 validate(&op)?;
                 Edit::Write(op)
@@ -218,11 +260,35 @@ impl Message {
                 }
                 for op in commands {
                     validate(op)?;
-                    let Op::Write { register, .. } = *op;
-                    if channel.is_some_and(|ch| {
-                        local(register).is_some_and(|target| target != ch as usize)
-                    }) {
+                    let target = match *op {
+                        Op::Write { register, .. } => local(register),
+                        Op::RefreshEnvelope { channel, .. } | Op::AuditionKey { channel, .. } => {
+                            Some(channel as usize)
+                        }
+                    };
+                    if channel.is_some_and(|ch| target.is_some_and(|target| target != ch as usize))
+                    {
                         return Err("PS1 batch must target its declared channel".into());
+                    }
+                    if matches!(op, Op::RefreshEnvelope { .. } | Op::AuditionKey { .. })
+                        && channel.is_none()
+                    {
+                        return Err("PS1 live operations require a declared channel".into());
+                    }
+                    if matches!(op, Op::Write { mask: Some(_), .. }) && channel.is_none() {
+                        return Err("PS1 masked writes require a declared channel".into());
+                    }
+                    if let Op::AuditionKey { on, .. } = *op {
+                        let expected_action = if on {
+                            LeaseAction::On
+                        } else {
+                            LeaseAction::Off
+                        };
+                        if !self.audition || voice.is_none() || *action != expected_action {
+                            return Err(
+                                "PS1 audition keys require a matching manual voice lease".into()
+                            );
+                        }
                     }
                 }
                 Edit::Batch(commands.clone(), *channel, *voice, *action)
@@ -245,14 +311,14 @@ impl Message {
 impl Prepared {
     pub fn starts(&self) -> bool {
         match &self.edit {
-            Edit::Write(Op::Write { register, value }) => {
-                matches!(*register, 0x188 | 0x18a) && *value != 0
-            }
+            Edit::Write(Op::Write {
+                register, value, ..
+            }) => matches!(*register, 0x188 | 0x18a) && *value != 0,
             Edit::Batch(ops, _, _, action) => {
                 *action == LeaseAction::On
                     || ops
                         .iter()
-                        .any(|op| matches!(op,Op::Write{register:0x188|0x18a,value}if *value!=0))
+                        .any(|op| matches!(op,Op::Write{register:0x188|0x18a,value,..}if *value!=0))
             }
             _ => false,
         }
@@ -770,14 +836,46 @@ impl Renderer {
         preserve: bool,
         declared: Option<u8>,
     ) {
+        let manual = self.manual_mask(voice, audition);
+        match *op {
+            Op::RefreshEnvelope { channel, .. } => {
+                if manual & (1 << channel) == 0 {
+                    unsafe {
+                        ps1_spu_refresh_envelope(self.ptr, channel as u32);
+                    }
+                }
+                return;
+            }
+            Op::AuditionKey { channel, on } => {
+                if manual & (1 << channel) == 0 && !self.foreign(channel as usize, owner, voice) {
+                    unsafe {
+                        ps1_spu_audition_key(self.ptr, channel as u32, on as i32);
+                    }
+                    if on {
+                        self.gates |= 1 << channel;
+                    } else {
+                        self.gates &= !(1 << channel);
+                    }
+                }
+                return;
+            }
+            Op::Write { .. } => {}
+        }
         let Op::Write {
             register,
             mut value,
-        } = *op;
-        let manual = self.manual_mask(voice, audition);
+            mask,
+        } = *op
+        else {
+            unreachable!()
+        };
         if let Some(ch) = local(register) {
             if manual & (1 << ch) != 0 {
                 return;
+            }
+            if let Some(mask) = mask {
+                let current = unsafe { ps1_spu_read(self.ptr, register as u32) } as u16;
+                value = (current & !mask) | (value & mask);
             }
         } else if matches!(register, 0x188 | 0x18a | 0x18c | 0x18e) {
             let off = register >= 0x18c;
@@ -834,11 +932,15 @@ impl Renderer {
     }
     fn release(&mut self, ch: usize) {
         unsafe {
-            ps1_spu_write(
-                self.ptr,
-                0x18c + if ch >= 16 { 2 } else { 0 },
-                1 << (ch % 16),
-            );
+            if self.owners[ch].is_some_and(|lease| lease.audition) {
+                ps1_spu_audition_key(self.ptr, ch as u32, 0);
+            } else {
+                ps1_spu_write(
+                    self.ptr,
+                    0x18c + if ch >= 16 { 2 } else { 0 },
+                    1 << (ch % 16),
+                );
+            }
         }
         self.owners[ch] = None;
         self.gates &= !(1 << ch);
@@ -981,7 +1083,32 @@ impl Renderer {
                             audition: c.audition,
                         });
                     }
+                    let envelope_before = channel.map(|ch| {
+                        let base = ch as u32 * 16;
+                        unsafe {
+                            [
+                                ps1_spu_read(self.ptr, base + 8),
+                                ps1_spu_read(self.ptr, base + 10),
+                            ]
+                        }
+                    });
                     for op in ops {
+                        if let Op::RefreshEnvelope {
+                            channel: ch,
+                            if_changed: true,
+                        } = *op
+                        {
+                            let base = ch as u32 * 16;
+                            let now = unsafe {
+                                [
+                                    ps1_spu_read(self.ptr, base + 8),
+                                    ps1_spu_read(self.ptr, base + 10),
+                                ]
+                            };
+                            if envelope_before == Some(now) {
+                                continue;
+                            }
+                        }
                         self.write(
                             op,
                             owner,
