@@ -44,3 +44,31 @@ tests mock only RPC and prohibit Web Audio construction. These offline tests do
 not verify physical output, real-device interruptions or callback deadlines.
 The matching source ZIP includes this adapter and the complete licensed SDK.
 No publication, commit or remote CI was performed by this change.
+
+## LFO development update (after frontend scsp-native-1)
+
+The matching fixed SDK now has a 32-bit LFO oscillator phase and LFORE reset/hold.
+JavaScript setLfo prepares masked slot +0x12 writes; pending presets and actual
+playing LFO/frequency references remain separate. The callback validates pitch
+plus maximum PLFO excursion before On or live pitch/LFO edits to a pinned source.
+Hardware LFO controls are per-slot with common speed and separate pitch/amplitude
+waveform/depth. They retain the upstream gain tables; hardware fidelity is not
+claimed. The pinned source archive is still an unpublished SDK 0.1.7 candidate.
+Rebuild the Native binary and import the matching new frontend together.
+
+## 2026-10-31: guarded slot modulation development update
+
+The matching frontend is imported from `scsp-fm-dev-20261031` using the official
+Playground ZIP importer. The fixed SDK/C++/WASM pin is unchanged from the LFO
+candidate. JavaScript exposes `setModulation` / `preset.modulation` with raw
+MDL/X/Y stack offsets and STWINH; padded full-loop PCM keeps reads isolated.
+The callback validates prospective FM read spans before note/live writes, and
+protects those guard bytes against uploads even after keyOff. SA remains the
+snapshot sample identity. The new Rust regression covers atomic rejection and
+release/Stop memory ownership. Offline core parity includes PCM8/16 FM routing.
+
+Main/Worker primary/extra clients and the imported UI are tested with RPC mocked;
+actual Native audio-device fidelity/deadlines remain separate checks. Physical
+SCSP slot-write latency, low-MDL behavior and address clipping are not guaranteed.
+Multi-slot Synth allocation/patch serialization are a later stage. No release or
+SDK publication is performed by this development update.

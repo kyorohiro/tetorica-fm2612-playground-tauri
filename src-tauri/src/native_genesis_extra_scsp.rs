@@ -809,6 +809,18 @@ impl Renderer {
         let bytes = (len + 1) * if control & 16 != 0 { 1 } else { 2 };
         self.playing[ch] = Some((address, (address + bytes).min(RAM as u32)));
     }
+    // Pin the entire potential address-modulation span, including releasing
+    // voices. The original SA remains in playing[] for snapshot sample identity.
+    fn protected_range(&self, ch: usize) -> Option<(u32, u32)> {
+        self.playing[ch].map(|(a, b)| {
+            let base = ch as u32 * 32;
+            let word = self.core.read(base + 14).unwrap();
+            let depth = (word >> 12) as u32;
+            let radius = if word == 0 { 0 } else { 1u32 << depth.saturating_sub(1) };
+            let width = if self.core.read(base).unwrap() & 16 != 0 { 1 } else { 2 };
+            (a.saturating_sub(radius * width), (b + radius * width).min(RAM as u32))
+        })
+    }
     fn valid_note(&self, ch: usize, ops: &[Op]) -> bool {
         let mut words = std::array::from_fn::<_, 16, _>(|i| {
             self.core.read(ch as u32 * 32 + i as u32 * 2).unwrap()
@@ -836,6 +848,13 @@ impl Renderer {
         {
             return false;
         }
+        let md = words[7];
+        let depth = (md >> 12) as u32;
+        let radius = if md == 0 { 0 } else { 1u32 << depth.saturating_sub(1) };
+        if radius != 0 && (looping != 0x20 || words[2] != 0
+            || at < radius * width || at + (end + 1 + radius) * width > RAM as u32) {
+            return false;
+        }
         if looping == 0x20 {
             let start = words[2] as u32;
             if start >= end {
@@ -844,7 +863,9 @@ impl Renderer {
             let octave = ((words[8] >> 11) & 15) as i32;
             let octave = if octave >= 8 { octave - 16 } else { octave };
             let step = (1. + (words[8] & 1023) as f64 / 1024.) * 2f64.powi(octave);
-            if step > (end - start) as f64 {
+            let depth = ((words[9] >> 5) & 7) as usize;
+            let cents = [0., 7., 13.5, 27., 55., 112., 230., 494.][depth];
+            if step * 2f64.powf(cents / 1200.) > (end - start) as f64 {
                 return false;
             }
         }
@@ -875,11 +896,8 @@ impl Renderer {
             }
             Edit::Load(address, bytes) => {
                 let end = *address + bytes.len() as u32;
-                if self
-                    .playing
-                    .iter()
-                    .flatten()
-                    .any(|&(a, b)| *address < b && a < end)
+                if (0..32).filter_map(|ch| self.protected_range(ch))
+                    .any(|(a, b)| *address < b && a < end)
                 {
                     c.rejected.store(true, Ordering::Release);
                 } else {
@@ -955,7 +973,11 @@ impl Renderer {
                     }
                 };
                 let allowed = allowed && (channel.is_some() || held == 0);
-                if *action == LeaseAction::On && !self.valid_note(channel.unwrap() as usize, ops) {
+                let needs_bounds = channel.is_some_and(|ch| {
+                    *action == LeaseAction::On || self.playing[ch as usize].is_some()
+                        && ops.iter().any(|op| matches!(op, Op::Write { register, .. } if matches!(register % 32, 14 | 16 | 18)))
+                });
+                if needs_bounds && !self.valid_note(channel.unwrap() as usize, ops) {
                     c.invalid.store(true, Ordering::Release);
                 } else if !allowed {
                     c.rejected.store(true, Ordering::Release);

@@ -282,3 +282,47 @@ fn scsp_reset_cancels_prior_future_and_restores_master() {
     assert_eq!(state.status(0).unwrap().scsp.registers[512], 0x020f);
     assert_eq!(state.status(0).unwrap().scsp.enabled, 0);
 }
+
+#[test]
+fn scsp_lfo_live_low_rate_reset_and_bounds_are_atomic() {
+    let (s, mut r) = setup();
+    let constant: Vec<u8> = (0..65).flat_map(|_| [0x20, 0]).collect();
+    send(&s, vec![json!({"method":"load-memory","address":4096,"data":constant}),note(0,1,false)]);
+    render(&s,&mut r,128);
+    send(&s,vec![json!({"method":"batch","channel":0,"action":"edit","commands":[write(18,7)]})]);
+    let moving=render(&s,&mut r,48000*7);
+    let (lo,hi)=moving.iter().map(|x|x[0]).fold((1f32,-1f32),|(lo,hi),x|(lo.min(x),hi.max(x)));
+    assert!(hi-lo>0.20);
+    send(&s,vec![json!({"method":"batch","channel":0,"action":"edit","commands":[write(18,0x8007)]})]);
+    render(&s,&mut r,128);
+    let frozen=render(&s,&mut r,48000);assert!(frozen.iter().all(|x|*x==frozen[0]));
+    send(&s,vec![json!({"method":"batch","channel":0,"action":"edit","commands":[write(18,7)]})]);
+    let resumed=render(&s,&mut r,48000);assert!(resumed.iter().any(|x|*x!=resumed[0]));
+    // A legal 2x step exactly fits two samples; pitch LFO would cross the loop.
+    let mut tiny=note(1,2,false);for command in tiny["commands"].as_array_mut().unwrap() { if command["register"] == 38 { command["value"] = json!(2); } }
+    tiny["commands"].as_array_mut().unwrap().push(write(48,0x800));
+    send(&s,vec![tiny]);render(&s,&mut r,128);
+    send(&s,vec![json!({"id":991,"method":"batch","channel":1,"action":"edit","commands":[write(50,0xe0)]})]);
+    render(&s,&mut r,1);
+    assert!(s.scsp.as_ref().unwrap().wait_applied(991).is_err());
+    assert_eq!(s.scsp.as_ref().unwrap().status(0).unwrap().scsp.registers[25],0);
+}
+
+#[test]
+fn scsp_modulation_guards_live_edits_and_releasing_ram() {
+    let (s, mut r) = setup();
+    send(&s,vec![note(0,1,false)]);render(&s,&mut r,128);
+    // SA=4096 permits MDL=10 (+/-512 words), but not MDL=15 (+/-16384).
+    send(&s,vec![json!({"id":992,"method":"batch","channel":0,"action":"edit","commands":[write(14,0xa000)]})]);
+    render(&s,&mut r,1);assert!(s.scsp.as_ref().unwrap().wait_applied(992).is_ok());
+    send(&s,vec![json!({"id":993,"method":"batch","channel":0,"action":"edit","commands":[write(14,0xf000)]})]);
+    render(&s,&mut r,1);assert!(s.scsp.as_ref().unwrap().wait_applied(993).is_err());
+    assert_eq!(s.scsp.as_ref().unwrap().status(0).unwrap().scsp.registers[7],0xa000);
+    // Guard memory is still read after keyOff; it must not be overwritten.
+    send(&s,vec![json!({"method":"batch","channel":0,"action":"off","commands":[write(0,0x1000)]})]);render(&s,&mut r,1);
+    send(&s,vec![json!({"id":994,"method":"load-memory","address":3100,"data":[1,2]})]);
+    render(&s,&mut r,1);assert!(s.scsp.as_ref().unwrap().wait_applied(994).is_err());
+    send(&s,vec![json!({"method":"stop-voices"})]);render(&s,&mut r,1);
+    send(&s,vec![json!({"id":995,"method":"load-memory","address":3100,"data":[1,2]})]);
+    render(&s,&mut r,1);assert!(s.scsp.as_ref().unwrap().wait_applied(995).is_ok());
+}

@@ -2625,6 +2625,7 @@ type PlaygroundScspNote = string | number;
 type PlaygroundScspPCMOptions = ({rootNote: PlaygroundScspNote; baseFrequencyHz?: never} |
   {baseFrequencyHz: number; rootNote?: never}) & {
     sourceSampleRate?: number;
+    modulationDepth?: number;
     /** Forward loop [start, PCM length); omit for a one shot. */
     loopStartSamples?: number;
   };
@@ -2632,7 +2633,9 @@ interface PlaygroundScspSample {
   readonly bankId: string;
   readonly id: number;
   readonly address: number;
-  /** Includes one interpolation guard sample; allocation may also need alignment. */
+  readonly allocationAddress?: number;
+  readonly modulationDepth?: number;
+  /** Allocation bytes including guards; starts at allocationAddress ?? address. */
   readonly byteLength: number;
   readonly length: number;
   readonly bits: 8 | 16;
@@ -2660,12 +2663,24 @@ interface PlaygroundScspMix {
   /** Hardware DIPAN 0..31; 0 center, 15 right only, 31 left only. */
   pan: number;
 }
+interface PlaygroundScspLfo {
+  frequencyCode: number;
+  pitchWave: number;
+  pitchDepth: number;
+  amplitudeWave: number;
+  amplitudeDepth: number;
+  /** Hold both phases at zero until cleared. */
+  reset: boolean;
+}
+interface PlaygroundScspModulation {depth:number; xOffset:number; yOffset:number; writeInhibit:boolean;}
 interface PlaygroundScspPreset extends PlaygroundScspMix {
   sample: PlaygroundScspSample | null;
   frequencyHz: number;
   envelope: PlaygroundScspEnvelope;
+  lfo: PlaygroundScspLfo;
+  modulation: PlaygroundScspModulation;
 }
-type PlaygroundScspPresetPatch = Partial<Omit<PlaygroundScspPreset,'envelope'>> & {envelope?: Partial<PlaygroundScspEnvelope>};
+type PlaygroundScspPresetPatch = Partial<Omit<PlaygroundScspPreset,'envelope'|'lfo'|'modulation'>> & {envelope?: Partial<PlaygroundScspEnvelope>; lfo?: Partial<PlaygroundScspLfo>; modulation?: Partial<PlaygroundScspModulation>};
 interface PlaygroundScspState {
   sampleRate: 44100;
   bankId: string;
@@ -2686,6 +2701,8 @@ interface PlaygroundScsp {
   loadPCM(pcm:Int8Array|Int16Array,options:PlaygroundScspPCMOptions):Promise<PlaygroundScspSample>;
   setPreset(slot:number,patch:PlaygroundScspPresetPatch):void;
   setEnvelope(slot:number,patch:Partial<PlaygroundScspEnvelope>):void;
+  setModulation(slot:number,patch:Partial<PlaygroundScspModulation>):void;
+  setLfo(slot:number,patch:Partial<PlaygroundScspLfo>):void;
   setFrequency(slot:number,hz:number):number;
   setNote(slot:number,note:string|number):number;
   setMix(slot:number,patch:Partial<PlaygroundScspMix>):void;

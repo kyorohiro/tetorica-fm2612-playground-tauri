@@ -42,6 +42,13 @@ try {
   const {default:factory}=await import(pathToFileURL(resolve(source,'docs/generated/scsp_wasm.js')));
   const binary=await readFile(resolve(source,'docs/generated/scsp_wasm.wasm')),module=await factory({wasmBinary:binary});
   const scenarios=[
+    ...[8,16].map(bits=>({name:`FM-PCM${bits}-stack-routing`,init(s){
+      const Type=bits===8?Int8Array:Int16Array,scale=bits===8?32:8192;
+      const wave=s.loadPCM(Type.from({length:64},(_,i)=>Math.round(scale*Math.sin(2*Math.PI*i/64))),{rootNote:69,loopStartSamples:0,modulationDepth:15});
+      s.setPreset(0,{sample:wave,frequencyHz:220,directLevel:0});
+      s.setPreset(1,{sample:wave,frequencyHz:440,totalLevel:16,modulation:{depth:9,xOffset:63,yOffset:63}});s.keyOn(0);s.keyOn(1);
+    },events:[[503,'setModulation',[1,{depth:15}]],[997,'setModulation',[1,{xOffset:31}]],[1701,'setModulation',[0,{writeInhibit:true}]],[2303,'setMix',[0,{totalLevel:12}]],[3001,'setModulation',[1,{depth:0}]],[4001,'keyOff',[0]],[5001,'keyOff',[1]]]})),
+    ...[0,1,2,3].map(wave=>({name:`LFO-wave-${wave}`,seconds:wave===0?7:.5,init(s,pcm){s.setPreset(0,{sample:pcm,frequencyHz:440,lfo:{frequencyCode:wave===0?0:20,pitchWave:wave,amplitudeWave:wave,pitchDepth:7,amplitudeDepth:7}});s.keyOn(0);},events:[[503,'setLfo',[0,{reset:true}]],[997,'setLfo',[0,{reset:false}]],[2001,'setLfo',[0,{amplitudeDepth:3}]],[4001,'setLfo',[0,{pitchDepth:0}]]]})),
     {name:'cold-silence',seconds:.03,init(){},events:[],silent:true},
     {name:'PCM16-live-pitch-pan',events:[[113,'setFrequency',[0,880]],[997,'setMix',[0,{pan:15}]],[1701,'setMix',[0,{pan:31,totalLevel:8}]],[2303,'keyOff',[0]]]},
     {name:'PCM8-short-loop',init(s){const wave=s.loadPCM(new Int8Array([-128,0,127,0]),{rootNote:69,sourceSampleRate:22050,loopStartSamples:0});s.setPreset(31,{sample:wave,frequencyHz:880});s.keyOn(31);},events:[[501,'setFrequency',[31,440]],[1001,'setMix',[31,{pan:15}]],[1703,'keyOff',[31]]]},
@@ -82,10 +89,10 @@ try {
   const report={schemaVersion:1,status:'passed',deviceOpened:false,audioContextCreated:false,physicalAudioTested:false,
     method:'Actual Native Rust Core (same module compiled into Tauri) + pinned C ABI against real Browser ScspSynth/WASM/Pcm44100Resampler. Identical timestamped low-level operations, all stereo samples/registers/RAM and clock counts compared exactly.',
     sourcePin:JSON.parse(await readFile(resolve(repository,'src-tauri/soundchip-sdk.json'),'utf8')),inputs:receipts,unitTests,cases:[],stereoFrames:0,
-    limits:['Native mode admission, RPC scheduling, leases, primary/extra rack and device recovery are not connected yet.','Offline equivalence does not verify hardware fidelity, physical output or callback deadlines.','Allocator probe counts Rust global alloc/dealloc and C++ new/delete; direct C malloc/free are not intercepted.']};
+    limits:['Native admission, RPC scheduling, leases and primary/extra rack are covered by separate transport tests, not this raw-core comparison. Device recovery remains outside the offline test.','Offline equivalence does not verify hardware fidelity, physical output or callback deadlines.','Allocator probe counts Rust global alloc/dealloc and C++ new/delete; direct C malloc/free are not intercepted.']};
   for(const scenario of scenarios)for(const rate of [8000,44100,48000,96000,384000]) {
     // Long run is tested at realistic device rates, avoiding enormous fixtures.
-    if(scenario.seconds===10&&![44100,48000,96000].includes(rate))continue;
+    if(scenario.seconds>=7&&![44100,48000,96000].includes(rate))continue;
     let original;
     for(const blocks of [[128],[1,7,63,257,3,1024,17]]) {
       const reference=await browserCase(scenario,rate,blocks),{frames,left,right,events}=reference;
