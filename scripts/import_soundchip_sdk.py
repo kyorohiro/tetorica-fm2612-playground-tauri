@@ -123,6 +123,16 @@ PS1_INPUTS = {
         'upstream/spureverb.cpp', 'upstream/spureverb.h', 'upstream/REVISION',
         'upstream/SHA256SUMS')),
 }
+SCSP_INPUTS = {
+    'scripts/build_scsp_wasm.sh', 'tests/scsp_wasm_smoke.mjs',
+    'native/include/tetorica/scsp.h', 'native/tests/scsp_fixture.cpp',
+    'native/examples/scsp_pattern.hpp',
+    *('vendor/mame-scsp/' + name for name in (
+        'scsp_instrument.cpp', 'scsp_instrument.h', 'scsp.cpp', 'scsp.h',
+        'scspdsp.cpp', 'scspdsp.h', 'standalone_support.h', 'LICENSE', 'README.md',
+        'upstream/scsp.cpp', 'upstream/scsp.h', 'upstream/scspdsp.cpp',
+        'upstream/scspdsp.h', 'upstream/REVISION', 'upstream/SHA256SUMS')),
+}
 APPLICATION_AUDIO_INPUTS = {
     *(f'vendor/tetorica-{component}/{name}'
       for component in ('cdda', 'msm5205')
@@ -185,6 +195,8 @@ def manifest_records(raw):
     # A POKEY-capable release must include its adaptation and licensed original.
     if PS1_INPUTS & names:
         require(PS1_INPUTS <= names, 'SDK PS1 SPU source release is incomplete')
+    if SCSP_INPUTS & names:
+        require(SCSP_INPUTS <= names, 'SDK SCSP source release is incomplete')
     if POKEY_INPUTS & names:
         require(POKEY_INPUTS <= names, 'SDK POKEY source release is incomplete')
     if APPLICATION_AUDIO_MARKERS & names:

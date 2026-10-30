@@ -17,6 +17,11 @@ use std::{
 
 #[path = "native_genesis_cdda.rs"]
 pub mod cdda;
+// Callback core is verified independently before adding SCSP to Native mode
+// admission. The command/lease/rack transport is the following integration step.
+#[allow(dead_code)]
+#[path = "native_genesis_scsp_core.rs"]
+mod scsp_core;
 #[cfg(test)]
 #[path = "native_genesis_consoles_tests.rs"]
 mod consoles_tests;

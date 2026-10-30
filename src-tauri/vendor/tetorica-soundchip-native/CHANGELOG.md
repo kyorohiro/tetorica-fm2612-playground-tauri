@@ -1,6 +1,15 @@
 # Changelog
 
+## Unreleased — experimental SCSP instrument
+
+- Pin BSD-3-Clause MAME SCSP/DSP sources at `a64a5d6602b19f67e091a4491f0c851a9dacf79d` and retain pristine files, notices and SHA-256 hashes.
+- Add CPU-free `scsp_*`, `<tetorica/scsp.h>`, `tetorica::scsp`, a WASM recipe and original PCM fixture. Fixed 44.1 kHz, private 512 KiB RAM, 32 slots. Timer/IRQ/DMA/MIDI register access is rejected; there is no SSF player.
+- Verify PCM16 sine Native/WASM bit-exact parity and block invariance; Native checks cover PCM8, pan/slot31, finite 32-slot clipping, release/reset, instance isolation and invalid inputs. FM/LFO/DSP paths are retained but not behaviorally verified.
+- Catalog SCSP separately from generic chip factory IDs, preserving historical PS1-only catalog validation. Add SCSP archive/source-closure validation, extracted Native/WASM parity and a seventh WASM CI job. Remote CI and publication are separate from local verification; the SDK version is unchanged.
+
 ## 0.1.7 — PlayStation SPU live instrument controls (unreleased)
+
+- Add opt-in software mixing headroom with a wide accumulator and fractional dry output, preserving original voice-volume precision. Default divisor 1 keeps legacy PCM. Native fixtures cover exact compensated single-note output, partitioning, reverb and reset.
 
 - Replace linear voice interpolation with PS1 four-point Gaussian interpolation using the documented 512 hardware coefficients, 8-bit phase, separate signed product rounding, and persistent three-sample history across packets/loops and skipped source frames. Noise bypasses the filter. The C ABI is unchanged.
 - Add explicit `ps1_spu_refresh_envelope` for changing a running envelope's rate without restarting sample playback or resetting its current level. Raw ADSR register writes retain their key-on-latched behavior.
@@ -99,3 +108,5 @@
 - License original Tetorica code under BSD-3-Clause, retaining third-party licenses and existing explicit file-level terms.
 - Include the Analyzer's unchanged MSM5205 and OKIM6295 JavaScript references, BSD notices, provenance, a standalone synthetic-data WAV example, and source-archive verification. Record them separately from Native targets and WASM recipes.
 - Collect separately pinned, BSD-declared upstream MSM5205/OKIM6295/ADPCM C/C++ originals with per-file hashes. Document missing framework dependencies and omit libvgm support/player files without explicit licenses; retain the JavaScript engines and existing build targets unchanged.
+
+Optional software sample bank: `ps1_spu_set_host_pcm` copies signed mono PCM outside physical SPU RAM (up to 30 minutes at 44.1 kHz). `ps1_spu_set_host_mask` selects voices at key-on. Gaussian interpolation, PMON, ADSR, mixing and reverb still run in the SPU core. Reset preserves the bank; zero frames clears it. Default register/RAM playback is unchanged. The browser host labels this Software audio; it is not additional PS1 hardware RAM.

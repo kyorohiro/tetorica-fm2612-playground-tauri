@@ -276,6 +276,7 @@ public:
 	mutable int ref_count;
 	bool valid,
 				is_loop;
+	bool host_pcm = false;
 	sample_loop_cache *loop_cache;
 
 
@@ -1130,6 +1131,8 @@ void spu_device::device_reset()
 	for (auto & elem : output_buf)
 		if (!elem) elem=std::make_unique<unsigned char []>(output_buffer_size);
 	output_head=output_tail=output_size=0;
+	for (auto &mix : host_mix_buf) mix.fill(0);
+	host_mix_correction.fill(0);
 
 	noise_t=0;
 	noise_seed=12345;
@@ -1148,6 +1151,7 @@ void spu_device::device_stop()
 	delete xa_buffer;
 	delete cdda_buffer;
 	delete[] voice;
+	if (host_sample) { host_sample->remove_ref(); host_sample=nullptr; }
 }
 //
 //
@@ -1747,6 +1751,13 @@ void spu_device::update_voice_loop(const unsigned int v)
 	// a pointer to the loop position if enabled
 
 	vi->loop.reset();
+	if (vi->play.cache->host_pcm) {
+		if (vi->play.cache->get_loop_pointer(&vi->loop)) {
+			vi->loop_cache=vi->play.cache->loop_cache;
+			vi->loop_cache_owner=vi->loop;
+		}
+		return;
+	}
 
 	// If loop address is not forced get the loop pointer from the cache
 	// block (if present)
@@ -2070,6 +2081,13 @@ void spu_device::generate_voice(const unsigned int v,
 	int16_t *out=static_cast<int16_t *>(outxptr);
 	const int16_t *noise=static_cast<int16_t *>(noiseptr);
 	const int16_t *vol=spureg.volumex[v];
+	int32_t *wide=nullptr;
+	if (host_mix_divisor>1) {
+		const auto address=reinterpret_cast<uintptr_t>(ptr);
+		const auto reverb_base=reinterpret_cast<uintptr_t>(output_buf[1].get());
+		const unsigned int bus=(address>=reverb_base && address<reverb_base+output_buffer_size)?1:0;
+		wide=host_mix_buf[bus].data()+((address-reinterpret_cast<uintptr_t>(output_buf[bus].get()))>>1);
+	}
 	for (unsigned int frame=0; frame<sz; ++frame)
 	{
 		const unsigned int i=(phase>>4)&255;
@@ -2082,8 +2100,16 @@ void spu_device::generate_voice(const unsigned int v,
 		vi->env_level+=vi->env_delta;
 		vi->advance_audition_gain();
 		if (out) out[frame]=sample;
-		dp[0]=clamp(dp[0]+((sample*vol[0])>>15));
-		dp[1]=clamp(dp[1]+((sample*vol[1])>>15));
+		if (wide) {
+			for (unsigned int c=0;c<2;c++) {
+				wide[c]+=((sample*vol[c])>>15);
+				dp[c]=clamp(wide[c]/static_cast<int32_t>(host_mix_divisor));
+			}
+			wide+=2;
+		} else {
+			dp[0]=clamp(dp[0]+((sample*vol[0])>>15));
+			dp[1]=clamp(dp[1]+((sample*vol[1])>>15));
+		}
 		dp+=2;
 		phase+=vi->pitch;
 		const unsigned int advance=phase>>12;
@@ -2198,7 +2224,10 @@ void spu_device::key_on(const int v)
 
 //  printf("key_on: %d @ %x (pitch %x)\n", v, spureg.voice[v].addr<<m_counter_shift, spureg.voice[v].pitch);
 
-	translate_sample_addr(spureg.voice[v].addr<<m_counter_shift,&voice[v].play);
+	if (host_sample && (host_sample_mask & (1u<<v))) {
+		voice[v].play.reset();
+		voice[v].play=cache_pointer(host_sample->data.get(),host_sample);
+	} else translate_sample_addr(spureg.voice[v].addr<<m_counter_shift,&voice[v].play);
 	assert(voice[v].play.ptr<voice[v].play.cache->dend);
 
 	voice[v].keyontime=0; //get_system_time();
@@ -2610,6 +2639,13 @@ void spu_device::generate(void *ptr, const unsigned int sz)
 	{
 		unsigned int n=(std::min)((std::min)(left,output_buffer_size-output_head),output_size);
 		memcpy(dp,&output_buf[0][output_head],n);
+		if (host_mix_divisor>1) {
+			const auto *dry=reinterpret_cast<const int16_t *>(&output_buf[0][output_head]);
+			const auto *send=reinterpret_cast<const int16_t *>(&output_buf[1][output_head]);
+			const unsigned int start=output_head>>1,position=(dp-static_cast<unsigned char *>(ptr))>>1;
+			for (unsigned int j=0;j<(n>>1);j++)
+				host_mix_correction[position+j]=float(host_mix_buf[0][start+j]+host_mix_buf[1][start+j])/float(host_mix_divisor)-float(dry[j]+send[j]);
+		}
 
 		rev->process((signed short *)dp,
 									(signed short *)&output_buf[1][output_head],
@@ -2764,6 +2800,10 @@ void spu_device::process_until(const unsigned int tsample)
 
 		memset(outptr,0,process_samples<<2);
 		memset(reverbptr,0,process_samples<<2);
+		if (host_mix_divisor>1) {
+			const unsigned int start=(static_cast<unsigned char *>(outptr)-output_buf[0].get())>>1;
+			for (auto &mix : host_mix_buf) std::fill_n(mix.data()+start,process_samples*2,0);
+		}
 
 		// If noise is enabled for any channels generate noise samples
 
@@ -3172,6 +3212,12 @@ void spu_device::read_ram(uint32_t address, uint8_t *data, uint32_t length) cons
 	std::memcpy(data, reinterpret_cast<const uint8_t*>(m_spu_ram) + address, length);
 }
 
+void spu_device::set_mix_headroom(uint32_t divisor)
+{
+	if (divisor<1 || divisor>32) throw std::out_of_range("Mix headroom must be 1..32");
+	if (host_mix_divisor!=divisor) {flush_output_buffer();host_mix_divisor=divisor;}
+}
+
 void spu_device::render(float *left, float *right, uint32_t frames)
 {
 	// The original output ring contains 2,048 stereo frames. Draining each
@@ -3181,17 +3227,50 @@ void spu_device::render(float *left, float *right, uint32_t frames)
 	while (position < frames)
 	{
 		const uint32_t count = std::min<uint32_t>(2048, frames - position);
+		if (host_mix_divisor>1) host_mix_correction.fill(0);
 		generate(pcm.data(), count * 4);
 		for (uint32_t i = 0; i < count; ++i)
 		{
 			// Match MAME's sound_stream_update fixed master gain. SPUCNT output
 			// enable/mute is enforced here because upstream does not gate it.
 			const bool enabled = (spureg.ctrl & 0xc000) == 0xc000;
-			left[position + i] = enabled ? float(pcm[i * 2]) * float(spureg.mvolx[0]) / 1073741824.0f : 0.0f;
-			right[position + i] = enabled ? float(pcm[i * 2 + 1]) * float(spureg.mvolx[1]) / 1073741824.0f : 0.0f;
+			left[position + i] = enabled ? (host_mix_divisor>1 ? std::clamp(float(pcm[i*2])+host_mix_correction[i*2],-32768.0f,32767.0f) : float(pcm[i*2])) * float(spureg.mvolx[0]) / 1073741824.0f : 0.0f;
+			right[position + i] = enabled ? (host_mix_divisor>1 ? std::clamp(float(pcm[i*2+1])+host_mix_correction[i*2+1],-32768.0f,32767.0f) : float(pcm[i*2+1])) * float(spureg.mvolx[1]) / 1073741824.0f : 0.0f;
 		}
 		position += count;
 		// Keep the upstream relative sample counters bounded for long sessions.
 		cur_frame_sample = cur_generate_sample = 0;
 	}
+}
+
+// Host-only PCM bank. Prepare before note-on; the audio renderer still uses
+// the normal Gaussian interpolation, PMON, envelope, volume and reverb path.
+// All voices share immutable sample storage and keep independent cursors.
+void spu_device::set_host_pcm(const int16_t *pcm, uint32_t frames, bool looping)
+{
+    std::unique_ptr<sample_cache> next;
+    if (frames) {
+        next=std::make_unique<sample_cache>(this);
+        next->host_pcm=true;
+        next->valid=true;
+        next->is_loop=looping;
+        next->start=0x10000000;
+        next->end=next->start+((frames+27)/28)*m_counter_packet_next;
+        next->loopaddr=next->start;
+        // A tiny guard region permits the renderer to advance by pitch <= 4
+        // beyond the end before the normal end/loop event consumes overshoot.
+        next->data=std::make_unique<signed short []>(frames+4);
+        std::copy_n(pcm,frames,next->data.get());
+        next->dend=next->data.get()+frames;
+        next->loop=looping ? next->data.get() : nullptr;
+        if (looping) {
+            next->loop_cache=new sample_loop_cache;
+            next->loop_cache->len=std::min<uint32_t>(frames,num_loop_cache_samples);
+            std::copy_n(pcm,next->loop_cache->len,next->loop_cache->data);
+        }
+        next->add_ref();
+    }
+    if (host_sample) host_sample->remove_ref();
+    host_sample=next.release();
+    if (!host_sample) host_sample_mask=0;
 }

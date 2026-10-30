@@ -219,6 +219,15 @@ compiled output and the source ZIP itself. To regenerate it independently:
 python3 scripts/prepare_native_sources.py
 ```
 
+## SCSP callback preparation
+
+The Rust SCSP callback core compiles the fixed SDK's BSD-3-Clause
+`vendor/mame-scsp/{scsp_instrument,scsp,scspdsp}.cpp` once. Its 512 KiB RAM and
+register/DSP state belong to each exclusive core. The SDK includes the original
+upstream sources, revision, hashes and attribution to ElSemi and R. Belmont.
+This intermediate layer does not yet admit SCSP into Native mode selection or
+the primary/extra device rack. See [the core integration and parity guide](docs/native_scsp_core.md).
+
 ## Application audio sources
 
 CD-DA and MSM5205 compile their original C11 sources directly from the fixed

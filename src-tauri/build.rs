@@ -469,6 +469,22 @@ fn main() {
         .file("vendor/tetorica-soundchip-native/vendor/libvgm-pokey/pokey.cpp")
         .warnings(false)
         .compile("tetorica_native_pokey");
+    // SCSP callback core uses the same immutable raw instrument as Browser WASM.
+    println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/mame-scsp");
+    cc::Build::new()
+        .cpp(true)
+        .flag_if_supported("/EHsc")
+        .std("c++17")
+        .opt_level(2)
+        .flag_if_supported("-fwrapv")
+        .flag_if_supported("-fno-strict-aliasing")
+        .flag_if_supported("-ffp-contract=off")
+        .include("vendor/tetorica-soundchip-native/vendor/mame-scsp")
+        .file("vendor/tetorica-soundchip-native/vendor/mame-scsp/scsp_instrument.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/mame-scsp/scsp.cpp")
+        .file("vendor/tetorica-soundchip-native/vendor/mame-scsp/scspdsp.cpp")
+        .warnings(false)
+        .compile("tetorica_native_scsp");
     // WonderSwan shares one pinned raw SDK core between primary and extras.
     // Speaker DC/clock adaptation belongs to the application, not the SDK.
     println!("cargo:rerun-if-changed=vendor/tetorica-soundchip-native/vendor/mame-wonderswan");
