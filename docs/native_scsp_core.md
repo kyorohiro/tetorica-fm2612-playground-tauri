@@ -1,5 +1,8 @@
 # SCSP Native callback core — 2026-10-30
 
+This is the first checkpoint's record. The subsequent
+[transport and UI integration](native_scsp_transport.md) now connects this core.
+
 The first Native integration layer is compiled into the application: an exclusively
 owned Rust `Core` calls the same pinned SCSP C ABI as the Browser WASM build.
 SCSP is **not yet selectable as a Native backend**. Timestamped admission,

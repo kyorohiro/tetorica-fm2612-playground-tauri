@@ -6,21 +6,19 @@
     "schemaVersion": 1,
     "name": "tetorica-soundchip-native",
     "version": "0.1.7",
-    "sourceCommit": "544364743702671fac40eed4fe7ef44f4769c07f",
+    "sourceCommit": "f9f76df545e56fa4195cf345a9de507ae3bcb39b",
     "archiveName": "tetorica-soundchip-native-0.1.7-sources.zip",
-    "archiveSha256": "e9cc58cf4f5c93fb4e83d96ff950cdb15718eba6c4354514f211a3a659605306",
-    "manifestSha256": "e26df6fb50314708ecd0e502ff3fa49e572fb0f0feb9a3889518c686b2c89916",
-    "fileCount": 455,
+    "archiveSha256": "efe7daa49a97dad00de9745e92aed9a16820cde2ae89e55a0222523dee7974a1",
+    "manifestSha256": "5c1a6dd688b21040820d9bbcf5ac1fc70efeeb66a4de934c60eda5d5d5688f91",
+    "fileCount": 476,
     "localCandidate": {
-      "baseCommit": "544364743702671fac40eed4fe7ef44f4769c07f",
+      "baseCommit": "f9f76df545e56fa4195cf345a9de507ae3bcb39b",
       "changedPaths": [
+        ".github/workflows/verify-sdk.yml",
         "CHANGELOG.md",
-        "catalog/source_inventory.json",
-        "docs/chip-differences.md",
-        "native/reference/SOURCES.json",
-        "native/tests/ps1_spu_fixture.cpp",
-        "vendor/mame-ps1-spu/README.md",
-        "vendor/mame-ps1-spu/spu.cpp"
+        "README.md",
+        "tests/check_standalone_release.py",
+        "tests/test_scsp_instrument_release.py"
       ]
     }
   },
@@ -38,20 +36,20 @@
         "sha256": "d49c2f05a09d2d648c05a5af92240a5dc4059830bc29afbb8919c6d1ba76bf91"
       },
       "catalog/source_inventory.json": {
-        "bytes": 145009,
-        "sha256": "9fa05183af21ca4a8bee247a5a65bf3e091b052996fbbd98e55cc16ba05b26e1"
+        "bytes": 150504,
+        "sha256": "325ee890ce772bfb7d7b2a9428e45bbab49296184b2c16806ada9a8c4b7cc4a2"
       },
       "native/include/tetorica/ps1_spu.h": {
         "bytes": 260,
         "sha256": "fb63b2d23722b22add49bca62d30ad24f9c9af5cdd7fbe8807b09c01d44b92bb"
       },
       "scripts/build-wasm.sh": {
-        "bytes": 1691,
-        "sha256": "1a3f9947836c9d88e949ad564be6bcd18bd713b5f4317ed45720070270b9f034"
+        "bytes": 1696,
+        "sha256": "caf6bd1688d21b48cf5c633aac9aa9398ad727b8b5445fca7aa37718d7dca33f"
       },
       "scripts/build_ps1_spu_wasm.sh": {
-        "bytes": 1343,
-        "sha256": "1fc081657402511ad5f87cb95dec2db98f7ba1a4e4eca99f113e9b1f0cd38867"
+        "bytes": 1421,
+        "sha256": "02300a5ebd8d5b63341da11f1617dfd3501d1d4eadfede658f83b9639ce1a2c7"
       },
       "scripts/record_wasm_build.mjs": {
         "bytes": 2006,
@@ -66,24 +64,24 @@
         "sha256": "53226467f8f025aa2bf11c9297ed61ff146071edf2c6a4459fe4f8600455252b"
       },
       "vendor/mame-ps1-spu/README.md": {
-        "bytes": 8163,
-        "sha256": "78dec1dd3771eebbb77ec9571517047fddbd06b54ae792c508492059d2b8c1c3"
+        "bytes": 9186,
+        "sha256": "59a588c0da4a83b17944713283f1ee3d2d8ff23058c90ca08997c50f3031f6c5"
       },
       "vendor/mame-ps1-spu/ps1_spu.cpp": {
-        "bytes": 3854,
-        "sha256": "c27a63c876f51f76b62627279d4789f04db64313591b0bac327878c23d0401b8"
+        "bytes": 4702,
+        "sha256": "6dd978dd9335c7b647cac4bdd8a97b1c08ed58711519ef9e82a1cfe01cb51ae5"
       },
       "vendor/mame-ps1-spu/ps1_spu.h": {
-        "bytes": 2364,
-        "sha256": "8c5bd7ba60fdc22bcb02ab1666198cf5539e888e0b07731d24da0ed8bd9c3dfd"
+        "bytes": 3277,
+        "sha256": "3d4f4611058332ba85aa979c2b62a112efb79036396644f0734cbb9a183b7c4f"
       },
       "vendor/mame-ps1-spu/spu.cpp": {
-        "bytes": 72604,
-        "sha256": "d15730662a869a39ee44848ad6d02d280e15db0139a61ad8040a09c28b1433e9"
+        "bytes": 76241,
+        "sha256": "3316f13b65a92cd83d1605c049d81be28f024060ce36271cf4c42834bbe62eea"
       },
       "vendor/mame-ps1-spu/spu.h": {
-        "bytes": 8702,
-        "sha256": "874631f38ee1c2353ccd60a9096aa77d6b8da6f161d90eaf0736e9420feaa199"
+        "bytes": 9292,
+        "sha256": "3f7f0264e0d1cc093d3f2006d07c601654845071625e78d2372fbf3b2d62026c"
       },
       "vendor/mame-ps1-spu/spu_tables.cpp": {
         "bytes": 21649,
@@ -132,34 +130,32 @@
     },
     "sdk": {
       "archiveName": "tetorica-soundchip-native-0.1.7-sources.zip",
-      "archiveSha256": "e9cc58cf4f5c93fb4e83d96ff950cdb15718eba6c4354514f211a3a659605306",
-      "fileCount": 455,
+      "archiveSha256": "efe7daa49a97dad00de9745e92aed9a16820cde2ae89e55a0222523dee7974a1",
+      "fileCount": 476,
       "localCandidate": {
-        "baseCommit": "544364743702671fac40eed4fe7ef44f4769c07f",
+        "baseCommit": "f9f76df545e56fa4195cf345a9de507ae3bcb39b",
         "changedPaths": [
+          ".github/workflows/verify-sdk.yml",
           "CHANGELOG.md",
-          "catalog/source_inventory.json",
-          "docs/chip-differences.md",
-          "native/reference/SOURCES.json",
-          "native/tests/ps1_spu_fixture.cpp",
-          "vendor/mame-ps1-spu/README.md",
-          "vendor/mame-ps1-spu/spu.cpp"
+          "README.md",
+          "tests/check_standalone_release.py",
+          "tests/test_scsp_instrument_release.py"
         ]
       },
-      "manifestSha256": "e26df6fb50314708ecd0e502ff3fa49e572fb0f0feb9a3889518c686b2c89916",
+      "manifestSha256": "5c1a6dd688b21040820d9bbcf5ac1fc70efeeb66a4de934c60eda5d5d5688f91",
       "name": "tetorica-soundchip-native",
       "schemaVersion": 1,
-      "sourceCommit": "544364743702671fac40eed4fe7ef44f4769c07f",
+      "sourceCommit": "f9f76df545e56fa4195cf345a9de507ae3bcb39b",
       "version": "0.1.7"
     },
     "outputs": {
       "ps1_spu_wasm.js": {
-        "bytes": 16791,
-        "sha256": "6e71dc2a9d1f47b912331f1ca76887dc4983f990652282f0b311f6bf30496dd5"
+        "bytes": 17148,
+        "sha256": "49f1994131a8e7bd3224544d71dc5e73890f7d9584bb44f267818f99d1b799bf"
       },
       "ps1_spu_wasm.wasm": {
-        "bytes": 47440,
-        "sha256": "18a082270e6e494c627958bc18a59cef36470ee4d12b76e4c048ff39a6fcd3c0"
+        "bytes": 50282,
+        "sha256": "966e41128b84e39ec5aa3199bf5b7948959f8e546eb61f0e8d3d77ae419eeff4"
       }
     }
   },
@@ -173,8 +169,8 @@
     {
       "path": "catalog/source_inventory.json",
       "bundlePath": "sdk/catalog/source_inventory.json",
-      "bytes": 145009,
-      "sha256": "9fa05183af21ca4a8bee247a5a65bf3e091b052996fbbd98e55cc16ba05b26e1"
+      "bytes": 150504,
+      "sha256": "325ee890ce772bfb7d7b2a9428e45bbab49296184b2c16806ada9a8c4b7cc4a2"
     },
     {
       "path": "native/include/tetorica/ps1_spu.h",
@@ -185,14 +181,14 @@
     {
       "path": "scripts/build-wasm.sh",
       "bundlePath": "sdk/scripts/build-wasm.sh",
-      "bytes": 1691,
-      "sha256": "1a3f9947836c9d88e949ad564be6bcd18bd713b5f4317ed45720070270b9f034"
+      "bytes": 1696,
+      "sha256": "caf6bd1688d21b48cf5c633aac9aa9398ad727b8b5445fca7aa37718d7dca33f"
     },
     {
       "path": "scripts/build_ps1_spu_wasm.sh",
       "bundlePath": "sdk/scripts/build_ps1_spu_wasm.sh",
-      "bytes": 1343,
-      "sha256": "1fc081657402511ad5f87cb95dec2db98f7ba1a4e4eca99f113e9b1f0cd38867"
+      "bytes": 1421,
+      "sha256": "02300a5ebd8d5b63341da11f1617dfd3501d1d4eadfede658f83b9639ce1a2c7"
     },
     {
       "path": "scripts/record_wasm_build.mjs",
@@ -215,32 +211,32 @@
     {
       "path": "vendor/mame-ps1-spu/README.md",
       "bundlePath": "native/ps1/README.md",
-      "bytes": 8163,
-      "sha256": "78dec1dd3771eebbb77ec9571517047fddbd06b54ae792c508492059d2b8c1c3"
+      "bytes": 9186,
+      "sha256": "59a588c0da4a83b17944713283f1ee3d2d8ff23058c90ca08997c50f3031f6c5"
     },
     {
       "path": "vendor/mame-ps1-spu/ps1_spu.cpp",
       "bundlePath": "native/ps1/ps1_spu.cpp",
-      "bytes": 3854,
-      "sha256": "c27a63c876f51f76b62627279d4789f04db64313591b0bac327878c23d0401b8"
+      "bytes": 4702,
+      "sha256": "6dd978dd9335c7b647cac4bdd8a97b1c08ed58711519ef9e82a1cfe01cb51ae5"
     },
     {
       "path": "vendor/mame-ps1-spu/ps1_spu.h",
       "bundlePath": "native/ps1/ps1_spu.h",
-      "bytes": 2364,
-      "sha256": "8c5bd7ba60fdc22bcb02ab1666198cf5539e888e0b07731d24da0ed8bd9c3dfd"
+      "bytes": 3277,
+      "sha256": "3d4f4611058332ba85aa979c2b62a112efb79036396644f0734cbb9a183b7c4f"
     },
     {
       "path": "vendor/mame-ps1-spu/spu.cpp",
       "bundlePath": "native/ps1/spu.cpp",
-      "bytes": 72604,
-      "sha256": "d15730662a869a39ee44848ad6d02d280e15db0139a61ad8040a09c28b1433e9"
+      "bytes": 76241,
+      "sha256": "3316f13b65a92cd83d1605c049d81be28f024060ce36271cf4c42834bbe62eea"
     },
     {
       "path": "vendor/mame-ps1-spu/spu.h",
       "bundlePath": "native/ps1/spu.h",
-      "bytes": 8702,
-      "sha256": "874631f38ee1c2353ccd60a9096aa77d6b8da6f161d90eaf0736e9420feaa199"
+      "bytes": 9292,
+      "sha256": "3f7f0264e0d1cc093d3f2006d07c601654845071625e78d2372fbf3b2d62026c"
     },
     {
       "path": "vendor/mame-ps1-spu/spu_tables.cpp",
@@ -317,8 +313,8 @@
     },
     {
       "path": "sdk/catalog/source_inventory.json",
-      "bytes": 145009,
-      "sha256": "9fa05183af21ca4a8bee247a5a65bf3e091b052996fbbd98e55cc16ba05b26e1"
+      "bytes": 150504,
+      "sha256": "325ee890ce772bfb7d7b2a9428e45bbab49296184b2c16806ada9a8c4b7cc4a2"
     },
     {
       "path": "sdk/native/include/tetorica/ps1_spu.h",
@@ -327,13 +323,13 @@
     },
     {
       "path": "sdk/scripts/build-wasm.sh",
-      "bytes": 1691,
-      "sha256": "1a3f9947836c9d88e949ad564be6bcd18bd713b5f4317ed45720070270b9f034"
+      "bytes": 1696,
+      "sha256": "caf6bd1688d21b48cf5c633aac9aa9398ad727b8b5445fca7aa37718d7dca33f"
     },
     {
       "path": "sdk/scripts/build_ps1_spu_wasm.sh",
-      "bytes": 1343,
-      "sha256": "1fc081657402511ad5f87cb95dec2db98f7ba1a4e4eca99f113e9b1f0cd38867"
+      "bytes": 1421,
+      "sha256": "02300a5ebd8d5b63341da11f1617dfd3501d1d4eadfede658f83b9639ce1a2c7"
     },
     {
       "path": "sdk/scripts/record_wasm_build.mjs",
@@ -352,28 +348,28 @@
     },
     {
       "path": "native/ps1/README.md",
-      "bytes": 8163,
-      "sha256": "78dec1dd3771eebbb77ec9571517047fddbd06b54ae792c508492059d2b8c1c3"
+      "bytes": 9186,
+      "sha256": "59a588c0da4a83b17944713283f1ee3d2d8ff23058c90ca08997c50f3031f6c5"
     },
     {
       "path": "native/ps1/ps1_spu.cpp",
-      "bytes": 3854,
-      "sha256": "c27a63c876f51f76b62627279d4789f04db64313591b0bac327878c23d0401b8"
+      "bytes": 4702,
+      "sha256": "6dd978dd9335c7b647cac4bdd8a97b1c08ed58711519ef9e82a1cfe01cb51ae5"
     },
     {
       "path": "native/ps1/ps1_spu.h",
-      "bytes": 2364,
-      "sha256": "8c5bd7ba60fdc22bcb02ab1666198cf5539e888e0b07731d24da0ed8bd9c3dfd"
+      "bytes": 3277,
+      "sha256": "3d4f4611058332ba85aa979c2b62a112efb79036396644f0734cbb9a183b7c4f"
     },
     {
       "path": "native/ps1/spu.cpp",
-      "bytes": 72604,
-      "sha256": "d15730662a869a39ee44848ad6d02d280e15db0139a61ad8040a09c28b1433e9"
+      "bytes": 76241,
+      "sha256": "3316f13b65a92cd83d1605c049d81be28f024060ce36271cf4c42834bbe62eea"
     },
     {
       "path": "native/ps1/spu.h",
-      "bytes": 8702,
-      "sha256": "874631f38ee1c2353ccd60a9096aa77d6b8da6f161d90eaf0736e9420feaa199"
+      "bytes": 9292,
+      "sha256": "3f7f0264e0d1cc093d3f2006d07c601654845071625e78d2372fbf3b2d62026c"
     },
     {
       "path": "native/ps1/spu_tables.cpp",
@@ -432,18 +428,18 @@
     },
     {
       "path": "scripts/build_ps1_spu_wasm.sh",
-      "bytes": 1298,
-      "sha256": "ad323f14eb4c78ffd198c415d2bc699262de111c2dde81f9e23610707e4746d3"
+      "bytes": 1376,
+      "sha256": "9563832d39c54cf52fa2f0a38a20889f571864b7483c82e73af198a08a65b672"
     },
     {
       "path": "sdk/RELEASE-MANIFEST.json",
-      "bytes": 68946,
-      "sha256": "e26df6fb50314708ecd0e502ff3fa49e572fb0f0feb9a3889518c686b2c89916"
+      "bytes": 72108,
+      "sha256": "5c1a6dd688b21040820d9bbcf5ac1fc70efeeb66a4de934c60eda5d5d5688f91"
     },
     {
       "path": "sdk/soundchip-sdk.json",
-      "bytes": 775,
-      "sha256": "df7700cf5a41704aa8a126f7cad6f3670f747d8c46c3509408c48058a9b99442"
+      "bytes": 696,
+      "sha256": "35c2d422f594be23353d12b04632945dab1e8703a4dde2156cafc91117081a8e"
     },
     {
       "path": "PS1-SPU.md",

@@ -1,4 +1,5 @@
 Sega PSG: original Tetorica implementation, BSD-3-Clause. See licenses/tetorica_sega_psg/ and sources/SegaPSG.md. Hardware reference: SMS Power! SN76489 documentation by Maxim and contributors.
+Saturn SCSP: MAME adaptation by ElSemi and R. Belmont, BSD-3-Clause. See licenses/mame-scsp/ and sources/SCSP.md for source and rebuilding.
 PlayStation SPU: MAME adaptation, BSD-3-Clause. See licenses/mame-ps1-spu/ and sources/PS1-SPU.md for full source, provenance and rebuilding.
 SNES S-DSP: snes_spc, LGPL-2.1-or-later. See licenses/snes-spc and sources/SNES-SPC.md for source and rebuilding.
 Nuked OPN2: LGPL-2.1-or-later. See licenses/nuked-opn2/ and sources/Nuked-OPN2.md for corresponding source and rebuilding.

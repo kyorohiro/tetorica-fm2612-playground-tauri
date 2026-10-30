@@ -17,9 +17,6 @@ use std::{
 
 #[path = "native_genesis_cdda.rs"]
 pub mod cdda;
-// Callback core is verified independently before adding SCSP to Native mode
-// admission. The command/lease/rack transport is the following integration step.
-#[allow(dead_code)]
 #[path = "native_genesis_scsp_core.rs"]
 mod scsp_core;
 #[cfg(test)]
@@ -74,6 +71,8 @@ mod extra_pokey;
 mod extra_pokey_tests;
 #[path = "native_genesis_extra_ps1.rs"]
 mod extra_ps1;
+#[path = "native_genesis_extra_scsp.rs"]
+mod extra_scsp;
 #[path = "native_genesis_extra_psg.rs"]
 mod extra_psg;
 #[cfg(test)]
@@ -150,6 +149,11 @@ mod nes;
 mod opl;
 #[path = "native_genesis_ps1.rs"]
 mod ps1;
+#[path = "native_genesis_scsp.rs"]
+mod scsp;
+#[cfg(test)]
+#[path = "native_genesis_scsp_tests.rs"]
+mod scsp_tests;
 #[cfg(test)]
 #[path = "native_genesis_ps1_tests.rs"]
 mod ps1_tests;
@@ -337,6 +341,7 @@ enum Action {
     ExtraPokey(Arc<extra_psg::Instance>, Arc<extra_pokey::Prepared>),
     ExtraWonderSwan(Arc<extra_psg::Instance>, Arc<extra_wonderswan::Prepared>),
     ExtraPs1(Arc<extra_psg::Instance>, Arc<extra_ps1::Prepared>),
+    ExtraScsp(Arc<extra_psg::Instance>, Arc<extra_scsp::Prepared>),
     ExtraDx7(Arc<extra_psg::Instance>, Arc<extra_dx7::Prepared>),
     ExtraPwm(Arc<extra_psg::Instance>, Arc<extra_pwm::Prepared>),
     ExtraSnes(Arc<extra_psg::Instance>, Arc<extra_snes::Prepared>),
@@ -352,6 +357,7 @@ enum Action {
     Huc6280(Arc<huc6280::Prepared>),
     WonderSwan(Arc<wonderswan::Prepared>),
     Ps1(Arc<ps1::Prepared>),
+    Scsp(Arc<scsp::Prepared>),
     Ym2608(Arc<ym2608::Prepared>),
     Ym2203(Arc<ym2203::Prepared>),
     Ym2610b(Arc<ym2610b::Prepared>),
@@ -513,6 +519,11 @@ enum CommandAction {
         instance: u64,
         message: extra_ps1::Message,
     },
+    #[serde(rename = "extra-scsp")]
+    ExtraScsp {
+        instance: u64,
+        message: extra_scsp::Message,
+    },
     ExtraDx7 {
         instance: u64,
         message: extra_dx7::Message,
@@ -571,6 +582,10 @@ enum CommandAction {
     #[serde(rename = "ps1")]
     Ps1 {
         message: ps1::Message,
+    },
+    #[serde(rename = "scsp")]
+    Scsp {
+        message: scsp::Message,
     },
     Ym2608 {
         message: ym2608::Message,
@@ -707,6 +722,7 @@ impl Command {
             | CommandAction::ExtraPokey { .. }
             | CommandAction::ExtraWonderSwan { .. }
             | CommandAction::ExtraPs1 { .. }
+            | CommandAction::ExtraScsp { .. }
             | CommandAction::ExtraDx7 { .. }
             | CommandAction::ExtraPwm { .. }
             | CommandAction::ExtraSnes { .. }
@@ -727,6 +743,11 @@ impl Command {
                 let prepared=message.prepare()?;
                 if prepared.is_owner_cancel()&&self.frame!=0{return Err("Native PS1 owner cancellation requires immediate frame zero".into());}
                 Action::Ps1(prepared)
+            },
+            CommandAction::Scsp { ref message } => {
+                let prepared=message.prepare()?;
+                if prepared.is_owner_cancel()&&self.frame!=0{return Err("Native SCSP owner cancellation requires immediate frame zero".into());}
+                Action::Scsp(prepared)
             },
             CommandAction::Ym2608 { ref message } => Action::Ym2608(message.prepare()?),
             CommandAction::Ym2203 { ref message } => Action::Ym2203(message.prepare()?),
@@ -946,6 +967,7 @@ struct Shared {
     huc6280: Option<Box<huc6280::Shared>>,
     wonderswan: Option<Box<wonderswan::Shared>>,
     ps1: Option<Box<ps1::Shared>>,
+    scsp: Option<Box<scsp::Shared>>,
     wonderswan_initial_clock: u32,
     ym2608: Option<Box<ym2608::Shared>>,
     ym2203: Option<Box<ym2203::Shared>>,
@@ -1043,6 +1065,7 @@ impl Shared {
             wonderswan: (console == Some("wonderswan"))
                 .then(|| Box::new(wonderswan::Shared::default())),
             ps1: (console == Some("ps1")).then(|| Box::new(ps1::Shared::default())),
+            scsp: (console == Some("scsp")).then(|| Box::new(scsp::Shared::default())),
             wonderswan_initial_clock: extra_wonderswan::CLOCK,
             ym2608: (console == Some("ym2608")).then(|| Box::new(ym2608::Shared::default())),
             ym2203: (console == Some("ym2203")).then(|| Box::new(ym2203::Shared::default())),
@@ -1178,6 +1201,18 @@ impl Shared {
         if ps1_bytes > 8 * 1024 * 1024 {
             return Err("Native PS1 pending command limit reached (8 MiB)".into());
         }
+        let scsp_bytes: usize = commands
+            .iter()
+            .filter_map(|command| match &command.action {
+                CommandAction::Scsp { message } | CommandAction::ExtraScsp { message, .. } => {
+                    Some(message.prepared_bytes())
+                }
+                _ => None,
+            })
+            .sum();
+        if scsp_bytes > 8 * 1024 * 1024 {
+            return Err("Native SCSP pending command limit reached (8 MiB)".into());
+        }
         // Bound aggregate PC98 uploads before cloning into retained callback
         // commands. Individual uploads are additionally limited to 64 KiB.
         let ym2608_upload_bytes: usize = commands
@@ -1298,6 +1333,7 @@ impl Shared {
                 CommandAction::ExtraPokey { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraWonderSwan { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraPs1 { message, .. } => Some(message.prepared_bytes()),
+                CommandAction::ExtraScsp { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraDx7 { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraPwm { message, .. } => Some(message.prepared_bytes()),
                 CommandAction::ExtraSnes { message, .. } => Some(message.prepared_bytes()),
@@ -1550,6 +1586,12 @@ impl Shared {
                     let prepared=target.ps1()?.prepare_message(message)?;
                     if prepared.is_owner_cancel()&&command.frame!=0{return Err("Native PS1 owner cancellation requires immediate frame zero".into());}
                     Action::ExtraPs1(target,prepared)
+                } else if let CommandAction::ExtraScsp { instance, message } = &command.action {
+                    if command.frame > MAX_SAFE_INTEGER {return Err("Invalid native command frame".into());}
+                    let target=self.extra_psg.get(*instance,self.epoch.load(Ordering::Acquire))?;
+                    let prepared=target.scsp()?.prepare_message(message)?;
+                    if prepared.is_owner_cancel()&&command.frame!=0{return Err("Native SCSP owner cancellation requires immediate frame zero".into());}
+                    Action::ExtraScsp(target,prepared)
                 } else if let CommandAction::ExtraWonderSwan { instance, message } = &command.action {
                     if command.frame > MAX_SAFE_INTEGER {
                         return Err("Invalid native command frame".into());
@@ -1692,6 +1734,9 @@ impl Shared {
                 if matches!(&action, Action::Ps1(_)) && self.ps1.is_none() {
                     return Err("Native PS1 requires ps1 mode".into());
                 }
+                if matches!(&action, Action::Scsp(_)) && self.scsp.is_none() {
+                    return Err("Native SCSP requires scsp mode".into());
+                }
                 if matches!(&action, Action::Ym2608(_)) && self.ym2608.is_none() {
                     return Err("Native YM2608 requires PC98 mode".into());
                 }
@@ -1749,6 +1794,7 @@ impl Shared {
                     || self.huc6280.is_some()
                     || self.wonderswan.is_some()
             || self.ps1.is_some()
+            || self.scsp.is_some()
                     || self.ym2608.is_some()
                     || self.ym2203.is_some()
                     || self.ym2610b.is_some()
@@ -1917,6 +1963,23 @@ impl Shared {
                 .iter()
                 .filter_map(|(action, _)| {
                     if let Action::Ps1(command) = action {
+                        Some(command.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if let Err(error) = chip.retain(&prepared) {
+                self.rollback_extra_psg(&actions);
+                self.pending.fetch_sub(commands.len(), Ordering::AcqRel);
+                return Err(error);
+            }
+        }
+        if let Some(chip) = &self.scsp {
+            let prepared: Vec<_> = actions
+                .iter()
+                .filter_map(|(action, _)| {
+                    if let Action::Scsp(command) = action {
                         Some(command.clone())
                     } else {
                         None
@@ -2131,6 +2194,15 @@ impl Shared {
                     self.invalidation.fetch_add(1, Ordering::Release);
                 }
             }
+            if let Action::Scsp(command) = action {
+                if self
+                    .scsp
+                    .as_ref()
+                    .is_some_and(|state| state.commit_cancel(command))
+                {
+                    self.invalidation.fetch_add(1, Ordering::Release);
+                }
+            }
             if let Action::ExtraHuc6280(instance, command) = action {
                 if instance
                     .huc6280()
@@ -2162,6 +2234,15 @@ impl Shared {
                 if instance
                     .ps1()
                     .expect("PS1 action target")
+                    .commit_cancel(command)
+                {
+                    self.invalidation.fetch_add(1, Ordering::Release);
+                }
+            }
+            if let Action::ExtraScsp(instance, command) = action {
+                if instance
+                    .scsp()
+                    .expect("SCSP action target")
                     .commit_cancel(command)
                 {
                     self.invalidation.fetch_add(1, Ordering::Release);
@@ -2328,6 +2409,7 @@ impl Shared {
                         Some(extra_psg::Payload::WonderSwan(c.clone()))
                     }
                     Action::ExtraPs1(_, c) => Some(extra_psg::Payload::Ps1(c.clone())),
+                    Action::ExtraScsp(_, c) => Some(extra_psg::Payload::Scsp(c.clone())),
                     Action::ExtraDx7(_, c) => Some(extra_psg::Payload::Dx7(c.clone())),
                     Action::ExtraPwm(_, c) => Some(extra_psg::Payload::Pwm(c.clone())),
                     Action::ExtraSnes(_, c) => Some(extra_psg::Payload::Snes(c.clone())),
@@ -2362,6 +2444,7 @@ impl Shared {
                 | Action::ExtraPokey(instance, _)
                 | Action::ExtraWonderSwan(instance, _)
                 | Action::ExtraPs1(instance, _)
+                | Action::ExtraScsp(instance, _)
                 | Action::ExtraDx7(instance, _)
                 | Action::ExtraPwm(instance, _)
                 | Action::ExtraSnes(instance, _)
@@ -2571,6 +2654,19 @@ impl Shared {
                         .collect();
                     instance.ps1()?.retain(&prepared)
                 }
+                Action::ExtraScsp(_, _) => {
+                    let prepared: Vec<_> = actions
+                        .iter()
+                        .filter_map(|(action, owner)| {
+                            if let Action::ExtraScsp(target, command) = action {
+                                (target.id == instance.id).then(|| (command.clone(), *owner))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    instance.scsp()?.retain(&prepared)
+                }
                 Action::ExtraDx7(_, _) => {
                     let prepared: Vec<_> = actions
                         .iter()
@@ -2714,6 +2810,7 @@ impl Shared {
                         | Action::ExtraPokey(target, _)
                         | Action::ExtraWonderSwan(target, _)
                         | Action::ExtraPs1(target, _)
+                        | Action::ExtraScsp(target, _)
                         | Action::ExtraDx7(target, _)
                         | Action::ExtraPwm(target, _)
                         | Action::ExtraSnes(target, _)
@@ -2804,6 +2901,11 @@ impl Shared {
                 }
                 Action::ExtraPs1(instance, command) => {
                     let state = instance.ps1().expect("PS1 action target");
+                    state.rollback(command.clone());
+                    let _ = state.status(self.frame.load(Ordering::Acquire));
+                }
+                Action::ExtraScsp(instance, command) => {
+                    let state = instance.scsp().expect("SCSP action target");
                     state.rollback(command.clone());
                     let _ = state.status(self.frame.load(Ordering::Acquire));
                 }
@@ -3636,6 +3738,40 @@ impl Shared {
         *sequence = next_sequence;
         status
     }
+    fn create_extra_scsp(&self, instance: u64) -> Result<extra_scsp::Status, String> {
+        let mut sequence = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        let next_sequence = sequence
+            .checked_add(1)
+            .ok_or("Native event sequence has expired")?;
+        self.pending
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+                value.checked_add(1).filter(|value| *value <= CAPACITY)
+            })
+            .map_err(|_| "Native command queue is full")?;
+        let epoch = self.epoch.load(Ordering::Acquire);
+        let target = match self.extra_psg.create_scsp(instance, epoch, self.rate) {
+            Ok(target) => target,
+            Err(error) => {
+                self.pending.fetch_sub(1, Ordering::AcqRel);
+                return Err(error);
+            }
+        };
+        let status = target.scsp()?.status(self.frame.load(Ordering::Acquire));
+        self.queue
+            .push(Event {
+                frame: 0,
+                sequence: *sequence,
+                epoch,
+                owner: None,
+                action: RefCell::new(Action::ExtraPsgInstall(target)),
+            })
+            .unwrap_or_else(|_| unreachable!("Reserved additional SCSP install capacity"));
+        *sequence = next_sequence;
+        status
+    }
     fn create_extra_spc(&self, instance: u64) -> Result<extra_spc::Status, String> {
         let mut sequence = self
             .producer
@@ -4060,6 +4196,15 @@ impl Shared {
         self.invalidation.fetch_add(1, Ordering::Release);
         Ok(())
     }
+    fn dispose_extra_scsp(&self, instance: u64) -> Result<(), String> {
+        let _producer = self
+            .producer
+            .lock()
+            .map_err(|_| "Native producer state is unavailable")?;
+        self.extra_psg.dispose_scsp(instance)?;
+        self.invalidation.fetch_add(1, Ordering::Release);
+        Ok(())
+    }
     fn dispose_extra_dx7(&self, instance: u64) -> Result<(), String> {
         let _producer = self
             .producer
@@ -4408,6 +4553,24 @@ impl Shared {
             return Err("Additional PS1 instance has expired".into());
         }
         target.ps1()?.status_after(self.frame.load(Ordering::Acquire),after,ram)
+    }
+    fn extra_scsp_status(
+        &self,
+        instance: u64,
+        after: Option<u64>,
+        ram: bool,
+    ) -> Result<extra_scsp::Status, String> {
+        let target = self
+            .extra_psg
+            .get(instance, self.epoch.load(Ordering::Acquire))?;
+        if let Some(id) = after {
+            target.scsp()?.wait_applied(id)?;
+        }
+        self.check_session(self.session)?;
+        if !target.valid(self.epoch.load(Ordering::Acquire)) {
+            return Err("Additional SCSP instance has expired".into());
+        }
+        target.scsp()?.status_after(self.frame.load(Ordering::Acquire),after,ram)
     }
     fn extra_dx7_status(
         &self,
@@ -4859,6 +5022,10 @@ impl Shared {
                     .ps1
                     .as_ref()
                     .is_some_and(|state| state.valid_event(command, event.sequence, event.owner)),
+                Action::Scsp(command) => self
+                    .scsp
+                    .as_ref()
+                    .is_some_and(|state| state.valid_event(command, event.sequence, event.owner)),
                 Action::ExtraWonderSwan(instance, command) => {
                     instance.valid(self.epoch.load(Ordering::Acquire))
                         && instance
@@ -4871,6 +5038,13 @@ impl Shared {
                         && instance
                             .ps1()
                             .expect("PS1 action target")
+                            .valid_event(command, event.sequence, event.owner)
+                }
+                Action::ExtraScsp(instance, command) => {
+                    instance.valid(self.epoch.load(Ordering::Acquire))
+                        && instance
+                            .scsp()
+                            .expect("SCSP action target")
                             .valid_event(command, event.sequence, event.owner)
                 }
                 Action::ExtraDx7(instance, command) => {
@@ -5076,6 +5250,9 @@ impl Shared {
             Action::ExtraPs1(instance, command) => {
                 instance.ps1().expect("PS1 action target").retire(command)
             }
+            Action::ExtraScsp(instance, command) => {
+                instance.scsp().expect("SCSP action target").retire(command)
+            }
             Action::ExtraDx7(instance, command) => {
                 instance.dx7().expect("DX7 action target").retire(command)
             }
@@ -5138,6 +5315,11 @@ impl Shared {
             }
             Action::Ps1(command) => {
                 if let Some(chip) = &self.ps1 {
+                    chip.retire(command);
+                }
+            }
+            Action::Scsp(command) => {
+                if let Some(chip) = &self.scsp {
                     chip.retire(command);
                 }
             }
@@ -5309,6 +5491,8 @@ impl Shared {
                 "huc6280"
             } else if self.ps1.is_some() {
                 "ps1"
+            } else if self.scsp.is_some() {
+                "scsp"
             } else if self.wonderswan.is_some() {
                 "wonderswan"
             } else if self.dx7.is_some() {
@@ -5505,6 +5689,7 @@ struct Renderer {
     huc6280: Option<huc6280::Renderer>,
     wonderswan: Option<wonderswan::Renderer>,
     ps1: Option<ps1::Renderer>,
+    scsp: Option<scsp::Renderer>,
     ym2608: Option<ym2608::Renderer>,
     ym2203: Option<ym2203::Renderer>,
     ym2610b: Option<ym2610b::Renderer>,
@@ -5629,6 +5814,11 @@ impl Renderer {
             },
             ps1: if console == Some("ps1") {
                 Some(ps1::Renderer::new(rate)?)
+            } else {
+                None
+            },
+            scsp: if console == Some("scsp") {
+                Some(scsp::Renderer::new(rate)?)
             } else {
                 None
             },
@@ -5800,6 +5990,9 @@ impl Renderer {
             if let (Some(chip), Some(state)) = (&mut self.ps1, &shared.ps1) {
                 chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
+            if let (Some(chip), Some(state)) = (&mut self.scsp, &shared.scsp) {
+                chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
+            }
             if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
                 chip.cancel_invalid(|owner| shared.valid_owner(owner), state);
             }
@@ -5894,6 +6087,9 @@ impl Renderer {
             chip.publish(state);
         }
         if let (Some(chip), Some(state)) = (&self.ps1, &shared.ps1) {
+            chip.publish(state);
+        }
+        if let (Some(chip), Some(state)) = (&self.scsp, &shared.scsp) {
             chip.publish(state);
         }
         if let (Some(chip), Some(state)) = (&self.ym2608, &shared.ym2608) {
@@ -6120,6 +6316,15 @@ impl Renderer {
                 self.extra_psg.apply_ps1(&instance, &command, owner);
                 state.retire(command);
             }
+            Action::ExtraScsp(instance, command) => {
+                let state = instance.scsp().expect("SCSP action target");
+                if command.stops() {
+                    state.cancel_before(&command, sequence.saturating_add(1), owner);
+                    shared.invalidation.fetch_add(1, Ordering::Release);
+                }
+                self.extra_psg.apply_scsp(&instance, &command, owner);
+                state.retire(command);
+            }
             Action::ExtraDx7(instance, command) => {
                 let state = instance.dx7().expect("DX7 action target");
                 if command.stops() {
@@ -6257,6 +6462,15 @@ impl Renderer {
                     chip.apply(&command, owner, state);
                 }
                 shared.retire_action(Action::Ps1(command));
+            }
+            Action::Scsp(command) => {
+                if command.stops() {
+                    shared.cancel_nes_before(owner, sequence.saturating_add(1));
+                }
+                if let (Some(chip), Some(state)) = (&mut self.scsp, &shared.scsp) {
+                    chip.apply(&command, owner, state);
+                }
+                shared.retire_action(Action::Scsp(command));
             }
             Action::Ym2608(command) => {
                 if command.stops() {
@@ -6531,6 +6745,7 @@ impl Renderer {
                             || self.huc6280.is_some()
                             || self.wonderswan.is_some()
                             || self.ps1.is_some()
+                            || self.scsp.is_some()
                             || self.pokey_mode
                             || self.ym2608.is_some()
                             || self.ym2203.is_some()
@@ -6566,6 +6781,9 @@ impl Renderer {
                             chip.stop(state);
                         }
                         if let (Some(chip), Some(state)) = (&mut self.ps1, &shared.ps1) {
+                            chip.stop(state);
+                        }
+                        if let (Some(chip), Some(state)) = (&mut self.scsp, &shared.scsp) {
                             chip.stop(state);
                         }
                         if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
@@ -6701,6 +6919,7 @@ impl Renderer {
                     Action::ExtraPokey(_, command) => command.starts(),
                     Action::ExtraWonderSwan(_, command) => command.starts(),
                     Action::ExtraPs1(_, command) => command.starts(),
+                    Action::ExtraScsp(_, command) => command.starts(),
                     Action::ExtraDx7(_, command) => command.starts(),
                     Action::ExtraPwm(_, command) => command.starts(),
                     Action::ExtraSnes(_, command) => command.starts(),
@@ -6717,6 +6936,7 @@ impl Renderer {
                     Action::Huc6280(command) => command.starts(),
                     Action::WonderSwan(command) => command.starts(),
                     Action::Ps1(command) => command.starts(),
+                    Action::Scsp(command) => command.starts(),
                     Action::Ym2608(command) => command.starts(),
                     Action::Ym2203(command) => command.starts(),
                     Action::Ym2610b(command) => command.starts(),
@@ -6773,6 +6993,9 @@ impl Renderer {
         if let Some(chip) = &mut self.ps1 {
             chip.mix(&mut pcm);
         }
+        if let Some(chip) = &mut self.scsp {
+            chip.mix(&mut pcm);
+        }
         if let Some(chip) = &mut self.ym2608 {
             chip.mix(&mut pcm);
         }
@@ -6826,6 +7049,7 @@ impl Renderer {
             || self.huc6280.is_some()
             || self.wonderswan.is_some()
             || self.ps1.is_some()
+            || self.scsp.is_some()
             || self.pokey_mode
             || self.ym2608.is_some()
             || self.ym2203.is_some()
@@ -6879,6 +7103,9 @@ impl Renderer {
                     chip.stop(state);
                 }
                 if let (Some(chip), Some(state)) = (&mut self.ps1, &shared.ps1) {
+                    chip.stop(state);
+                }
+                if let (Some(chip), Some(state)) = (&mut self.scsp, &shared.scsp) {
                     chip.stop(state);
                 }
                 if let (Some(chip), Some(state)) = (&mut self.ym2608, &shared.ym2608) {
@@ -7040,6 +7267,7 @@ impl NativeGenesis {
             "pc-engine" | "pc-engine-cd" | "huc6280" => (false,false,false,Some("huc6280")),
             "wonderswan" => (false,false,false,Some("wonderswan")),
             "ps1" => (false,false,false,Some("ps1")),
+            "scsp" => (false,false,false,Some("scsp")),
             "pokey" => (false,false,false,Some("pokey")),
             "pokey-dual" => (false,false,false,Some("pokey-dual")),
             "pc98" | "ym2608" => (false,false,false,Some("ym2608")),
@@ -7275,6 +7503,8 @@ fn build_stream<T: cpal::SizedSample + cpal::FromSample<f32>>(
             Some(mode)
         } else if shared.ps1.is_some() {
             Some("ps1")
+        } else if shared.scsp.is_some() {
+            Some("scsp")
         } else if shared.wonderswan.is_some() {
             Some("wonderswan")
         } else {
@@ -7468,6 +7698,32 @@ pub async fn native_genesis_ps1_status(
     tauri::async_runtime::spawn_blocking(move || {
         state.with_session(session, |shared| {
             let chip = shared.ps1.as_ref().ok_or("Native ps1 requires ps1 mode")?;
+            if let Some(id) = after {
+                chip.wait_applied(id)?;
+            }
+            chip.status_after(
+                shared.frame.load(Ordering::Acquire),
+                after,
+                ram.unwrap_or(false),
+            )
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+#[tauri::command]
+pub async fn native_genesis_scsp_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    after: Option<u64>,
+    ram: Option<bool>,
+) -> Result<scsp::Status, String> {
+    crate::allowed(&window)?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state.with_session(session, |shared| {
+            let chip = shared.scsp.as_ref().ok_or("Native scsp requires scsp mode")?;
             if let Some(id) = after {
                 chip.wait_applied(id)?;
             }
@@ -9875,6 +10131,16 @@ pub fn native_genesis_extra_ps1_create(
     state.with_session(session, |shared| shared.create_extra_ps1(instance))
 }
 #[tauri::command]
+pub fn native_genesis_extra_scsp_create(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<extra_scsp::Status, String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.create_extra_scsp(instance))
+}
+#[tauri::command]
 pub fn native_genesis_extra_spc_create(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, NativeGenesis>,
@@ -9981,6 +10247,16 @@ pub fn native_genesis_extra_ps1_dispose(
 ) -> Result<(), String> {
     crate::allowed(&window)?;
     state.with_session(session, |shared| shared.dispose_extra_ps1(instance))
+}
+#[tauri::command]
+pub fn native_genesis_extra_scsp_dispose(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+) -> Result<(), String> {
+    crate::allowed(&window)?;
+    state.with_session(session, |shared| shared.dispose_extra_scsp(instance))
 }
 #[tauri::command]
 pub fn native_genesis_extra_dx7_dispose(
@@ -10161,6 +10437,24 @@ pub async fn native_genesis_extra_ps1_status(
     let shared = state.session_shared(session)?;
     let status =
         tauri::async_runtime::spawn_blocking(move || shared.extra_ps1_status(instance, after,ram.unwrap_or(false)))
+            .await
+            .map_err(|error| error.to_string())??;
+    state.with_session(session, |_| Ok(()))?;
+    Ok(status)
+}
+#[tauri::command]
+pub async fn native_genesis_extra_scsp_status(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, NativeGenesis>,
+    session: u64,
+    instance: u64,
+    after: Option<u64>,
+    ram: Option<bool>,
+) -> Result<extra_scsp::Status, String> {
+    crate::allowed(&window)?;
+    let shared = state.session_shared(session)?;
+    let status =
+        tauri::async_runtime::spawn_blocking(move || shared.extra_scsp_status(instance, after,ram.unwrap_or(false)))
             .await
             .map_err(|error| error.to_string())??;
     state.with_session(session, |_| Ok(()))?;

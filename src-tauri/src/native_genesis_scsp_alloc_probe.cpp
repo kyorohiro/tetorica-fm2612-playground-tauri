@@ -3,6 +3,10 @@
 #include <cstdlib>
 #include <new>
 #include <cstdint>
+#include "scsp.h"
+// Match the extra-rack charge: 2 MiB raw core, plus the common queue and
+// 64 KiB Rust/shared/renderer allowance. Never silently undercharge a new pin.
+static_assert(sizeof(scsp_device) <= 2 * 1024 * 1024, "SCSP raw core exceeds its Native instance budget");
 namespace { std::atomic<bool> hot{false}; std::atomic<uint64_t> allocations{0}, frees{0}; }
 void *operator new(std::size_t n) {
     if(hot.load(std::memory_order_relaxed)) ++allocations;

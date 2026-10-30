@@ -2,7 +2,7 @@
 //! control thread; the device callback owns their exclusive mutable access.
 use super::{
     extra_budget, extra_dx7, extra_gameboy, extra_huc6280, extra_msx, extra_nes, extra_okim6258,
-    extra_opl, extra_pokey, extra_ps1, extra_pwm, extra_rf5c164, extra_snes, extra_spc,
+    extra_opl, extra_pokey, extra_ps1, extra_scsp, extra_pwm, extra_rf5c164, extra_snes, extra_spc,
     extra_wonderswan, extra_ym2151, extra_ym2608, extra_ym2610, master_system, ym2203, ym2612,
     Owner, MAX_SAFE_INTEGER,
 };
@@ -48,6 +48,7 @@ pub enum State {
     Pokey(Box<extra_pokey::Shared>),
     WonderSwan(Box<extra_wonderswan::Shared>),
     Ps1(Box<extra_ps1::Shared>),
+    Scsp(Box<extra_scsp::Shared>),
     Dx7(Box<extra_dx7::Shared>),
     Pwm(Box<extra_pwm::Shared>),
     Snes(Box<extra_snes::Shared>),
@@ -76,6 +77,7 @@ enum Kind {
     Pokey,
     WonderSwan,
     Ps1,
+    Scsp,
     Dx7,
     Pwm,
     Snes,
@@ -102,6 +104,7 @@ enum Core {
     Pokey(Box<extra_pokey::Renderer>),
     WonderSwan(Box<extra_wonderswan::Renderer>),
     Ps1(Box<extra_ps1::Renderer>),
+    Scsp(Box<extra_scsp::Renderer>),
     Dx7(Box<extra_dx7::Renderer>),
     Pwm(Box<extra_pwm::Renderer>),
     Snes(Box<extra_snes::Renderer>),
@@ -272,6 +275,13 @@ impl Instance {
             Err("Additional instance is not a Ps1".into())
         }
     }
+    pub fn scsp(&self) -> Result<&extra_scsp::Shared, String> {
+        if let State::Scsp(state) = &self.state {
+            Ok(state)
+        } else {
+            Err("Additional instance is not a Scsp".into())
+        }
+    }
     pub fn dx7(&self) -> Result<&extra_dx7::Shared, String> {
         if let State::Dx7(state) = &self.state {
             Ok(state)
@@ -338,6 +348,7 @@ impl Instance {
             State::Pokey(_) => Kind::Pokey,
             State::WonderSwan(_) => Kind::WonderSwan,
             State::Ps1(_) => Kind::Ps1,
+            State::Scsp(_) => Kind::Scsp,
             State::Dx7(_) => Kind::Dx7,
             State::Pwm(_) => Kind::Pwm,
             State::Snes(_) => Kind::Snes,
@@ -372,6 +383,7 @@ pub enum Payload {
     Pokey(Arc<extra_pokey::Prepared>),
     WonderSwan(Arc<extra_wonderswan::Prepared>),
     Ps1(Arc<extra_ps1::Prepared>),
+    Scsp(Arc<extra_scsp::Prepared>),
     Dx7(Arc<extra_dx7::Prepared>),
     Pwm(Arc<extra_pwm::Prepared>),
     Snes(Arc<extra_snes::Prepared>),
@@ -400,6 +412,7 @@ impl Payload {
             Self::Pokey(v) => v.retained_bytes(),
             Self::WonderSwan(v) => v.retained_bytes(),
             Self::Ps1(v) => v.retained_bytes(),
+            Self::Scsp(v) => v.retained_bytes(),
             Self::Dx7(v) => v.retained_bytes(),
             Self::Pwm(v) => v.retained_bytes(),
             Self::Snes(v) => v.retained_bytes(),
@@ -428,6 +441,7 @@ impl Payload {
             Self::Pokey(v) => Arc::strong_count(v) == 1,
             Self::WonderSwan(v) => Arc::strong_count(v) == 1 && v.payload_unused(),
             Self::Ps1(v) => Arc::strong_count(v) == 1 && v.payload_unused(),
+            Self::Scsp(v) => Arc::strong_count(v) == 1 && v.payload_unused(),
             Self::Dx7(v) => Arc::strong_count(v) == 1,
             Self::Pwm(v) => Arc::strong_count(v) == 1,
             Self::Snes(v) => Arc::strong_count(v) == 1,
@@ -577,6 +591,7 @@ impl Shared {
                 State::Pokey(s) => s.collect_retired(),
                 State::WonderSwan(s) => s.collect_retired(),
                 State::Ps1(s) => s.collect_retired(),
+                State::Scsp(s) => s.collect_retired(),
                 State::Dx7(s) => s.collect_retired(),
                 State::Pwm(s) => s.collect_retired(),
                 State::Snes(s) => s.collect_retired(),
@@ -757,6 +772,38 @@ impl Shared {
             active: AtomicBool::new(true),
             state: State::Ps1(Box::new(state)),
             core: UnsafeCell::new(Core::Ps1(Box::new(core))),
+            _memory: memory,
+        });
+        control.highest = id;
+        control.instances.push(instance.clone());
+        Ok(instance)
+    }
+    pub fn create_scsp(&self, id: u64, epoch: u64, rate: u32) -> Result<Arc<Instance>, String> {
+        // Keep this constructor separate from the legacy multi-core factory:
+        // debug codegen reserves its large enum temporaries for every branch.
+        let mut control = self
+            .control
+            .lock()
+            .map_err(|_| "Additional sound-chip control state is unavailable")?;
+        Self::collect(&mut control);
+        if id == 0 || id > MAX_SAFE_INTEGER || id <= control.highest {
+            return Err(
+                "Additional sound-chip instance ID must be positive, unique and increasing".into(),
+            );
+        }
+        if control.instances.len() >= LIMIT {
+            return Err(format!("Additional sound-chip instance limit ({LIMIT}) reached; wait for retired instances to drain"));
+        }
+        let memory = self.budget.reserve(extra_scsp::INSTANCE_BYTES)?;
+        let state = extra_scsp::Shared::default();
+        let core = extra_scsp::Renderer::new(rate)?;
+        core.publish(&state);
+        let instance = Arc::new(Instance {
+            id,
+            epoch,
+            active: AtomicBool::new(true),
+            state: State::Scsp(Box::new(state)),
+            core: UnsafeCell::new(Core::Scsp(Box::new(core))),
             _memory: memory,
         });
         control.highest = id;
@@ -1407,6 +1454,9 @@ impl Shared {
     pub fn dispose_ps1(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Ps1)
     }
+    pub fn dispose_scsp(&self, id: u64) -> Result<(), String> {
+        self.dispose_kind(id, Kind::Scsp)
+    }
     pub fn dispose_dx7(&self, id: u64) -> Result<(), String> {
         self.dispose_kind(id, Kind::Dx7)
     }
@@ -1533,6 +1583,7 @@ fn extra_heap_payloads_remain_inside_fixed_instance_headroom() {
     payload!(extra_pokey::Shared, extra_pokey::Renderer);
     payload!(extra_wonderswan::Shared, extra_wonderswan::Renderer);
     payload!(extra_ps1::Shared, extra_ps1::Renderer);
+    payload!(extra_scsp::Shared, extra_scsp::Renderer);
     payload!(extra_dx7::Shared, extra_dx7::Renderer);
     payload!(extra_pwm::Shared, extra_pwm::Renderer);
     payload!(extra_snes::Shared, extra_snes::Renderer);
@@ -1570,6 +1621,9 @@ impl Renderer {
         }
         unsafe {
             if let Core::Ps1(core) = instance.callback_core() {
+                core.set_frame(frame);
+            }
+            if let Core::Scsp(core) = instance.callback_core() {
                 core.set_frame(frame);
             }
         }
@@ -1640,6 +1694,9 @@ impl Renderer {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Ps1(core), State::Ps1(state)) => {
+                                core.cancel_invalid(&valid, state)
+                            }
+                            (Core::Scsp(core), State::Scsp(state)) => {
                                 core.cancel_invalid(&valid, state)
                             }
                             (Core::Dx7(core), State::Dx7(state)) => {
@@ -1897,6 +1954,19 @@ impl Renderer {
             }
         }
     }
+    pub fn apply_scsp(
+        &mut self,
+        instance: &Instance,
+        command: &Arc<extra_scsp::Prepared>,
+        owner: Option<Owner>,
+    ) {
+        unsafe {
+            match (instance.callback_core(), &instance.state) {
+                (Core::Scsp(core), State::Scsp(state)) => core.apply(command, owner, state),
+                _ => unreachable!("Additional Scsp target"),
+            }
+        }
+    }
     pub fn apply_dx7(
         &mut self,
         instance: &Instance,
@@ -2020,6 +2090,9 @@ impl Renderer {
                         core.mix_additional(pcm, state)
                     }
                     (Core::Ps1(core), State::Ps1(state)) => {
+                        core.mix_additional(pcm, state)
+                    }
+                    (Core::Scsp(core), State::Scsp(state)) => {
                         core.mix_additional(pcm, state)
                     }
                     (Core::Dx7(core), _) => core.mix(pcm),

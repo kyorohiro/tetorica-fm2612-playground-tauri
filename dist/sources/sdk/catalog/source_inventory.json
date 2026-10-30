@@ -1905,7 +1905,7 @@
         {
           "path": "vendor/mame-ps1-spu/README.md",
           "originPath": "native/ps1/README.md",
-          "sha256": "78dec1dd3771eebbb77ec9571517047fddbd06b54ae792c508492059d2b8c1c3",
+          "sha256": "59a588c0da4a83b17944713283f1ee3d2d8ff23058c90ca08997c50f3031f6c5",
           "originalSha256": "646237d10d0bc047bb005f65fdc2306ed14b09d93505df520012db1127ca0ac6",
           "previousSdkSha256": "646237d10d0bc047bb005f65fdc2306ed14b09d93505df520012db1127ca0ac6",
           "amendmentNote": "SDK 0.1.7: explicit live-envelope and smoothed-audition controls; preserve deferred ADSR rates across manual/raw key-off by separating the latched release slope from its manual floor. Original raw register playback and pristine upstream files are unchanged. Four-point Gaussian voice interpolation replaces linear interpolation, with documented PS1 hardware coefficients and persistent history. Pristine upstream copies and C ABI remain unchanged."
@@ -1913,7 +1913,7 @@
         {
           "path": "vendor/mame-ps1-spu/ps1_spu.cpp",
           "originPath": "native/ps1/ps1_spu.cpp",
-          "sha256": "c27a63c876f51f76b62627279d4789f04db64313591b0bac327878c23d0401b8",
+          "sha256": "6dd978dd9335c7b647cac4bdd8a97b1c08ed58711519ef9e82a1cfe01cb51ae5",
           "originalSha256": "ac876ed7ef0131f0e596932e1b5c0777bf604f886f9234376e981a4f826b1b2a",
           "previousSdkSha256": "ac876ed7ef0131f0e596932e1b5c0777bf604f886f9234376e981a4f826b1b2a",
           "amendmentNote": "SDK 0.1.7: explicit opt-in live-envelope and per-voice smoothed-audition instrument extensions; raw register playback preserved. Updated source, exports and component documentation."
@@ -1921,7 +1921,7 @@
         {
           "path": "vendor/mame-ps1-spu/ps1_spu.h",
           "originPath": "native/ps1/ps1_spu.h",
-          "sha256": "8c5bd7ba60fdc22bcb02ab1666198cf5539e888e0b07731d24da0ed8bd9c3dfd",
+          "sha256": "3d4f4611058332ba85aa979c2b62a112efb79036396644f0734cbb9a183b7c4f",
           "originalSha256": "f1ae8b35b8aa81833b6a7b836b003cbdbb2c15346bf27a05488f398660ce868e",
           "previousSdkSha256": "f1ae8b35b8aa81833b6a7b836b003cbdbb2c15346bf27a05488f398660ce868e",
           "amendmentNote": "SDK 0.1.7: explicit live-envelope and smoothed-audition controls; preserve deferred ADSR rates across manual/raw key-off by separating the latched release slope from its manual floor. Original raw register playback and pristine upstream files are unchanged."
@@ -1929,7 +1929,7 @@
         {
           "path": "vendor/mame-ps1-spu/spu.cpp",
           "originPath": "native/ps1/spu.cpp",
-          "sha256": "d15730662a869a39ee44848ad6d02d280e15db0139a61ad8040a09c28b1433e9",
+          "sha256": "3316f13b65a92cd83d1605c049d81be28f024060ce36271cf4c42834bbe62eea",
           "originalSha256": "e2bf1098e1a7c4809b32006f0ed4669788bd84e0755745013fcbe66cdd73bf7b",
           "previousSdkSha256": "e2bf1098e1a7c4809b32006f0ed4669788bd84e0755745013fcbe66cdd73bf7b",
           "amendmentNote": "SDK 0.1.7: explicit live-envelope and smoothed-audition controls; preserve deferred ADSR rates across manual/raw key-off by separating the latched release slope from its manual floor. Original raw register playback and pristine upstream files are unchanged. Four-point Gaussian voice interpolation replaces linear interpolation, with documented PS1 hardware coefficients and persistent history. Pristine upstream copies and C ABI remain unchanged."
@@ -1937,7 +1937,7 @@
         {
           "path": "vendor/mame-ps1-spu/spu.h",
           "originPath": "native/ps1/spu.h",
-          "sha256": "874631f38ee1c2353ccd60a9096aa77d6b8da6f161d90eaf0736e9420feaa199",
+          "sha256": "3f7f0264e0d1cc093d3f2006d07c601654845071625e78d2372fbf3b2d62026c",
           "originalSha256": "79be48c1382f6db13ea3c87f0cc0942d2c3f52cdec5c5bd6b00af5dfc907c828",
           "previousSdkSha256": "79be48c1382f6db13ea3c87f0cc0942d2c3f52cdec5c5bd6b00af5dfc907c828",
           "amendmentNote": "SDK 0.1.7: explicit live-envelope and smoothed-audition controls; preserve deferred ADSR rates across manual/raw key-off by separating the latched release slope from its manual floor. Original raw register playback and pristine upstream files are unchanged."
@@ -1996,6 +1996,104 @@
           "path": "vendor/mame-ps1-spu/upstream/spureverb.h",
           "originPath": "native/ps1/upstream/spureverb.h",
           "sha256": "b2bc469037ed9b03d8f166b84c0c9a810a3ca4169ca0e0b39a0bf0f1ab6a5f67"
+        }
+      ]
+    },
+    {
+      "id": "mame-scsp",
+      "sourceFiles": [
+        "vendor/mame-scsp/scsp_instrument.cpp",
+        "vendor/mame-scsp/scsp_instrument.h",
+        "vendor/mame-scsp/scsp.cpp",
+        "vendor/mame-scsp/scsp.h",
+        "vendor/mame-scsp/scspdsp.cpp",
+        "vendor/mame-scsp/scspdsp.h",
+        "vendor/mame-scsp/standalone_support.h"
+      ],
+      "licenseFiles": [
+        "vendor/mame-scsp/LICENSE"
+      ],
+      "upstream": [
+        "https://github.com/mamedev/mame/tree/a64a5d6602b19f67e091a4491f0c851a9dacf79d/src/devices/sound"
+      ],
+      "sourceVersion": [
+        "MAME a64a5d6602b19f67e091a4491f0c851a9dacf79d; local standalone instrument adaptation; no hardware-fidelity claim"
+      ],
+      "files": [
+        {
+          "path": "vendor/mame-scsp/LICENSE",
+          "originPath": "local SCSP adaptation; pristine MAME originals under upstream/",
+          "sha256": "fa63b17d27ea6c4ff5fbc5c772fba27dc3989dedf9caa9223368eb0576ddc61e"
+        },
+        {
+          "path": "vendor/mame-scsp/README.md",
+          "originPath": "local SCSP adaptation; pristine MAME originals under upstream/",
+          "sha256": "c63865cb1e23fbe7c3f340e79ce245e36dbbcfdd2cbe27deb5677a13bd14bdcb"
+        },
+        {
+          "path": "vendor/mame-scsp/scsp.cpp",
+          "originPath": "local SCSP adaptation; pristine MAME originals under upstream/",
+          "sha256": "fa5abe1525b7d7725dcb0bb70777c4cc2fab792fcd3f8db961e2221dc053e770"
+        },
+        {
+          "path": "vendor/mame-scsp/scsp.h",
+          "originPath": "local SCSP adaptation; pristine MAME originals under upstream/",
+          "sha256": "4b6a5bd49fd6b6b4a849ba06bf32b963db6940462f21d6c9e753ed74ccff0b5b"
+        },
+        {
+          "path": "vendor/mame-scsp/scsp_instrument.cpp",
+          "originPath": "local SCSP adaptation; pristine MAME originals under upstream/",
+          "sha256": "05f9597c523db69c2003bcc5084c6d1e6c83ceece3d6907acc365eb4258774cd"
+        },
+        {
+          "path": "vendor/mame-scsp/scsp_instrument.h",
+          "originPath": "local SCSP adaptation; pristine MAME originals under upstream/",
+          "sha256": "1e263c7b5542ebc762a9afb66e70129306f266d1f8486f0ca1ab5d34344e082c"
+        },
+        {
+          "path": "vendor/mame-scsp/scspdsp.cpp",
+          "originPath": "local SCSP adaptation; pristine MAME originals under upstream/",
+          "sha256": "4b0872ceb850397960a154cc1ac83e07f66821fa1a676b00924539ca2e0bf822"
+        },
+        {
+          "path": "vendor/mame-scsp/scspdsp.h",
+          "originPath": "local SCSP adaptation; pristine MAME originals under upstream/",
+          "sha256": "4250050bba5c763314144b638e38deb3cc0a5363456ca924277702d53df2281f"
+        },
+        {
+          "path": "vendor/mame-scsp/standalone_support.h",
+          "originPath": "local SCSP adaptation; pristine MAME originals under upstream/",
+          "sha256": "95789c7277f3eb8842f508ea4c9c3fe4d13de8b4271d76d41587cabd50bfabe7"
+        },
+        {
+          "path": "vendor/mame-scsp/upstream/REVISION",
+          "originPath": "local SCSP adaptation; pristine MAME originals under upstream/",
+          "sha256": "e8689131dd3d25ca28cf5ea21326479589892a93b3bd40df28a54891f621254b"
+        },
+        {
+          "path": "vendor/mame-scsp/upstream/SHA256SUMS",
+          "originPath": "local SCSP adaptation; pristine MAME originals under upstream/",
+          "sha256": "2c8a75c77e8118f2a018f166f2d9b205e44699004be4074cfbde1f4df97115c3"
+        },
+        {
+          "path": "vendor/mame-scsp/upstream/scsp.cpp",
+          "originPath": "local SCSP adaptation; pristine MAME originals under upstream/",
+          "sha256": "5faa5b73d74438e9ad4378274dec957b9928722f743d84c5ed9681baee6d98c8"
+        },
+        {
+          "path": "vendor/mame-scsp/upstream/scsp.h",
+          "originPath": "local SCSP adaptation; pristine MAME originals under upstream/",
+          "sha256": "b67689dc7ce10019c9d0b189c821ae3bdb7541e561fcfb897a882d79db5a7147"
+        },
+        {
+          "path": "vendor/mame-scsp/upstream/scspdsp.cpp",
+          "originPath": "local SCSP adaptation; pristine MAME originals under upstream/",
+          "sha256": "9d4b1de166e5d7d5128b591c612eff3fd5cec78af79c1acabb9d5e93341917fd"
+        },
+        {
+          "path": "vendor/mame-scsp/upstream/scspdsp.h",
+          "originPath": "local SCSP adaptation; pristine MAME originals under upstream/",
+          "sha256": "db522ecaa04665063e46f7f6c699eb7781c672fd7624ac58a60b0b180652d3cc"
         }
       ]
     }
@@ -3660,6 +3758,34 @@
       ],
       "notes": [
         "Fixed 44100 Hz; 24 voices; 512 KiB RAM; ps1_spu_* C ABI; distinct from the generic sound-chip factory. CPU, BIOS, PSF and XA/CD streaming are not included."
+      ]
+    },
+    {
+      "id": "scsp",
+      "role": "instrument",
+      "kind": "Experimental Saturn SCSP standalone instrument",
+      "chipIds": [],
+      "format": "emscripten-es-module",
+      "buildScript": "scripts/build_scsp_wasm.sh",
+      "buildFiles": [
+        "scripts/build_scsp_wasm.sh",
+        "scripts/build-wasm.sh",
+        "scripts/record_wasm_build.mjs"
+      ],
+      "sourceFiles": [
+        "vendor/mame-scsp/scsp_instrument.cpp",
+        "vendor/mame-scsp/scsp_instrument.h",
+        "vendor/mame-scsp/scsp.cpp",
+        "vendor/mame-scsp/scsp.h",
+        "vendor/mame-scsp/scspdsp.cpp",
+        "vendor/mame-scsp/scspdsp.h",
+        "vendor/mame-scsp/standalone_support.h"
+      ],
+      "licenseFiles": [
+        "vendor/mame-scsp/LICENSE"
+      ],
+      "notes": [
+        "32 slots, fixed 44100 Hz, private 512 KiB RAM. Native/WASM PCM sine parity verified; FM/LFO/DSP retained but not behaviorally verified. No CPU/IRQ/timers/DMA/MIDI/SSF player."
       ]
     }
   ]

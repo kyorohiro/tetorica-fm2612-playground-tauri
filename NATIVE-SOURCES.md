@@ -225,8 +225,10 @@ The Rust SCSP callback core compiles the fixed SDK's BSD-3-Clause
 `vendor/mame-scsp/{scsp_instrument,scsp,scspdsp}.cpp` once. Its 512 KiB RAM and
 register/DSP state belong to each exclusive core. The SDK includes the original
 upstream sources, revision, hashes and attribution to ElSemi and R. Belmont.
-This intermediate layer does not yet admit SCSP into Native mode selection or
-the primary/extra device rack. See [the core integration and parity guide](docs/native_scsp_core.md).
+The primary and extra rack now use that core through a shared Rust transport,
+with PCM upload, manual leases, timed commands, cancellation and small status
+snapshots. See [the integration guide](docs/native_scsp_transport.md) and
+[the core parity guide](docs/native_scsp_core.md).
 
 ## Application audio sources
 
