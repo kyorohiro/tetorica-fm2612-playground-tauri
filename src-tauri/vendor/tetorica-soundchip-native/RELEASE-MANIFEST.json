@@ -45,8 +45,8 @@
       "size": 52620
     },
     "catalog/source_inventory.json": {
-      "sha256": "7366d24388db5f8469125eb232691cd5247215e7ac7c7922b5ad5e0461ae677a",
-      "size": 150577
+      "sha256": "4873f0eb4487f1b00199ba8b82a2d83b713977372b04abe67f1d199ebd419dfc",
+      "size": 150728
     },
     "docs/architecture.md": {
       "sha256": "a2c8bd52454f4328b399f542b78ddd534942c9e603721ffa431daf5b3c32deda",
@@ -1157,8 +1157,8 @@
       "size": 3277
     },
     "vendor/mame-ps1-spu/spu.cpp": {
-      "sha256": "3316f13b65a92cd83d1605c049d81be28f024060ce36271cf4c42834bbe62eea",
-      "size": 76241
+      "sha256": "1523753541342954d612620ff27b40212244ac594cc5b62c4a974d928baae63e",
+      "size": 76262
     },
     "vendor/mame-ps1-spu/spu.h": {
       "sha256": "3f7f0264e0d1cc093d3f2006d07c601654845071625e78d2372fbf3b2d62026c",
