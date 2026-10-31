@@ -1,5 +1,5 @@
 {
-  "archive": "hello_ymfm_wasm_scsp-fm-dev-20261031_itch_playground.zip",
+  "archive": "hello_ymfm_wasm_dev_itch_playground_v0.95.3.zip",
   "files": {
     "LICENSE": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c",
     "THIRD_PARTY_LICENSES.txt": "0f2424b1e73dcb6fd1f589072eaecded4f7907223dbca06550307a01067eecb4",
@@ -1122,6 +1122,6 @@
     "ym2608_high.js": "46f04eaeaaaceb63958ce5edaa89dba057235079a596723a1dfa835dd65ca806",
     "ym2608_vgm_import.js": "5fe6f3a537cb65595f605992fd5b27197f2d309dbc078ad36ce574441824e21b"
   },
-  "sha256": "b92e69fe0312838c3ae84cd7db7e3a759d993e697caccf5d06ac87cf24d08ad1",
-  "version": "sha256-b92e69fe0312"
+  "sha256": "e1e8f99cfaf38c1afccdd44a24c4a73cba1b1e823156001877d6ef972cd028d3",
+  "version": "sha256-e1e8f99cfaf3"
 }
