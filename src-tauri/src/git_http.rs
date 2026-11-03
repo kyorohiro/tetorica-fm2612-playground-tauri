@@ -40,6 +40,7 @@ impl Transport {
 pub struct Begin {
     url: String,
     operation: String,
+    #[serde(default)]
     branch: String,
     commit: String,
 }
@@ -136,6 +137,38 @@ fn reviewed_push(body: &[u8], branch: &str, commit: &str) -> Result<()> {
     }
     Ok(())
 }
+fn valid_clone_branch(branch: &str) -> bool {
+    !branch.starts_with(['-', '/'])
+        && !branch.ends_with(['/', '.'])
+        && !branch.contains("..")
+        && !branch.contains("@{")
+        && branch != "@"
+        && !branch
+            .chars()
+            .any(|c| c.is_whitespace() || "~^:?*[\\".contains(c))
+        && branch
+            .split('/')
+            .all(|part| !part.is_empty() && !part.starts_with('.') && !part.ends_with(".lock"))
+}
+fn validate_begin(request: &Begin) -> Result<()> {
+    if !["push", "fetch", "pull", "clone"].contains(&request.operation.as_str()) {
+        return Err("Unsupported remote operation".into());
+    }
+    if request.branch.len() > 256
+        || request.branch.chars().any(char::is_control)
+        || request.commit.len() > 64
+        || !request.commit.bytes().all(|b| b.is_ascii_hexdigit())
+        || (request.operation == "clone"
+            && (!request.commit.is_empty()
+                || (!request.branch.is_empty() && !valid_clone_branch(&request.branch))))
+    {
+        return Err("Invalid branch or commit".into());
+    }
+    if request.operation == "push" && request.commit.len() != 40 {
+        return Err("Commit changes before pushing".into());
+    }
+    Ok(())
+}
 #[tauri::command]
 pub async fn git_https_begin(
     window: WebviewWindow,
@@ -145,30 +178,25 @@ pub async fn git_https_begin(
 ) -> Result<String> {
     super::allowed(&window)?;
     let repository = repository_url(&request.url)?;
-    if !["push", "fetch", "pull"].contains(&request.operation.as_str()) {
-        return Err("Unsupported remote operation".into());
-    }
-    if request.branch.len() > 256
-        || request.branch.chars().any(char::is_control)
-        || request.commit.len() > 64
-        || !request.commit.bytes().all(|b| b.is_ascii_hexdigit())
-    {
-        return Err("Invalid branch or commit".into());
-    }
-    if request.operation == "push" && request.commit.len() != 40 {
-        return Err("Commit changes before pushing".into());
-    }
+    validate_begin(&request)?;
     // No credential value is accepted as a command argument.
     let operation = request.operation.clone();
     let url = request.url.clone();
     let branch = request.branch.clone();
     let commit = request.commit.clone();
+    let display_branch = if branch.is_empty() {
+        "Remote default (HEAD)".into()
+    } else {
+        branch.clone()
+    };
     let (token, token_id) = tauri::async_runtime::spawn_blocking(move || -> Result<(Zeroizing<String>, String)> {
         let state = app.state::<crate::git_tokens::Tokens>();
         let (entries, preferred) = state.0.lock().map_err(|e| e.to_string())?.choices(&url)?;
         let index = preferred.as_ref().and_then(|id| entries.iter().position(|entry| &entry.id == id)).unwrap_or(0);
         let description = if operation == "push" {
             format!("Destination: {}\nBranch: {}\nCommit: {}\n\nSelect a token to use.", url, request.branch, request.commit)
+        } else if operation == "clone" {
+            format!("Operation: {operation}\nDestination: {url}\nBranch: {display_branch}\n\nSelect a token to use.")
         } else {
             format!("Operation: {}\nDestination: {}\n\nSelect a token to use.", operation, url)
         };
@@ -324,6 +352,56 @@ pub fn git_https_end(
 mod tests {
     use super::*;
     #[test]
+    fn clone_accepts_remote_default_or_valid_explicit_branch_but_no_commit() {
+        let mut request: Begin = serde_json::from_value(serde_json::json!({
+            "url": "https://github.com/owner/repository.git",
+            "operation": "clone",
+            "commit": ""
+        }))
+        .unwrap();
+        assert!(request.branch.is_empty());
+        assert!(validate_begin(&request).is_ok());
+        for branch in ["main", "feature/pcm", "release-2026.11"] {
+            request.branch = branch.into();
+            assert!(validate_begin(&request).is_ok(), "{branch}");
+        }
+        for branch in [
+            "-main",
+            "/main",
+            "main/",
+            "../main",
+            "main@{0}",
+            "main with space",
+            "work//main",
+            "main.lock",
+            "work/.hidden",
+            "main?",
+            "main\\other",
+            "main\n",
+        ] {
+            request.branch = branch.into();
+            assert!(validate_begin(&request).is_err(), "{branch}");
+        }
+        request.branch = "a".repeat(257);
+        assert!(validate_begin(&request).is_err());
+        request.branch.clear();
+        request.commit = "a".repeat(40);
+        assert!(validate_begin(&request).is_err());
+        request.commit.clear();
+        request.operation = "receive-pack".into();
+        assert!(validate_begin(&request).is_err());
+        request.operation = "push".into();
+        request.branch = "main".into();
+        assert!(validate_begin(&request).is_err());
+        request.commit = "a".repeat(40);
+        assert!(validate_begin(&request).is_ok());
+        for operation in ["fetch", "pull"] {
+            request.operation = operation.into();
+            request.commit.clear();
+            assert!(validate_begin(&request).is_ok());
+        }
+    }
+    #[test]
     fn replacing_or_deleting_a_token_revokes_its_active_session() {
         let transport = Transport(Mutex::new(Some(Session {
             id: "session".into(),
@@ -367,6 +445,46 @@ mod tests {
         }
         assert!(repository_url("http://github.com/owner/repository.git").is_err());
         assert!(repository_url("https://token@github.com/owner/repository.git").is_err());
+    }
+    #[test]
+    fn clone_transport_only_reads_the_approved_repository() {
+        let repo = repository_url("https://github.com/owner/repository.git").unwrap();
+        for (url, method) in [
+            (
+                "https://github.com/owner/repository.git/info/refs?service=git-upload-pack",
+                "GET",
+            ),
+            (
+                "https://github.com/owner/repository.git/git-upload-pack",
+                "POST",
+            ),
+        ] {
+            assert!(endpoint(&repo, "clone", url, method).is_ok(), "{url}");
+        }
+        for (url, method) in [
+            (
+                "https://github.com/owner/repository.git/info/refs?service=git-receive-pack",
+                "GET",
+            ),
+            (
+                "https://github.com/owner/repository.git/git-receive-pack",
+                "POST",
+            ),
+            (
+                "https://github.com/other/repository.git/git-upload-pack",
+                "POST",
+            ),
+            (
+                "https://evil.example/owner/repository.git/git-upload-pack",
+                "POST",
+            ),
+            (
+                "https://github.com/owner/repository.git/git-upload-pack",
+                "PUT",
+            ),
+        ] {
+            assert!(endpoint(&repo, "clone", url, method).is_err(), "{url}");
+        }
     }
     #[test]
     fn push_packet_must_match_reviewed_branch_and_commit() {
