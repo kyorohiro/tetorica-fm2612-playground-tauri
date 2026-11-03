@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {sourcePath} from './source_path.mjs';
 // Offline PCM comparison against the shipped browser WASM. No output device.
 import {readFile,writeFile,mkdtemp,rm} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
@@ -23,10 +24,10 @@ if(!provided){
   if(build.status!==0)throw new Error(build.stderr);
 }
 const self=spawnSync(executable,['--self-test'],{encoding:'utf8'});if(self.status!==0)throw new Error(self.stderr);
-const {GameboyApu}=await import(pathToFileURL(resolve(source,'web/gameboyapu.js')));
-const {ChipClockResampler}=await import(pathToFileURL(resolve(source,'web/playground_chip_clock.js')));
-const {default:factory}=await import(pathToFileURL(resolve(source,'docs/generated/gameboy_apu_wasm.js')));
-const wasmBinary=await readFile(resolve(source,'docs/generated/gameboy_apu_wasm.wasm'));
+const {GameboyApu}=await import(pathToFileURL(sourcePath(source,'web/gameboyapu.js')));
+const {ChipClockResampler}=await import(pathToFileURL(sourcePath(source,'web/playground_chip_clock.js')));
+const {default:factory}=await import(pathToFileURL(sourcePath(source,'docs/generated/gameboy_apu_wasm.js')));
+const wasmBinary=await readFile(sourcePath(source,'docs/generated/gameboy_apu_wasm.wasm'));
 const W=(frame,address,value)=>({frame,op:'write',address,value});
 const C=(frame,value)=>({frame,op:'clock',address:0,value});
 const base=[W(0,22,128),W(0,20,0x77),W(0,21,0xff)];

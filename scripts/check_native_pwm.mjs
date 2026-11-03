@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {sourcePath} from './source_path.mjs';
 // Native C ABI vs the deployed WASM and synchronous JS: no audio device or browser.
 import {writeFile,mkdtemp,readFile,rm} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
@@ -27,10 +28,10 @@ if(!provided){
   if(build.status!==0)throw new Error(build.stderr);
 }
 const self=spawnSync(executable,['--self-test'],{encoding:'utf8'});if(self.status!==0)throw new Error(self.stderr);
-const {PWM32X}=await import(pathToFileURL(resolve(source,'web/pwm32x.js')));
-const {PWM32XWasm}=await import(pathToFileURL(resolve(source,'web/pwm32x_wasm.js')));
-const {default:moduleFactory}=await import(pathToFileURL(resolve(source,'docs/generated/pwm32x_wasm.js')));
-const wasmBinary=await readFile(resolve(source,'docs/generated/pwm32x_wasm.wasm'));
+const {PWM32X}=await import(pathToFileURL(sourcePath(source,'web/pwm32x.js')));
+const {PWM32XWasm}=await import(pathToFileURL(sourcePath(source,'web/pwm32x_wasm.js')));
+const {default:moduleFactory}=await import(pathToFileURL(sourcePath(source,'docs/generated/pwm32x_wasm.js')));
+const wasmBinary=await readFile(sourcePath(source,'docs/generated/pwm32x_wasm.wasm'));
 const W=(frame,address,value)=>({frame,op:'write',address,value}),C=(frame,value)=>({frame,op:'clock',address:0,value});
 const stream=(control,cycle,count=500)=>[W(0,0,control),W(0,1,cycle),...Array.from({length:count},(_,i)=>W(i*3,2+i%3,(i*213+47)%4096))];
 const cases=[];

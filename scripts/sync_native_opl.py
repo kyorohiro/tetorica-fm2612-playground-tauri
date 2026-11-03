@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from source_path import source_path
 
 FILES = ['wasm/ym3526_wasm.cpp', 'wasm/ym3812_wasm.cpp', 'wasm/ymf262_wasm.cpp',
          'web/ym3526.js', 'web/ym3812.js', 'web/ymf262.js', 'web/opl_synth.js',
@@ -28,12 +29,12 @@ def main():
             data = (target / entry['snapshot']).read_bytes()
             if digest(data) != entry['sha256']:
                 raise SystemExit('DOS OPL pinned snapshot changed: ' + name)
-            if args.source and (args.source / name).read_bytes() != data:
+            if args.source and source_path(args.source, name).read_bytes() != data:
                 raise SystemExit('DOS OPL differs from Browser reference: ' + name)
         for name, expected in info['sharedOplProvider'].items():
             if digest((base / 'native-master-system/snapshot' / name).read_bytes()) != expected:
                 raise SystemExit('DOS OPL shared provider differs: ' + name)
-            if args.source and digest((args.source / name).read_bytes()) != expected:
+            if args.source and digest(source_path(args.source, name).read_bytes()) != expected:
                 raise SystemExit('DOS OPL shared Browser source differs: ' + name)
         if (target / 'snapshot/wasm/ymfm_wasm_interface.h').read_bytes() != (base / 'native-genesis/ymfm_wasm_interface.h').read_bytes():
             raise SystemExit('DOS OPL timer interface differs from the compiled common interface')
@@ -43,13 +44,13 @@ def main():
         parser.error('--source is required to synchronize')
     files = {}
     for name in FILES:
-        data = (args.source / name).read_bytes()
+        data = source_path(args.source, name).read_bytes()
         relative = 'snapshot/' + name
         path = target / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         files[name] = {'snapshot': relative, 'sha256': digest(data)}
-    shared = {name: digest((args.source / name).read_bytes()) for name in SHARED}
+    shared = {name: digest(source_path(args.source, name).read_bytes()) for name in SHARED}
     for name, expected in shared.items():
         if digest((base / 'native-master-system/snapshot' / name).read_bytes()) != expected:
             raise SystemExit('Synchronize native-master-system first: ' + name)

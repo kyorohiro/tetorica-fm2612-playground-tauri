@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from source_path import source_path
 
 PSG_ROOT = 'third_party/tetorica_sega_psg'
 PSG_LICENSE = f'{PSG_ROOT}/LICENSE'
@@ -35,12 +36,12 @@ def main():
             data = (target / entry['snapshot']).read_bytes()
             if digest(data) != entry['sha256']:
                 raise SystemExit('Master System pinned snapshot changed: ' + name)
-            if args.source and (args.source / name).read_bytes() != data:
+            if args.source and source_path(args.source, name).read_bytes() != data:
                 raise SystemExit('Master System differs from Browser reference: ' + name)
         for name, expected in info['sharedProvider'].items():
             if digest((base / 'native-genesis' / snapshot_name(name)).read_bytes()) != expected:
                 raise SystemExit('Master System shared Native provider differs: ' + name)
-            if args.source and digest((args.source / name).read_bytes()) != expected:
+            if args.source and digest(source_path(args.source, name).read_bytes()) != expected:
                 raise SystemExit('Master System shared Browser source differs: ' + name)
         print(f'Native Master System snapshot verified ({len(info["files"])} files, {len(info["sharedProvider"])} shared sources)')
         return
@@ -48,13 +49,13 @@ def main():
         parser.error('--source is required to synchronize')
     files = {}
     for name in FILES:
-        data = (args.source / name).read_bytes()
+        data = source_path(args.source, name).read_bytes()
         relative = 'snapshot/' + name
         path = target / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         files[name] = {'snapshot': relative, 'sha256': digest(data)}
-    shared = {name: digest((args.source / name).read_bytes()) for name in SHARED}
+    shared = {name: digest(source_path(args.source, name).read_bytes()) for name in SHARED}
     for name, expected in shared.items():
         if digest((base / 'native-genesis' / snapshot_name(name)).read_bytes()) != expected:
             raise SystemExit('Synchronize native-genesis first: ' + name)

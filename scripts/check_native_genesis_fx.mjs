@@ -1,3 +1,4 @@
+import {sourcePath} from './source_path.mjs';
 /** Compare actual native C++ and shipped WASM DSP, without a physical device. */
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -8,9 +9,9 @@ import {execFileSync} from 'node:child_process';
 
 const project=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const upstream=path.resolve(project,process.argv[2]??'../..');
-const {NativeFXEngine}=await import(pathToFileURL(path.join(upstream,'web/native_fx_engine.js')));
-const {createNativeFXController,FX_TYPES}=await import(pathToFileURL(path.join(upstream,'web/native_fx.js')));
-const wasm=await WebAssembly.compile(await fs.readFile(path.join(upstream,'web/native_audio_effect.wasm')));
+const {NativeFXEngine}=await import(pathToFileURL(sourcePath(upstream,'web/native_fx_engine.js')));
+const {createNativeFXController,FX_TYPES}=await import(pathToFileURL(sourcePath(upstream,'web/native_fx.js')));
+const wasm=await WebAssembly.compile(await fs.readFile(sourcePath(upstream,'web/native_audio_effect.wasm')));
 const temp=await fs.mkdtemp(path.join(os.tmpdir(),'tetorica-native-fx-'));
 try {
   const binary=path.join(temp,'fixture');

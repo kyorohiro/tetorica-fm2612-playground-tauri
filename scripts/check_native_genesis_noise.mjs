@@ -1,3 +1,4 @@
+import {sourcePath} from './source_path.mjs';
 /** Actual native/shared-WASM noise DSP comparison; no audio device or playback. */
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -8,8 +9,8 @@ import {execFileSync} from 'node:child_process';
 
 const project=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const upstream=path.resolve(project,process.argv[2]??'../..');
-const {NativeFXEngine}=await import(pathToFileURL(path.join(upstream,'web/native_fx_engine.js')));
-const wasm=await WebAssembly.compile(await fs.readFile(path.join(upstream,'web/native_audio_effect.wasm')));
+const {NativeFXEngine}=await import(pathToFileURL(sourcePath(upstream,'web/native_fx_engine.js')));
+const wasm=await WebAssembly.compile(await fs.readFile(sourcePath(upstream,'web/native_audio_effect.wasm')));
 const temporary=await fs.mkdtemp(path.join(os.tmpdir(),'tetorica-native-noise-'));
 const create=(slot,type,seed=123456)=>({operation:0,slot,argument:type,seed});
 const parameter=(slot,argument,value,frames=0)=>({operation:1,slot,argument,value,frames});

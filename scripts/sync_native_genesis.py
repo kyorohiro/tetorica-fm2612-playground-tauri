@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from source_path import source_path
 import shutil
 
 PSG_ROOT = "third_party/tetorica_sega_psg"
@@ -36,21 +37,21 @@ def main():
     manifest_path = destination / "sources.json"
     if args.check:
         manifest = json.loads(manifest_path.read_text())
-        for source_path, expected in manifest["sha256"].items():
-            target = destination / snapshot_name(source_path)
+        for source_name, expected in manifest["sha256"].items():
+            target = destination / snapshot_name(source_name)
             if digest(target) != expected:
                 raise SystemExit(f"Native chip snapshot changed: {target}")
-            if args.source and digest(args.source / source_path) != expected:
-                raise SystemExit(f"Native chip snapshot differs from upstream: {source_path}")
+            if args.source and digest(source_path(args.source, source_name)) != expected:
+                raise SystemExit(f"Native chip snapshot differs from upstream: {source_name}")
         print(f"Native Genesis snapshot verified ({len(manifest['sha256'])} files)")
         return
     if not args.source:
         parser.error("synchronizing requires --source /path/to/hello_ymfm")
     source = args.source.resolve()
-    hashes = {name: digest(source / name) for name in FILES}
+    hashes = {name: digest(source_path(source, name)) for name in FILES}
     destination.mkdir(parents=True, exist_ok=True)
     for name in FILES:
-        shutil.copyfile(source / name, destination / snapshot_name(name))
+        shutil.copyfile(source_path(source, name), destination / snapshot_name(name))
     manifest_path.write_text(json.dumps({"source": "hello_ymfm", "sha256": hashes}, indent=2) + "\n")
     print(f"Native Genesis snapshot synchronized ({len(FILES)} files)")
 

@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from source_path import source_path
 
 FILES = ["third_party/mame-rf5c164/rf5c164.h", "third_party/mame-rf5c164/rf5c164.cpp",
          "third_party/mame-rf5c164/LICENSE", "third_party/mame-rf5c164/README.md",
@@ -31,7 +32,7 @@ def main():
             if digest((destination / Path(name).name).read_bytes()) != hashes["native"]:
                 raise SystemExit(f"Native RF5C164 snapshot changed: {name}")
             if args.source:
-                data = (args.source / name).read_bytes()
+                data = source_path(args.source, name).read_bytes()
                 if digest(data) != hashes["source"] or digest(native_bytes(name, data)) != hashes["native"]:
                     raise SystemExit(f"Native RF5C164 snapshot differs from source: {name}")
         print(f"Native RF5C164 snapshot verified ({len(manifest['files'])} files)")
@@ -41,7 +42,7 @@ def main():
     destination.mkdir(parents=True, exist_ok=True)
     files = {}
     for name in FILES:
-        source = (args.source / name).read_bytes()
+        source = source_path(args.source, name).read_bytes()
         native = native_bytes(name, source)
         (destination / Path(name).name).write_bytes(native)
         files[name] = {"source": digest(source), "native": digest(native)}

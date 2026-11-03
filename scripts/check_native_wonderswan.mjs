@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {sourcePath} from './source_path.mjs';
 // Offline exact PCM comparison: real Browser worklet/WASM vs pinned Native DSP.
 // The AudioWorkletProcessor host alone is stubbed; no audio device is opened.
 import assert from 'node:assert/strict';
@@ -40,14 +41,14 @@ try{
   // Fixture emits self-test JSON to stderr, including the allocator scope.
   const selfRun=await import('node:child_process').then(({spawnSync})=>spawnSync(executable,['--self-test'],{encoding:'utf8'}));
   assert.equal(selfRun.status,0,selfRun.stderr);const selfTest=JSON.parse(selfRun.stderr);assert.equal(selfTest.passed,true);
-  const {WonderSwan,WONDERSWAN_CLOCK}=await import(pathToFileURL(resolve(source,'web/wonderswan.js')));
-  const {WonderSwanVoiceInspector}=await import(pathToFileURL(resolve(source,'web/playground_wonderswan_inspector.js')));
-  const {ChipClockResampler,validateChipClock}=await import(pathToFileURL(resolve(source,'web/playground_chip_clock.js')));
-  const {createProcessorPerformance}=await import(pathToFileURL(resolve(source,'web/playground_performance_processor.js')));
-  const {receiveChipInspector}=await import(pathToFileURL(resolve(source,'web/playground_chip_inspector_state.js')));
-  const {default:factory}=await import(pathToFileURL(resolve(source,'docs/generated/wonderswan_wasm.js')));
-  const binary=await readFile(resolve(source,'docs/generated/wonderswan_wasm.wasm'));
-  const workletBytes=await readFile(resolve(source,'web/playground_wonderswan_worklet.js'));
+  const {WonderSwan,WONDERSWAN_CLOCK}=await import(pathToFileURL(sourcePath(source,'web/wonderswan.js')));
+  const {WonderSwanVoiceInspector}=await import(pathToFileURL(sourcePath(source,'web/playground_wonderswan_inspector.js')));
+  const {ChipClockResampler,validateChipClock}=await import(pathToFileURL(sourcePath(source,'web/playground_chip_clock.js')));
+  const {createProcessorPerformance}=await import(pathToFileURL(sourcePath(source,'web/playground_performance_processor.js')));
+  const {receiveChipInspector}=await import(pathToFileURL(sourcePath(source,'web/playground_chip_inspector_state.js')));
+  const {default:factory}=await import(pathToFileURL(sourcePath(source,'docs/generated/wonderswan_wasm.js')));
+  const binary=await readFile(sourcePath(source,'docs/generated/wonderswan_wasm.wasm'));
+  const workletBytes=await readFile(sourcePath(source,'web/playground_wonderswan_worklet.js'));
   const workletSource=workletBytes.toString().replace(/^import .*;$/gm,'');
   const report={schemaVersion:1,status:'failed',deviceOpened:false,audioContextCreated:false,physicalAudioTested:false,
     method:'Actual Browser WonderSwan Processor source, performance scheduler, inspector, clock resampler and real WASM; only host AudioWorkletProcessor/MessagePort stubbed. Native uses unchanged pinned SDK core plus application adapter.',

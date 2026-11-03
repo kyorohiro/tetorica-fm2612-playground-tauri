@@ -1,3 +1,4 @@
+import {sourcePath} from './source_path.mjs';
 // Exercise the actual Rust native scheduler/media renderer and actual browser
 // WASM engines with identical PCM and timestamps. No output device is opened.
 import assert from 'node:assert/strict';
@@ -15,12 +16,12 @@ try{
  assert.equal(result.status,0,result.stdout+result.stderr);
  const fixtures=JSON.parse(readFileSync(path,'utf8'));
  const [factory,psgFactory,fmApi,psgApi,dac,sample]=await Promise.all([
-  import(pathToFileURL(join(source,'docs/generated/ym2612_wasm.js'))),import(pathToFileURL(join(source,'docs/generated/segapsg_wasm.js'))),
-  import(pathToFileURL(join(source,'web/ym2612.js'))),import(pathToFileURL(join(source,'web/segapsg.js'))),
-  import(pathToFileURL(join(source,'web/ym2612_dac.js'))),import(pathToFileURL(join(source,'web/native_sample_processor.js'))),
+  import(pathToFileURL(sourcePath(source,'docs/generated/ym2612_wasm.js'))),import(pathToFileURL(sourcePath(source,'docs/generated/segapsg_wasm.js'))),
+  import(pathToFileURL(sourcePath(source,'web/ym2612.js'))),import(pathToFileURL(sourcePath(source,'web/segapsg.js'))),
+  import(pathToFileURL(sourcePath(source,'web/ym2612_dac.js'))),import(pathToFileURL(sourcePath(source,'web/native_sample_processor.js'))),
  ]);
- const effectModule=await WebAssembly.compile(readFileSync(join(source,'web/native_audio_effect.wasm')));
- const worklet=readFileSync(join(source,'web/ym2612-worklet.js'),'utf8');
+ const effectModule=await WebAssembly.compile(readFileSync(sourcePath(source,'web/native_audio_effect.wasm')));
+ const worklet=readFileSync(sourcePath(source,'web/ym2612-worklet.js'),'utf8');
  const begin=worklet.indexOf('  renderFrames(leftOut, rightOut, offset, frames) {'),end=worklet.indexOf('\n  flushMixerMeters(',begin);
  assert(begin>=0&&end>begin);
  const method=worklet.slice(begin,end).trim().replace(/^renderFrames/,'function');
@@ -38,8 +39,8 @@ try{
     input[0]=input[cap]=0;api.sample_mix(1);output[0][frame]=input[0];output[1][frame]=input[cap];
    }
   }else{
-   const ym=await fmApi.createYm2612(factory.default,{wasmBinary:readFileSync(join(source,'docs/generated/ym2612_wasm.wasm'))});
-   const psg=await psgApi.SegaPSG.create({moduleFactory:psgFactory.default,moduleOptions:{wasmBinary:readFileSync(join(source,'docs/generated/segapsg_wasm.wasm'))},sampleRate:ym.sampleRate(),clock:3579545});
+   const ym=await fmApi.createYm2612(factory.default,{wasmBinary:readFileSync(sourcePath(source,'docs/generated/ym2612_wasm.wasm'))});
+   const psg=await psgApi.SegaPSG.create({moduleFactory:psgFactory.default,moduleOptions:{wasmBinary:readFileSync(sourcePath(source,'docs/generated/segapsg_wasm.wasm'))},sampleRate:ym.sampleRate(),clock:3579545});
    try{
     const idle=ym.generateStereoView(1);const state={ym2612:ym,psg,resampleRemainder:0,psgRemainder:0,lastLeft:0,lastRight:0,psgLeft:0,psgRight:0,idleLeft:idle.left[0],idleRight:idle.right[0],mixRemaining:{ym2612:0,segapsg:0},mixCurrent:{ym2612:[1,1],segapsg:[1,1]},mixMeterEnabled:{ym2612:false,segapsg:false}};ym.reset();
     const render=new Function('sampleRate','YM_GAIN','PSG_GAIN','MIX_SOURCES','clampSample',`return ${method}`)(rate,.9,.35,['ym2612','segapsg'],value=>Math.max(-1,Math.min(1,value)));

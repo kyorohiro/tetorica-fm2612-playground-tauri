@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from source_path import source_path
 import re
 
 
@@ -14,7 +15,7 @@ def main():
     args = parser.parse_args()
     output = Path(__file__).resolve().parents[1] / 'src-tauri/native-noise'
     origin = args.source or (output / 'snapshot' if args.check else Path(__file__).resolve().parents[3])
-    path = origin / 'native/audio_effect/noise.c'
+    path = source_path(origin, 'native/audio_effect/noise.c')
     raw = path.read_bytes()
     source = raw.decode()
     source = re.sub(r'^#include[^\n]*\n', '', source, flags=re.M)

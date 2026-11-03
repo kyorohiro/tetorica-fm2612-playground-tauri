@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from source_path import source_path
 
 FILES = ['third_party/mame-gameboy/gameboy_apu.cpp',
          'third_party/mame-gameboy/gameboy_apu.h',
@@ -35,7 +36,7 @@ def main():
             data = (destination / entry['snapshot']).read_bytes()
             if digest(data) != entry['sha256']:
                 raise SystemExit('Game Boy pinned snapshot changed: ' + name)
-            if args.source and adapt(name, (args.source / name).read_bytes()) != data:
+            if args.source and adapt(name, source_path(args.source, name).read_bytes()) != data:
                 raise SystemExit('Game Boy snapshot differs from browser core: ' + name)
         if (destination / 'LICENSE').read_bytes() != (destination / 'snapshot/third_party/mame-gameboy/LICENSE').read_bytes():
             raise SystemExit('Game Boy license alias changed')
@@ -45,7 +46,7 @@ def main():
         parser.error('--source /path/to/hello_ymfm is required when synchronizing')
     files = {}
     for name in FILES:
-        original = (args.source / name).read_bytes()
+        original = source_path(args.source, name).read_bytes()
         data = adapt(name, original)
         relative = 'snapshot/' + name
         target = destination / relative

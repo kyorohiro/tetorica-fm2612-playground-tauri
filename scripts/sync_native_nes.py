@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from source_path import source_path
 
 FILES = [
     'docs/js/nes_apu_vendor/index.js',
@@ -53,13 +54,13 @@ def mirror_core(repository, destination, source, check):
             if digest(mirrored) != entry['sha256']:
                 raise SystemExit('Native NES C++ mirror changed: ' + entry['mirror'])
             if source:
-                canonical = (source / name).read_bytes()
+                canonical = source_path(source, name).read_bytes()
                 if digest(canonical) != entry['canonicalSha256'] or native_source(name, canonical) != mirrored:
                     raise SystemExit('Native NES mirror differs from canonical core: ' + name)
         return len(manifest['files'])
     files = {}
     for name, relative in CORE.items():
-        canonical = (source / name).read_bytes()
+        canonical = source_path(source, name).read_bytes()
         mirrored = native_source(name, canonical)
         path = repository / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -100,7 +101,7 @@ def main():
         return
     files = {}
     for name in FILES:
-        data = (args.source / name).read_bytes()
+        data = source_path(args.source, name).read_bytes()
         relative = 'snapshot/' + name
         path = destination / relative
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from source_path import source_path
 
 FILES = ['wasm/pwm32x_core.h', 'third_party/mame-32x-pwm/LICENSE',
          'third_party/mame-32x-pwm/README.md']
@@ -24,7 +25,7 @@ def main():
             data = (destination / entry['snapshot']).read_bytes()
             if digest(data) != entry['sha256']:
                 raise SystemExit('PWM pinned snapshot changed: ' + name)
-            if args.source and (args.source / name).read_bytes() != data:
+            if args.source and source_path(args.source, name).read_bytes() != data:
                 raise SystemExit('PWM snapshot differs from browser core: ' + name)
         if (destination / 'LICENSE').read_bytes() != (destination / 'snapshot/third_party/mame-32x-pwm/LICENSE').read_bytes():
             raise SystemExit('PWM license alias changed')
@@ -34,7 +35,7 @@ def main():
         parser.error('--source /path/to/hello_ymfm is required when synchronizing')
     files = {}
     for name in FILES:
-        data = (args.source / name).read_bytes()
+        data = source_path(args.source, name).read_bytes()
         relative = 'snapshot/' + name
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)

@@ -59,6 +59,7 @@ class NativeVerificationTests(unittest.TestCase):
             root = Path(tmp) / 'isolated-desktop'
             scripts = root / 'scripts'
             scripts.mkdir(parents=True)
+            shutil.copyfile(ROOT / 'scripts/source_path.py', scripts / 'source_path.py')
             for suffix, directory, target in [
                     ('fx', 'native-fx', 'gain.inc'),
                     ('noise', 'native-noise', 'noise.inc'),

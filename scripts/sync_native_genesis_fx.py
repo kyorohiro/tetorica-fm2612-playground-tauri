@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from source_path import source_path
 import re
 
 FILES = ("gain", "eq", "noise_gate", "compressor", "reverb", "extra_fx", "graph")
@@ -52,7 +53,7 @@ def main():
     expected = {}
     for name in FILES:
         relative = 'native/audio_effect/' + name + '.c'
-        raw = (source / relative).read_bytes()
+        raw = source_path(source, relative).read_bytes()
         hashes[relative] = hashlib.sha256(raw).hexdigest()
         expected[name + '.inc'] = transform(name, raw.decode()).encode()
         expected['snapshot/' + relative] = raw

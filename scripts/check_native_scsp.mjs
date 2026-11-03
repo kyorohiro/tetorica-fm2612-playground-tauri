@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {sourcePath} from './source_path.mjs';
 // Actual Rust callback core + fixed SDK C++ against the Browser WASM synth and
 // resampler. Offline only: never opens a device or creates an AudioContext.
 import assert from 'node:assert/strict';
@@ -21,7 +22,7 @@ const coreNames=['scsp_instrument.cpp','scsp.cpp','scspdsp.cpp'];
 const inputs=[...coreNames.map(n=>resolve(sdk,'vendor/mame-scsp',n)),...['scsp_instrument.h','scsp.h','scspdsp.h','standalone_support.h'].map(n=>resolve(sdk,'vendor/mame-scsp',n)),
   ...['native_genesis_scsp_core.rs','native_genesis_scsp_fixture.rs','native_genesis_scsp_alloc_probe.cpp'].map(n=>resolve(native,n)),
   resolve(repository,'src-tauri/build.rs'),resolve(repository,'src-tauri/soundchip-sdk.json'),
-  ...['web/scsp.js','web/scspsynth.js','web/pcm_44100_resampler.js','docs/generated/scsp_wasm.js','docs/generated/scsp_wasm.wasm'].map(n=>resolve(source,n)),fileURLToPath(import.meta.url)];
+  ...['web/scsp.js','web/scspsynth.js','web/pcm_44100_resampler.js','docs/generated/scsp_wasm.js','docs/generated/scsp_wasm.wasm'].map(n=>sourcePath(source,n)),fileURLToPath(import.meta.url)];
 const receipts=await Promise.all(inputs.map(async path=>({path:path.startsWith(repository)?`tauri/${relative(repository,path)}`:relative(source,path),sha256:hash(await readFile(path))})));
 const temporary=await mkdtemp(resolve(tmpdir(),'tetorica-native-scsp-'));
 try {
@@ -36,11 +37,11 @@ try {
   execFileSync('rustc',['--edition=2021','-O',resolve(native,'native_genesis_scsp_fixture.rs'),...linkage,'-o',fixture],{stdio:'pipe'});
   execFileSync('rustc',['--edition=2021','--test',resolve(native,'native_genesis_scsp_core.rs'),...linkage,'-o',test],{stdio:'pipe'});
   const unitTests=execFileSync(test,[],{encoding:'utf8'}).trim();
-  const {Scsp}=await import(pathToFileURL(resolve(source,'web/scsp.js')));
-  const {ScspSynth,createScspInitSample}=await import(pathToFileURL(resolve(source,'web/scspsynth.js')));
-  const {Pcm44100Resampler}=await import(pathToFileURL(resolve(source,'web/pcm_44100_resampler.js')));
-  const {default:factory}=await import(pathToFileURL(resolve(source,'docs/generated/scsp_wasm.js')));
-  const binary=await readFile(resolve(source,'docs/generated/scsp_wasm.wasm')),module=await factory({wasmBinary:binary});
+  const {Scsp}=await import(pathToFileURL(sourcePath(source,'web/scsp.js')));
+  const {ScspSynth,createScspInitSample}=await import(pathToFileURL(sourcePath(source,'web/scspsynth.js')));
+  const {Pcm44100Resampler}=await import(pathToFileURL(sourcePath(source,'web/pcm_44100_resampler.js')));
+  const {default:factory}=await import(pathToFileURL(sourcePath(source,'docs/generated/scsp_wasm.js')));
+  const binary=await readFile(sourcePath(source,'docs/generated/scsp_wasm.wasm')),module=await factory({wasmBinary:binary});
   const scenarios=[
     ...[8,16].map(bits=>({name:`FM-PCM${bits}-stack-routing`,init(s){
       const Type=bits===8?Int8Array:Int16Array,scale=bits===8?32:8192;

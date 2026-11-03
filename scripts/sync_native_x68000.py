@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from source_path import source_path
 
 FILES = ['src/ymfm_opm.cpp', 'src/ymfm_opm.h', 'wasm/ym2151_wasm.cpp',
          'wasm/okim6258_wasm.cpp', 'web/ym2151audioengine.js', 'web/okim6258synth.js',
@@ -36,12 +37,12 @@ def main():
             data = (target / entry['snapshot']).read_bytes()
             if digest(data) != entry['sha256']:
                 raise SystemExit('X68000 pinned snapshot changed: ' + name)
-            if args.source and (args.source / name).read_bytes() != data:
+            if args.source and source_path(args.source, name).read_bytes() != data:
                 raise SystemExit('X68000 differs from Browser reference: ' + name)
         for name, expected in info['sharedYmfm'].items():
             if digest((base / 'native-genesis' / Path(name).name).read_bytes()) != expected:
                 raise SystemExit('X68000 shared Native ymfm provider differs: ' + name)
-            if args.source and digest((args.source / name).read_bytes()) != expected:
+            if args.source and digest(source_path(args.source, name).read_bytes()) != expected:
                 raise SystemExit('X68000 shared source differs from Browser: ' + name)
         if (target / 'okim6258.cpp').read_bytes() != native_oki((target / 'snapshot/third_party/mame-okim6258/okim6258.cpp').read_bytes()):
             raise SystemExit('X68000 generated one-time OKI initialization differs')
@@ -51,13 +52,13 @@ def main():
         parser.error('--source is required to synchronize')
     files = {}
     for name in FILES:
-        data = (args.source / name).read_bytes()
+        data = source_path(args.source, name).read_bytes()
         relative = 'snapshot/' + name
         path = target / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         files[name] = {'snapshot': relative, 'sha256': digest(data)}
-    shared = {name: digest((args.source / name).read_bytes()) for name in SHARED}
+    shared = {name: digest(source_path(args.source, name).read_bytes()) for name in SHARED}
     for name, expected in shared.items():
         if digest((base / 'native-genesis' / Path(name).name).read_bytes()) != expected:
             raise SystemExit('Synchronize native-genesis first: ' + name)

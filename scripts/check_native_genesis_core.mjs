@@ -1,3 +1,4 @@
+import {sourcePath} from './source_path.mjs';
 // Compare the application's pinned SDK sources against the actual Playground WASM and
 // its renderFrames implementation. No output device, Tauri app or server opens.
 import assert from 'node:assert/strict';
@@ -62,16 +63,16 @@ try {
     report.compilerMilliseconds = performance.now() - compileStart;
   } else report.fixtureProvided = true;
   const [fmFactory, psgFactory, fmApi, psgApi] = await Promise.all([
-    import(pathToFileURL(join(source, 'docs/generated/ym2612_wasm.js'))),
-    import(pathToFileURL(join(source, 'docs/generated/segapsg_wasm.js'))),
-    import(pathToFileURL(join(source, longMode ? 'docs/js/ym2612.js' : 'web/ym2612.js'))),
-    import(pathToFileURL(join(source, longMode ? 'docs/js/segapsg.js' : 'web/segapsg.js'))),
+    import(pathToFileURL(sourcePath(source, 'docs/generated/ym2612_wasm.js'))),
+    import(pathToFileURL(sourcePath(source, 'docs/generated/segapsg_wasm.js'))),
+    import(pathToFileURL(sourcePath(source, longMode ? 'docs/js/ym2612.js' : 'web/ym2612.js'))),
+    import(pathToFileURL(sourcePath(source, longMode ? 'docs/js/segapsg.js' : 'web/segapsg.js'))),
   ]);
   const workletPath = longMode ? 'docs/js/ym2612-worklet.js' : 'web/ym2612-worklet.js';
-  const worklet = readFileSync(join(source, workletPath), 'utf8');
+  const worklet = readFileSync(sourcePath(source, workletPath), 'utf8');
   report.reference = {worklet: workletPath, workletSha256: createHash('sha256').update(worklet).digest('hex'),
-    fmWasmSha256: createHash('sha256').update(readFileSync(join(source, 'docs/generated/ym2612_wasm.wasm'))).digest('hex'),
-    psgWasmSha256: createHash('sha256').update(readFileSync(join(source, 'docs/generated/segapsg_wasm.wasm'))).digest('hex')};
+    fmWasmSha256: createHash('sha256').update(readFileSync(sourcePath(source, 'docs/generated/ym2612_wasm.wasm'))).digest('hex'),
+    psgWasmSha256: createHash('sha256').update(readFileSync(sourcePath(source, 'docs/generated/segapsg_wasm.wasm'))).digest('hex')};
   const begin = worklet.indexOf('  renderFrames(leftOut, rightOut, offset, frames) {');
   const end = worklet.indexOf('\n  flushMixerMeters(', begin);
   assert(begin >= 0 && end > begin, 'Use the actual Worklet render method');
@@ -117,9 +118,9 @@ try {
       assert(commands.every(command => command.kind !== 'r'), 'Continuous comparison must never reset the running chips');
       const input = commands.map(c => `${c.kind} ${c.frame}${c.kind === 'w' ? ` ${c.port} ${c.reg} ${c.value}` : ` ${c.value}`}`).join('\n') + '\n';
       const initStart = performance.now();
-      const ym = await fmApi.createYm2612(fmFactory.default, {wasmBinary: readFileSync(join(source, 'docs/generated/ym2612_wasm.wasm'))});
+      const ym = await fmApi.createYm2612(fmFactory.default, {wasmBinary: readFileSync(sourcePath(source, 'docs/generated/ym2612_wasm.wasm'))});
       const psg = await psgApi.SegaPSG.create({moduleFactory: psgFactory.default,
-        moduleOptions: {wasmBinary: readFileSync(join(source, 'docs/generated/segapsg_wasm.wasm'))}, sampleRate: ym.sampleRate(), clock: 3579545});
+        moduleOptions: {wasmBinary: readFileSync(sourcePath(source, 'docs/generated/segapsg_wasm.wasm'))}, sampleRate: ym.sampleRate(), clock: 3579545});
       try {
         const idle = ym.generateStereoView(1);
         const state = {ym2612: ym, psg, resampleRemainder: 0, psgRemainder: 0,
@@ -196,9 +197,9 @@ try {
     const result = spawnSync(executable, [String(rate), String(frames)], {input, maxBuffer: frames * 8 + 4096});
     assert.equal(result.status, 0, result.stderr.toString());
     assert.equal(result.stdout.length, frames * 8);
-    const ym = await fmApi.createYm2612(fmFactory.default, {wasmBinary: readFileSync(join(source, 'docs/generated/ym2612_wasm.wasm'))});
+    const ym = await fmApi.createYm2612(fmFactory.default, {wasmBinary: readFileSync(sourcePath(source, 'docs/generated/ym2612_wasm.wasm'))});
     const psg = await psgApi.SegaPSG.create({moduleFactory: psgFactory.default,
-      moduleOptions: {wasmBinary: readFileSync(join(source, 'docs/generated/segapsg_wasm.wasm'))},
+      moduleOptions: {wasmBinary: readFileSync(sourcePath(source, 'docs/generated/segapsg_wasm.wasm'))},
       sampleRate: ym.sampleRate(), clock: 3579545});
     try {
       const idle = ym.generateStereoView(1);

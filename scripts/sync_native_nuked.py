@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from source_path import source_path
 
 FILES = ['third_party/nuked-opn2/ym3438.c', 'third_party/nuked-opn2/ym3438.h',
          'third_party/nuked-opn2/LICENSE', 'third_party/nuked-opn2/README.md',
@@ -27,7 +28,7 @@ def main():
             data = (target / entry['snapshot']).read_bytes()
             if digest(data) != entry['sha256']:
                 raise SystemExit('Nuked pinned snapshot changed: ' + name)
-            if args.source and (args.source / name).read_bytes() != data:
+            if args.source and source_path(args.source, name).read_bytes() != data:
                 raise SystemExit('Nuked differs from Browser reference: ' + name)
         if (target / 'LICENSE').read_bytes() != (target / 'snapshot/third_party/nuked-opn2/LICENSE').read_bytes():
             raise SystemExit('Nuked readable LGPL notice differs from source license')
@@ -37,7 +38,7 @@ def main():
         parser.error('--source is required to synchronize')
     files = {}
     for name in FILES:
-        data = (args.source / name).read_bytes()
+        data = source_path(args.source, name).read_bytes()
         relative = 'snapshot/' + name
         path = target / relative
         path.parent.mkdir(parents=True, exist_ok=True)

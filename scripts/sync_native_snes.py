@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from source_path import source_path
 
 
 def digest(data):
@@ -25,7 +26,7 @@ def main():
             if digest(data) != entry['sha256']:
                 raise SystemExit('Native SNES snapshot changed: ' + name)
             origin = repository if entry.get('origin') == 'application' else args.source
-            if origin and data != (origin / name).read_bytes():
+            if origin and data != source_path(origin, name).read_bytes():
                 raise SystemExit('Native SNES snapshot differs from source: ' + name)
         if (destination / 'LICENSE').read_bytes() != (destination / 'snapshot/third_party/snes-spc/LICENSE').read_bytes():
             raise SystemExit('Native SNES LGPL license alias differs')
@@ -38,7 +39,7 @@ def main():
     names += ['web/spc_resampler.js', 'web/spc.js', 'wasm/spc_wasm.cpp', 'scripts/build_spc_wasm.sh']
     files = {}
     for name in names:
-        data = (source / name).read_bytes()
+        data = source_path(source, name).read_bytes()
         relative = 'snapshot/' + name
         path = destination / relative
         path.parent.mkdir(parents=True, exist_ok=True)
