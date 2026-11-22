@@ -28,13 +28,20 @@ npm run dev
 
 ```sh
 npm run import:release -- ./xxx.zip
+# Tauriアプリの版番号も更新する場合（ZIPの名前・版番号とは独立）
+npm run import:release -- ./xxx.zip --version 1.2.3
 ```
 
-ZIP の置き場所・ファイル名は自由です。version 指定は不要で、ZIP と展開ファイルの SHA-256 を記録します。
-取り込み後に動作確認し、`dist/` と `release.lock.json` を同じコミットに含めてください。リリースタグもそのコミットに付けます。
+ZIP の置き場所・ファイル名は自由です。ZIP と展開ファイルの SHA-256 を記録します。
+`--version X.Y.Z`を付けると、取り込み成功時に`package.json`、`package-lock.json`、
+`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock`の自分のcrate、`src-tauri/tauri.conf.json`も更新します。
+依存パッケージの版は変更しません。指定を省略すると、従来どおりアプリ版は変更しません。
+不正な版番号・metadata・ZIPは置換前に拒否し、取り込みや版更新に失敗した場合は元の状態を保ちます。
+取り込み後に動作確認とリリースビルドを行い、`dist/`、`release.lock.json`と更新した設定・lockを
+最終コミットに含めてください。リリースタグもそのコミットに付けます。
 macOS の付随ファイル（`.DS_Store` と `__MACOSX/`）は取り込み・検証対象から除外します。アプリ本体のバイト列と取り込み元ZIPのハッシュは保持します。
 `.gitattributes` で `dist/` の改行変換を無効にし、Windowsでも同じバイト列を保持します。
-Tauri アプリのバージョンは、この ZIP の取り込みでは変更しません。
+`release.lock.json`のversionはWeb配布物の識別用で、`--version`で設定するアプリ版とは別です。
 
 ## 構成
 
