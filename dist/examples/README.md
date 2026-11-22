@@ -68,6 +68,13 @@ PCM はフェード後の無音部分だけをループし、末尾に32個の `
 `megacd-pcm-loop.js`・`megacd-sampler.js` と合わせた3例を同梱し、既存のサンプラーは維持しています。
 以前の `megacd-fm-pcm.js` も原本と保存済み Cassette で引き続き使えます。
 
+`genesis/rf5c164-sine.js` は、256点の波形をA4として設定し、`noteOn()`・`setNote()`・
+`noteOff()` で音名を指定する例です。音名はソフトウェアで再生速度へ変換します。
+録音を使う場合は `await pcm.loadSample(...)` の返り値を `await pcm.setChannel(ch, {...sample, ...})`
+へ渡し、元の再生速度で聞こえる音を `pcm.setRootNote('A4')` のように宣言します。
+Root は同期の数値、他の音名操作は Promise を返します。Root の初期値と `null` は C4 で、
+WAVの音程を自動判定する機能ではありません。
+
 CD-DA の `cdda.load()`・`play()`・`pause()`・`resume()`・`seek()` は PC Engine CD-ROM² と共通で、
 Web Audio / Native、Main / Worker で同じコードを使います。自分の Virtual File を鳴らすには
 生成 WAV の読み込みを `await cdda.load('/audio/track02.wav')` に置き換えます。
@@ -165,6 +172,14 @@ DX7 1 Voice / 32 Voice Bank の完全な SysEx に対応し、不正なデータ
 48,000 Hzは出力側で線形補間します。`setClock` やサンプル精度の予約APIはありません。
 msfa の AM・transpose 等の制約は [DX7 ライブラリの README](../../js/msfa_dx7/README.md) を参照してください。
 外部の音色バンクは同梱していません。
+
+`ps1/ps1-vab-tone.js` は標準VABから1つのToneを直接使う例です。
+最初に [自作デモVAB](../samples/spu-import/spu-synth-demo.vab) をダウンロードし、
+Playgroundの Files → Add files... で追加してください。PS1 modeで例を開き、Runします。
+`file('/spu-synth-demo.vab',{type:'arrayBuffer'})` → `readVab()` →
+`prepareVabTone()` → SPUの `loadADPCM()` / `setPreset()` の順で、JSON変換は不要です。
+自分の標準VABやVH/VBも使えます。Tone番号は `bank.tones` 全体のindexです。
+VABのADSR・調律・loop・音量とpan・reverb sendを利用し、曲のドライバー動作は再現しません。
 
 `?ex=...` は廃止。`?src=...` によるコード共有は引き続き利用できる。
 各サンプルの利用可能な音源・機能はコード内の API に依存する（DAC/PSG 等は YM2612 モード）。

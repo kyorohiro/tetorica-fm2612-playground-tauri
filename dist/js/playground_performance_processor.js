@@ -5,8 +5,8 @@ import {createPerformanceQueue} from './playground_performance_queue.js';
  * while their sound changes wait for the reserved audio frame.
  */
 /** @param {string} chip @param {any} command
- * @param {{psgLatch?:number,hucChannel?:number,opllRhythm?:number,wonderswanRegisters?:ArrayLike<number>}} [state] */
-export function identifyPerformanceNote(chip,{method,type,args=[] ,register,value,channel,controlMask,psgRegister,port:registerPort=0},{psgLatch=0,hucChannel=0,opllRhythm=0,wonderswanRegisters}={}) {
+ * @param {{psgLatch?:number,hucChannel?:number,opllRhythm?:number,nesEnabled?:number,wonderswanRegisters?:ArrayLike<number>}} [state] */
+export function identifyPerformanceNote(chip,{method,type,args=[] ,register,value,channel,controlMask,psgRegister,nesTimed=false,port:registerPort=0},{psgLatch=0,hucChannel=0,opllRhythm=0,nesEnabled=0,wonderswanRegisters}={}) {
   if(['reset','allNotesOff','stopVoices','panic'].includes(method))return {allOff:true};
   if(chip==='snes'&&['playTimeline','stopTimeline'].includes(method))return {key:'timeline',on:method==='playTimeline'};
   if(chip==='ps1'&&['_auditionKeyOn','_auditionKeyOff'].includes(method))return {key:args[0],on:method==='_auditionKeyOn'};
@@ -14,6 +14,10 @@ export function identifyPerformanceNote(chip,{method,type,args=[] ,register,valu
   if(chip==='snes'&&method==='writeDsp'&&[0x4c,0x5c].includes(args[0]))return {events:Array.from({length:8},(_,key)=>key).filter(key=>args[1]&(1<<key)).map(key=>({key,on:args[0]===0x4c}))};
   if(chip==='dx7'&&(method==='noteOn'||method==='noteOff'))return {key:args[0],on:method==='noteOn'&&(args[1]??100)>0};
   if(chip==='rf5c164'&&(method==='keyOn'||method==='keyOff'))return {key:args[0],on:method==='keyOn'};
+  if(chip==='nes'&&method==='writeRegister'&&nesTimed){
+    if(args[0]===0x4015)return {events:Array.from({length:5},(_,key)=>({key,on:!!(args[1]&(1<<key))})).filter(e=>e.on!==!!(nesEnabled&(1<<e.key)))};
+    const key=[0x4003,0x4007,0x400b,0x400f].indexOf(args[0]);if(key>=0&&(nesEnabled&(1<<key)))return {key,on:true};
+  }
   if(chip==='nes'&&method==='setChannelEnabled')return {key:args[0],on:args[1]};
   if(chip==='nes'&&method==='writeRegister'&&args[0]===0x4083)return {key:5,on:!(args[1]&128)};
   if(chip==='gameboy'&&method==='writeRegister'){
@@ -30,6 +34,11 @@ export function identifyPerformanceNote(chip,{method,type,args=[] ,register,valu
     if(method==='forceKeyOff'||method==='keyOff')return {key:args[0],on:false};
     const reg=type==='write'?register:method==='writeRegister'?args[0]:null,v=type==='write'?value:args[1];
     if(Number.isInteger(reg)&&reg>=0&&reg<8&&(reg&1))return {key:reg>>1,on:!!(v&15)};
+  }
+  if(chip==='sid'){
+    if(['forceKeyOff','keyOff','noteOff'].includes(method))return {key:args[0],on:false};
+    const reg=type==='write'?register:method==='writeRegister'?args[0]:null,v=type==='write'?value:args[1];
+    if([4,11,18].includes(reg))return {key:(reg-4)/7,on:!!(v&1)};
   }
   if(chip==='ay8910'){
     if(method==='forceKeyOff')return {key:args[0],on:false};
@@ -59,7 +68,7 @@ export function identifyPerformanceNote(chip,{method,type,args=[] ,register,valu
     if(method==='keyOff')return {key:args[0],on:false};
     if(method==='writeRegister'&&args[0]===0x90){
       const mask=(controlMask??((wonderswanRegisters?.[0x10]??0)^args[1]))&15;
-      const events=Array.from({length:4},(_,key)=>({key,on:!!(args[1]&(1<<key))})).filter(event=>mask&(1<<event.key));
+      const events=Array.from({length:5},(_,key)=>({key,on:!!(args[1]&(1<<key))})).filter(event=>mask&(1<<event.key));
       return events.length?{events}:null;
     }
   }
@@ -72,6 +81,9 @@ export function identifyPerformanceNote(chip,{method,type,args=[] ,register,valu
     const v=type==='write'?value:method==='write'?args[2]:args[1];
     const bank=type==='write'?registerPort:method==='write'?args[0]:args[2]??0;
     if(bank===0&&reg===0x28)return {key:[0,1,2,4,5,6].indexOf(v&7),on:!!(v&0xf0)};
+    if(chip==='ym2608'&&bank===1&&reg===0)return {key:'adpcmB',on:(v&0xc1)===0x80};
+    if(chip==='ym2608'&&bank===0&&reg===0x10)return {events:Array.from({length:6},(_,channel)=>channel).filter(channel=>v&(1<<channel)).map(channel=>({key:`rhythm:${channel}`,on:!(v&128)}))};
+    if(chip==='ym2608'&&bank===0&&reg>=8&&reg<=10)return {key:`ssg:${reg-8}`,on:!!(v&31)};
     if(['ym2610','ym2610b'].includes(chip)){
       if(bank===0&&reg>=8&&reg<=10)return {key:`ssg:${reg-8}`,on:!!(v&31)};
       if(bank===0&&reg===0x10)return {key:'adpcmB',on:(v&0xc1)===0x80};
@@ -82,6 +94,9 @@ export function identifyPerformanceNote(chip,{method,type,args=[] ,register,valu
   return null;
 }
 export function performanceNoteRelease(chip,key) {
+  if(chip==='ym2608'&&key==='adpcmB')return {method:'write',args:[1,0,1]};
+  if(chip==='ym2608'&&typeof key==='string'&&key.startsWith('rhythm:'))return {method:'write',args:[0,0x10,128|(1<<Number(key.slice(7)))]};
+  if(chip==='ym2608'&&typeof key==='string'&&key.startsWith('ssg:'))return {method:'write',args:[0,8+Number(key.slice(4)),0]};
   if(['ym2610','ym2610b'].includes(chip)){
     if(typeof key==='string'&&key.startsWith('ssg:'))return {method:'write',args:[0,8+Number(key.slice(4)),0]};
     if(typeof key==='string'&&key.startsWith('adpcmA:'))return {method:'write',args:[1,0,128|(1<<Number(key.slice(7)))]};
@@ -94,7 +109,7 @@ export function performanceNoteRelease(chip,key) {
   if(chip==='gameboy')return {method:'writeRegister',args:[[2,7,10,17][key],0]};
   if(chip==='segapsg')return {method:'write',args:[0x9f|(key<<5)]};
   if(chip==='ym2151')return {method:'forceKeyOff',args:[key]};
-  if(chip==='ay8910'||chip==='pokey')return {method:'forceKeyOff',args:[key]};
+  if(chip==='ay8910'||chip==='pokey'||chip==='sid')return {method:'forceKeyOff',args:[key]};
   if(chip==='ym2413')return typeof key==='string'?{method:'forceRhythmOff',args:[Number(key.split(':')[1])]}:{method:'forceKeyOff',args:[key]};
   if(chip==='y8950'&&key==='adpcm')return {method:'writeRegister',args:[7,1,0]};
   if(['ym3526','ym3812','y8950','ymf262'].includes(chip))return typeof key==='string'?{method:'forceRhythmOff',args:[Number(key.split(':')[1])]}:{method:'forceKeyOff',args:[key]};
@@ -107,7 +122,7 @@ export function performanceNoteRelease(chip,key) {
 /** Channel touched by native register commands, used only while an editor holds a key.
  * @param {string} chip @param {any} command
  * @param {{hucChannel?:number,psgLatch?:number,rfChannel?:number,wonderswanRegisters?:ArrayLike<number>,pokeyRegisters?:ArrayLike<number>}} [state] */
-export function nativeVoiceChannel(chip,{method,type,args=[],channel,psgRegister},{hucChannel=0,psgLatch=0,rfChannel=0,wonderswanRegisters,pokeyRegisters}={}) {
+export function nativeVoiceChannel(chip,{method,type,args=[],channel,psgRegister,register:rawRegister},{hucChannel=0,psgLatch=0,rfChannel=0,wonderswanRegisters,pokeyRegisters}={}) {
   if(chip==='rf5c164'){
     if(['setChannel','setPitch','keyOn','keyOff'].includes(method))return args[0];
     if(['clock','loadMemory'].includes(method)||type==='chip-clock')return 'all';
@@ -177,6 +192,14 @@ export function nativeVoiceChannel(chip,{method,type,args=[],channel,psgRegister
       return physical;
     }
   }
+  if(chip==='sid'){
+    if(['forceKeyOff','keyOff','noteOff','keyOn','noteOn','setVoice','setFrequency','setNote'].includes(method))return args[0];
+    if(['allNotesOff','stopVoices','clock','setFilter'].includes(method)||type==='chip-clock')return 'all';
+    if(method==='writeRegister'||type==='write'){
+      const register=type==='write'?rawRegister:args[0];
+      return Number.isInteger(register)&&register>=0&&register<=20?Math.floor(register/7):'all';
+    }
+  }
   if(chip==='ay8910'){
     if(['forceKeyOff','setRetainedLevel'].includes(method))return args[0];
     if(['allNotesOff','clock'].includes(method)||type==='chip-clock')return 'all';
@@ -228,11 +251,11 @@ export function nativeVoiceChannel(chip,{method,type,args=[],channel,psgRegister
   }
   if(method==='reset')return 'all';return null;
 }
-export function createProcessorPerformance({apply,prepare,validate,onDiscard,onBlocked,chip,releaseNote,getPsgLatch,getPsgMode,getHucChannel,getRfChannel,getRfMask,getOpllRhythm,getAyRegisters,getOplRegisters,getWonderSwanRegisters,getPokeyRegisters,trackImmediateNotes=true,immediate = [],nowFrame = () => currentFrame,rate = sampleRate}) {
+export function createProcessorPerformance({apply,prepare,validate,patternCommandCost,onDiscard,onBlocked,chip,releaseNote,releasePatternNotes=false,getPsgLatch,getPsgMode,getHucChannel,getRfChannel,getRfMask,getOpllRhythm,getAyRegisters,getOplRegisters,getWonderSwanRegisters,getPokeyRegisters,getNesEnableMask,trackImmediateNotes=true,immediate = [],nowFrame = () => currentFrame,rate = sampleRate}) {
   const replies = new WeakMap(),ports = new WeakMap(),pendingRPC = new WeakMap(),immediateMethods = new Set(immediate);
   const owners=new Map(),auditions=new Map();
   let psgLatch=0,nesEnabled=0;
-  const noteState={psgLatch:0};
+  const noteState={psgLatch:0,nesEnabled:0};
   const chipName=()=>typeof chip==='function'?chip():chip;
   // Data bytes reuse the last register selected by any applied PSG writer.
   // A chip snapshot includes inspector writes that bypass this queue.
@@ -248,8 +271,9 @@ export function createProcessorPerformance({apply,prepare,validate,onDiscard,onB
     else if(command.method==='write'&&(command.args?.[0]&128))psgLatch=(command.args[0]>>4)&7;
   }
   function applyTracked(command,port,frame,metadata) {
-    if(auditions.size&&['segapsg','snes','ps1','scsp','wonderswan','pokey'].includes(chipName())&&command.method==='allNotesOff'){
-      for(let channel=0;channel<(chipName()==='scsp'?32:chipName()==='ps1'?24:chipName()==='snes'?8:4);channel++)if(!auditions.has(channel))applyTracked(performanceNoteRelease(chipName(),channel),port,frame);
+    if(chipName()==='nes'&&metadata?.nesFdsOff&&owners.has(5)&&owners.get(5).owner!==metadata.owner)return false;
+    if(auditions.size&&['segapsg','snes','ps1','scsp','wonderswan','pokey','sid'].includes(chipName())&&command.method==='allNotesOff'){
+      for(let channel=0;channel<(chipName()==='scsp'?32:chipName()==='ps1'?24:chipName()==='snes'?8:chipName()==='sid'?3:4);channel++)if(!auditions.has(channel))applyTracked(performanceNoteRelease(chipName(),channel),port,frame);
       return true;
     }
     if(auditions.size&&chipName()==='dx7'&&['allNotesOff','panic'].includes(command.method)){
@@ -272,12 +296,15 @@ export function createProcessorPerformance({apply,prepare,validate,onDiscard,onB
     command=protectWonderSwanControl(command,metadata);
     // Editor parameter patches retain a script's note owner even when a banked
     // control register repeats its existing gate bit. Triggers/releases do not.
-    if(!metadata?.preserveOwner&&!note(command,port,metadata))return false;
+    if(!metadata?.preserveOwner&&!(chipName()==='sid'&&command.preserveOwner===true)&&!note(command,port,metadata))return false;
     apply(command,port,frame,metadata); observePsgLatch(command);
     return true;
   }
   function blockedByAudition(command,metadata) {
     if(!auditions.size)return false;
+    // Explicit timed chip edits follow actual application order. Note ownership
+    // below still protects newer manual Gates from an old scheduled release.
+    if(['ay8910','huc6280','wonderswan','gameboy','sid','ym2608','nes','snes'].includes(chipName())&&metadata?.timedOperation)return false;
     // PSG noise rate 3 uses tone channel 3's divider. A held noise key owns
     // that divider as well, while the tone channel's volume remains editable.
     if(chipName()==='segapsg'&&command.method==='write'&&auditions.has(3)&&(getPsgMode?.()&3)===3){
@@ -296,6 +323,10 @@ export function createProcessorPerformance({apply,prepare,validate,onDiscard,onB
     return auditions.has(channel)&&auditions.get(channel)!==metadata?.owner;
   }
   function protectNesEnable(command,metadata) {
+    if(chipName()==='nes'&&metadata?.timedOperation&&command.method==='writeRegister'&&command.args[0]===0x4015){
+      const enabled=getNesEnableMask?.()??nesEnabled;let value=command.args[1];for(const [key,entry]of owners)if(Number.isInteger(key)&&key<5&&entry.owner!==metadata.owner&&!(value&(1<<key))&&!(key===4&&metadata.nesRetriggerDmc))value=(value&~(1<<key))|(enabled&(1<<key));
+      return {...command,args:[0x4015,value]};
+    }
     if(!auditions.size||chipName()!=='nes'||command.method!=='writeRegister'||command.args[0]!==0x4015)return command;
     let mask=0;for(const [channel,owner]of auditions)if(channel<5&&owner!==metadata?.owner)mask|=1<<channel;
     if(!mask)return command;
@@ -317,6 +348,7 @@ export function createProcessorPerformance({apply,prepare,validate,onDiscard,onB
     return {...command,args:[0x0e,(command.args[1]&~mask)|((getOpllRhythm?.()??0)&mask)]};
   }
   function protectAyMixer(command,metadata){
+    if(metadata?.timedOperation)return command;
     if(!auditions.size||chipName()!=='ay8910'||command.method!=='writeRegister'||command.args[0]!==7)return command;
     let mask=0;for(const [channel,owner]of auditions)if(owner!==metadata?.owner)mask|=(1<<channel)|(8<<channel);
     return {...command,args:[7,(command.args[1]&~mask)|((getAyRegisters?.()?.[7]??0x38)&mask)]};
@@ -327,6 +359,7 @@ export function createProcessorPerformance({apply,prepare,validate,onDiscard,onB
     if(!mask)return command;return {...command,args:[8,(command.args[1]&~mask)|(getOplRegisters()[8]&mask),...(command.args.length>2?[command.args[2]]:[])]};
   }
   function protectWonderSwanControl(command,metadata){
+    if(metadata?.timedOperation)return command;
     if(!auditions.size||chipName()!=='wonderswan'||command.method!=='writeRegister'||command.args[0]!==0x90)return command;
     let mask=0;for(const [channel,owner]of auditions)if(owner!==metadata?.owner)mask|=(1<<channel)|([0,0x20,0x40,0x80][channel]??0);
     const controlMask=(command.controlMask??255)&~mask;
@@ -336,18 +369,29 @@ export function createProcessorPerformance({apply,prepare,validate,onDiscard,onB
     const physical=chipName()==='ym2413'&&typeof key==='string'&&key.startsWith('rhythm:')?[6,7,8,8,7][Number(key.slice(7))]:key;
     return auditions.has(physical)&&auditions.get(physical)===metadata?.owner;
   }
+  function differentNoteOwner(previous,metadata){
+    return previous.owner!==metadata.owner||(releasePatternNotes&&previous.patternName!==undefined&&
+      metadata.patternName!==undefined&&previous.patternName!==metadata.patternName);
+  }
   function note(command,port,metadata) {
+    noteState.nesEnabled=getNesEnableMask?.()??nesEnabled;
     noteState.psgLatch=getPsgLatch?.()??psgLatch;
     noteState.hucChannel=getHucChannel?.()??0;
     noteState.opllRhythm=getOpllRhythm?.()??0;
     noteState.wonderswanRegisters=getWonderSwanRegisters?.();
     const event=identifyPerformanceNote(chipName(),command,noteState);
     if(!event)return true;
+    const noteOwner={owner:metadata?.owner??null,session:metadata?.session,patternName:metadata?.patternName,port};
     if(event.allOff){owners.clear();return true;}
     if(event.events){
-      if(event.events.some(event=>!event.on&&metadata&&owners.has(event.key)&&owners.get(event.key).owner!==metadata.owner&&!manualNoteOwner(event.key,metadata)))return false;
+      if(chipName()==='ym2608'&&metadata?.timedOperation&&command.method==='write'&&command.args?.[0]===0&&command.args[1]===0x10&&(command.args[2]&128)){
+        const allowed=event.events.filter(entry=>!owners.has(entry.key)||owners.get(entry.key).owner===metadata.owner||manualNoteOwner(entry.key,metadata));
+        if(event.events.length&&!allowed.length)return false;
+        if(allowed.length!==event.events.length){command.args[2]=(command.args[2]&0xc0)|allowed.reduce((mask,entry)=>mask|(1<<Number(entry.key.slice(7))),0);event.events=allowed;}
+      }
+      if(event.events.some(event=>!event.on&&metadata&&owners.has(event.key)&&differentNoteOwner(owners.get(event.key),metadata)&&!manualNoteOwner(event.key,metadata)&&!(chipName()==='nes'&&metadata.nesRetriggerDmc&&event.key===4)))return false;
       for(const entry of event.events){
-        if(entry.on)owners.set(entry.key,{owner:metadata?.owner??null,port});else owners.delete(entry.key);
+        if(entry.on)owners.set(entry.key,noteOwner);else owners.delete(entry.key);
       }
       return true;
     }
@@ -355,20 +399,30 @@ export function createProcessorPerformance({apply,prepare,validate,onDiscard,onB
     // A newly acquired editor lease may release the old physical key before
     // retriggering it. Other owners still cannot send a stale release.
     const manualOwner=manualNoteOwner(event.key,metadata);
-    if(!event.on&&metadata&&previous&&previous.owner!==metadata.owner&&!manualOwner)return false;
-    if(event.on)owners.set(event.key,{owner:metadata?.owner??null,port});else owners.delete(event.key);
+    if(!event.on&&metadata&&previous&&differentNoteOwner(previous,metadata)&&!manualOwner&&
+      !(chipName()==='sid'&&metadata.timedOperation&&metadata.sidReleaseAllowed===true))return false;
+    if(event.on)owners.set(event.key,noteOwner);else owners.delete(event.key);
     return true;
   }
-  const queue = createPerformanceQueue({sampleRate:rate,nowFrame,validate,
+  function releaseOwned(matches) {
+    let released=false;
+    for(const [key,entry] of owners)if(matches(entry)){
+      owners.delete(key);
+      released=applyTracked(releaseNote?releaseNote(key):performanceNoteRelease(chipName(),key),entry.port)||released;
+    }
+    return released;
+  }
+  const queue = createPerformanceQueue({sampleRate:rate,nowFrame,validate,patternCommandCost,
     onDiscard(command,metadata) {
       const pending=pendingRPC.get(command);
       if(pending){pendingRPC.delete(command);pending.postMessage({id:command.id,error:'Performance command cancelled',name:'AbortError'});}
       onDiscard?.(command,metadata);
     },
     apply(command,reply,frame,metadata) {pendingRPC.delete(command);const port=ports.get(reply);applyTracked(command,port,frame,metadata);},
-    onCancelOwner(owner) {
-      for(const [key,entry]of owners)if(entry.owner===owner){owners.delete(key);applyTracked(releaseNote?releaseNote(key):performanceNoteRelease(chipName(),key),entry.port);}
-    },
+    onCancelOwner:owner=>releaseOwned(entry=>entry.owner===owner),
+    onReleasePattern:releasePatternNotes ? (name,{owner,session}={})=>releaseOwned(entry=>entry.patternName!==undefined&&
+      (name===undefined||entry.patternName===name)&&(owner===undefined||entry.owner===owner)&&
+      (session===undefined||entry.session===session)) : undefined,
     prepare(command,reply,performance) {
       const port = ports.get(reply);
       let deferred;
@@ -401,7 +455,7 @@ export function createProcessorPerformance({apply,prepare,validate,onDiscard,onB
     receive(data,port) {
       // Editor audition writes use applyImmediate, so ordinary Main commands and
       // previously reserved Worker commands cannot replace a held manual note.
-      if(!data?.performance&&auditions.size&&((['ym2151','segapsg','snes','ps1','scsp','wonderswan','pokey'].includes(chipName())&&data?.method==='allNotesOff')||
+      if(!data?.performance&&auditions.size&&((['ym2151','segapsg','snes','ps1','scsp','wonderswan','pokey','sid'].includes(chipName())&&data?.method==='allNotesOff')||
           (chipName()==='dx7'&&['allNotesOff','panic'].includes(data?.method)))){
         applyTracked(data,port,nowFrame());if(data.id!==undefined)port.postMessage({id:data.id,value:true});return true;
       }
@@ -446,7 +500,16 @@ export function createProcessorPerformance({apply,prepare,validate,onDiscard,onB
     },
     beginAudition(channel,owner){auditions.set(channel,owner);},
     endAudition(channel,owner){if(auditions.get(channel)===owner)auditions.delete(channel);},
+    forgetNote(channel){owners.delete(channel);},
     applyImmediate(command,port,metadata){return applyTracked(command,port,nowFrame(),metadata);},
+    schedulePattern:queue.schedulePattern,
+    validatePattern:queue.validatePattern,
+    clearPattern:queue.clearPattern,
+    clearPatterns:queue.clearPatterns,
+    commitPatterns:queue.commitPatterns,
+    cancelPatternOwner:queue.cancelPatternOwner,
+    cancelOwner:queue.cancelOwner,
+    nowFrame,
     clear(){queue.clear();owners.clear();auditions.clear();},
     getStats:queue.getStats,
   };

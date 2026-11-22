@@ -1,6 +1,9 @@
-import {createDefinitionViewer} from './playground_monaco_definitions.js?v=ps1-adpcm-encoder-1';
-import { registerMonacoCompletions } from "./playground_monaco_completion.js?v=scsp-fm-1";
-import {selectPlaygroundDeclarations} from './playground_declarations.js?v=scsp-fm-1';
+import {createDefinitionViewer} from './playground_monaco_definitions.js?v=sid-timed-1';
+import { registerMonacoCompletions } from "./playground_monaco_completion.js?v=ps1-vab-api-1";
+import {selectPlaygroundDeclarations} from './playground_declarations.js?v=ps1-vab-api-1';
+// Asset loading must remain trusted while user liveLoop callbacks install the
+// execution guard over global fetch. Loading Monaco itself is still lazy.
+const nativeFetch=globalThis.fetch?.bind(globalThis);
 
 function registerMonacoHover(
   monaco
@@ -378,19 +381,22 @@ function registerMonacoSignatureHelp(
   );
 }
 
-async function registerMonacoPlaygroundGlobals(
+export async function registerMonacoPlaygroundGlobals(
   monaco,
-  chip = "ym2612"
+  chip = "ym2612",
+  options = {}
 ) {
   const libraryModels = new Map();
-  for (const name of ["tetorica-playground-globals", `tetorica-playground-${chip}`, "tetorica-shell"]) {
-    const response = await fetch(new URL(`./${name}.d.ts?v=native-modes-1`, import.meta.url), { cache: "no-cache" });
+  for (const name of options.declarationFiles??["tetorica-playground-globals", `tetorica-playground-${chip}`, "tetorica-shell"]) {
+    const response = await nativeFetch(new URL(`./${name}.d.ts?v=scsp-dsp-routing-1`, import.meta.url), { cache: "no-cache" });
     if (!response.ok) throw new Error(`Failed to load playground type declarations: ${response.status}`);
     let declarations = await response.text();
-    if (name === 'tetorica-playground-globals') declarations = selectPlaygroundDeclarations(declarations, chip);
+    if(options.transformDeclarations)declarations=options.transformDeclarations(declarations,name,chip);
+    else if (name === 'tetorica-playground-globals') declarations = selectPlaygroundDeclarations(declarations, chip);
     const uri = monaco.Uri.parse(`file:///${name}.d.ts`);
     monaco.languages.typescript.javascriptDefaults.addExtraLib(declarations, uri.toString());
     const model = monaco.editor.getModel(uri) ?? monaco.editor.createModel(declarations, 'typescript', uri);
+    if(model.getValue()!==declarations)model.setValue(declarations);
     libraryModels.set(uri.toString(), model);
   }
   return libraryModels;
@@ -533,28 +539,13 @@ export async function initializePlaygroundMonaco(
     registerMonacoSignatureHelp(
       monaco
     );
-    const libraryModels = await registerMonacoPlaygroundGlobals(monaco, options.chip);
+    const libraryModels = await registerMonacoPlaygroundGlobals(monaco, options.chip, options);
 
-    const modelUri =
-      monaco.Uri.parse(
-        `file:///project${options.getActiveVirtualPath?.() ?? '/index.js'}`
-      );
-    const existingModel =
-      monaco.editor.getModel(
-        modelUri
-      );
-    const monacoModel =
-      existingModel ??
-      monaco.editor.createModel(
-        getEditorValue(),
-        "javascript",
-        modelUri
-      );
-
-    if (existingModel) {
-      existingModel.setValue(
-        getEditorValue()
-      );
+    const monacoModel = getModelForVirtualPath(
+      options.getActiveVirtualPath?.() ?? '/index.js', getEditorValue()
+    );
+    if (monacoModel.getValue() !== getEditorValue()) {
+      monacoModel.setValue(getEditorValue());
     }
 
     // Monaco's widget colors are scoped to .monaco-editor and the theme class.
@@ -625,20 +616,18 @@ export async function initializePlaygroundMonaco(
       );
     monacoEditor.onDidDispose(() => overflowHost.remove());
     const definitionViewer = createDefinitionViewer(monaco, monacoEditor, libraryModels, {
-      chip: options.chip, openVirtualFile: options.openVirtualFile,
+      chip: options.chip, openVirtualFile: options.openVirtualFile, runtimeFile:options.definitionRuntimeFile,
     });
     monacoEditor.onDidDispose(() => {definitionViewer.dispose();for (const model of libraryModels.values()) model.dispose();});
     let currentModel = monacoModel;
 
     function getModelForVirtualPath(path, source) {
+      const language = /\.json$/i.test(path) ? 'json' : /\.js$/i.test(path) ? 'javascript' : 'plaintext';
       const uri = monaco.Uri.parse(
         `file:///project${path}`
       );
       const existing = monaco.editor.getModel(uri);
       if (existing) {
-        const language = path.endsWith(".json")
-          ? "json"
-          : "javascript";
         if (existing.getLanguageId() !== language) {
           monaco.editor.setModelLanguage(
             existing,
@@ -649,9 +638,7 @@ export async function initializePlaygroundMonaco(
       }
       return monaco.editor.createModel(
         source,
-        path.endsWith(".json")
-          ? "json"
-          : "javascript",
+        language,
         uri
       );
     }
@@ -659,13 +646,10 @@ export async function initializePlaygroundMonaco(
     function syncVirtualFiles(files) {
       const paths = new Set();
       for (const file of files) {
-        if (
-          file.type === "text" &&
-          (
-            file.path.endsWith(".js") ||
-            file.path.endsWith(".json")
-          )
-        ) {
+        // Script models provide cross-file completion and definition lookup.
+        // Preset JSON and other text get a model when opened in the editor.
+        // Importing an instrument library therefore creates no JSON listeners.
+        if (file.type === "text" && /\.js$/i.test(file.path)) {
           paths.add(file.path);
           const model = getModelForVirtualPath(
             file.path,
@@ -677,6 +661,7 @@ export async function initializePlaygroundMonaco(
         }
       }
       // Keep the attached model alive until openVirtualFile switches the editor.
+      // Unattached text models can then release Monaco's language listeners.
       for (const model of monaco.editor.getModels()) {
         if (model === currentModel || model.uri.scheme !== "file" ||
             !model.uri.path.startsWith("/project/")) continue;

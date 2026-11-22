@@ -4,6 +4,7 @@
 /** Default script lead; UI audition bypasses this transport. In seconds. */
 export const DEFAULT_WORKER_LOOKAHEAD_SECONDS = 0.5;
 const timelineUploadMethods=new Set(['beginTimelineUpload','appendTimelineChunk','commitTimelineUpload','abortTimelineUpload']);
+const scspDspMethods=new Set(['applyDspProgram','getDspProgram','getDspCoefficients','setDspCoefficients','setDspReturn','setDspDelay']);
 
 export function validateWorkerLookahead(seconds) {
   if (!Number.isFinite(seconds) || seconds < 0 || seconds > 2) {
@@ -23,7 +24,7 @@ function immediate(command, kind) {
       'sample-writes', 'sample-dac-bank'].includes(command.type);
   }
   if (kind === 'fx') return command.op === 'sample' && command.action === 'load';
-  return timelineUploadMethods.has(command.method)||['stopTimeline', 'getTimelineState', 'loadBRR', 'loadADPCM', 'loadPCM', 'readDsp', 'snapshot', 'loadSysex', 'memory', 'rom', 'loadMemory', 'prepareTimeline', 'getState',
+  return timelineUploadMethods.has(command.method)||scspDspMethods.has(command.method)||['stopTimeline', 'getTimelineState', 'loadBRR', 'setEcho', 'getEcho', 'loadADPCM', 'loadPCM', 'readDsp', 'snapshot', 'loadSysex', 'memory', 'rom', 'loadMemory', 'prepareTimeline', 'getState',
     'getPreset', 'read', 'status', 'getIrq'].includes(command.method);
 }
 
@@ -82,6 +83,11 @@ export function createPerformanceSender({getLoop = () => null, restoreLoop = () 
       if (commands.some(command => command.id !== undefined)) throw new DOMException('Run stopped', 'AbortError');
       return;
     }
+    // Register-operation RPCs own their compact timeline; retain the owner
+    // without adding the performance lead a second time.
+    if(!Array.isArray(data)&&['ayTimed','ym2612Timed','ym2608Timed','huc6280Timed','ps1Timed','wonderswanTimed','psgTimed','opllTimed','sidTimed','gameboyTimed','nesTimed'].includes(data?.method)){
+      port.postMessage({...data,timedPerformance:timestamp()},transfer);return;
+    }
     const {time} = timestamp();
     if (transfer?.length && commands.length > 1 && commands.some(command => immediate(command, kind))) {
       // A transfer list can be consumed only once. Mixed prep/performance
@@ -100,7 +106,7 @@ export function createPerformanceSender({getLoop = () => null, restoreLoop = () 
       if (immediate(command, kind)) {
         flush();
         if(leaseUntimed)port.postMessage({nativePerformance:{session:configuration.session,owner},commands:[command]},transfer);
-        else if(timelineUploadMethods.has(command.method))port.postMessage({performance:{session:configuration.session,owner,time},commands:[command]},transfer);
+        else if(timelineUploadMethods.has(command.method)||scspDspMethods.has(command.method))port.postMessage({performance:{session:configuration.session,owner,time},commands:[command]},transfer);
         else port.postMessage(Array.isArray(data) ? [command] : command, transfer);
       }
       else pending.push(command);

@@ -2,6 +2,9 @@
 // Copyright (c) 2026, kyorohiro.
 import {noteToHz} from './soundchip_pitch.js';
 import {SCSP_SAMPLE_RATE, SCSP_RAM_BYTES} from './scsp.js?v=scsp-fm-1';
+import {ScspDspProgram} from './scsp_dsp.js';
+import {SCSP_DSP_DELAY_RAM_BYTES, SCSP_DSP_DELAY_ALIGNMENT,
+  resolveScspDspDelay, validateScspDspDelayRam} from './scsp_dsp_delay.js';
 export const SCSP_SLOT_COUNT = 32;
 /** Nominal manual rates; the oscillator runs at fixed 44.1 kHz. */
 export const SCSP_LFO_FREQUENCIES_HZ=Object.freeze([.17,.19,.23,.27,.34,.39,.45,.55,.68,.78,.92,1.10,1.39,1.60,1.87,2.27,2.87,3.31,3.92,4.79,6.15,7.18,8.60,10.8,14.4,17.2,21.5,28.7,43.1,57.4,86.1,172.3]);
@@ -28,12 +31,13 @@ const positive = (v,name) => {
 function keys(value,allowed,name) {
   if (!value||typeof value!=='object'||Array.isArray(value)||Reflect.ownKeys(value).some(k=>!allowed.includes(k))) throw new TypeError(`Invalid ${name}`);
 }
-const envelopeDefaults = () => ({attackRate:31,decay1Rate:0,decay2Rate:0,decayLevel:0,releaseRate:31,keyRateScaling:15});
-const voiceDefaults = () => ({sample:null,frequencyHz:440,totalLevel:0,directLevel:7,pan:0,envelope:envelopeDefaults(),lfo:lfoDefaults(),modulation:modulationDefaults()});
+const envelopeDefaults = () => ({attackRate:31,decay1Rate:0,decay2Rate:0,decayLevel:0,releaseRate:31,keyRateScaling:15,loopLink:false});
+const voiceDefaults = () => ({sample:null,frequencyHz:440,totalLevel:0,directLevel:7,pan:0,dspSend:0,envelope:envelopeDefaults(),lfo:lfoDefaults(),modulation:modulationDefaults()});
 function envelope(value) {
   keys(value,Object.keys(envelopeDefaults()),'SCSP envelope');
   const result={...envelopeDefaults(),...value};
-  for (const k of Object.keys(result)) int(result[k],0,k==='keyRateScaling'?15:31,k);
+  for (const k of Object.keys(result)) if(k!=='loopLink')int(result[k],0,k==='keyRateScaling'?15:31,k);
+  if(typeof result.loopLink!=='boolean')throw new TypeError('SCSP envelope loopLink must be boolean');
   return Object.freeze(result);
 }
 /** Quantize a source advance ratio to signed OCT / FNS. No silent clamping. */
@@ -48,11 +52,13 @@ export function scspPitch(ratio) {
 }
 
 /** Musical PCM adapter over an exclusively owned Scsp. No device, automatic voice
- * allocation, public sample replacement, DSP or file decoder. Do not write the raw
+ * allocation, public sample replacement or file decoder. Explicit managed DSP
+ * setup uses the same owned core. Do not write the raw
  * core while this adapter owns its registers/RAM. Preset changes take effect on
  * the next keyOn; setFrequency and setMix are explicit live controls.
  */
 export class ScspSynth {
+  #dsp=null; #dspRam=null; #failure=null;
   #bankId=`scsp-${Date.now().toString(36)}-${++bankSequence}-${Math.random().toString(36).slice(2)}`;
   #editorPages=[]; #core; #samples=new Map(); #nextId=1; #used=0; #voices=Array.from({length:32},voiceDefaults); #gates=Array(32).fill(false); #playing=Array(32).fill(null); #playingLfos=Array(32).fill(null); #playingModulations=Array(32).fill(null); #playingFrequencies=Array(32).fill(null); #disposed=false;
   constructor(core) {
@@ -60,7 +66,12 @@ export class ScspSynth {
     this.#core=core;
     core.reset();core.write(0x400,0x020f);
   }
-  #open() {if(this.#disposed)throw new Error('ScspSynth is disposed');}
+  #open() {if(this.#disposed)throw new Error('ScspSynth is disposed');if(this.#failure)throw this.#failure;}
+  #dspCall(method,...args) {
+    this.#open();const owner=this.#dsp??new ScspDspProgram(this.#core);
+    try {const value=owner[method](...args);this.#dsp=owner;return value;}
+    catch(error){if(error.fatal)this.#failure=error;throw error;}
+  }
   #slot(slot) {this.#open();return int(slot,0,31,'SCSP slot');}
   #sample(sample) {
     if (!sample||this.#samples.get(sample.id)!==sample) throw new TypeError('SCSP sample belongs to another bank or was cleared');
@@ -115,7 +126,7 @@ export class ScspSynth {
     let encoded,template;
     const check=new ScspSynth({sampleRate:44100,reset(){},write(){},loadRam(bytes){encoded=bytes;},renderInto(){},dispose(){}});
     try {
-      check._adoptState({...this.getState(),ramUsedBytes:0});
+      check._adoptState({...this.getState(),ramUsedBytes:0,dsp:undefined,dspRam:undefined});
       template=check.loadPCM(pcm,options);check.setPreset(slot,{sample:template});
     }finally{check.dispose();}
     const pinned=sample=>this.#playing.includes(sample)||this.#voices.some((v,i)=>i!==slot&&v.sample===sample);
@@ -135,10 +146,12 @@ export class ScspSynth {
   }
   /** Configure a slot for its next keyOn. Invalid patches leave the slot intact. */
   setPreset(slot,patch) {
-    slot=this.#slot(slot);keys(patch,['sample','frequencyHz','totalLevel','directLevel','pan','envelope','lfo','modulation'],'SCSP preset');
-    const current=this.#voices[slot],next={...current,...patch};
+    slot=this.#slot(slot);keys(patch,['sample','frequencyHz','totalLevel','directLevel','pan','dspSend','dspInput','envelope','lfo','modulation'],'SCSP preset');
+    const current=this.#voices[slot],next={dspSend:0,...current,...patch};
     if(next.sample!==null)this.#sample(next.sample);
     positive(next.frequencyHz,'frequencyHz');int(next.totalLevel,0,255,'totalLevel');int(next.directLevel,0,7,'directLevel');int(next.pan,0,31,'pan');
+    int(next.dspSend,0,7,'dspSend');
+    if(Object.hasOwn(next,'dspInput'))int(next.dspInput,0,1,'dspInput');
     next.envelope=envelope({...current.envelope,...(patch.envelope??{})});
     if(Object.hasOwn(patch,'envelope'))keys(patch.envelope,Object.keys(envelopeDefaults()),'SCSP envelope');
     if(Object.hasOwn(patch,'lfo'))keys(patch.lfo,Object.keys(lfoMasks),'SCSP LFO');
@@ -193,21 +206,56 @@ export class ScspSynth {
   /** Raw hardware attenuation/send/pan codes. TL=0 is loudest, DISDL=0 mute;
    * DIPAN=0 center, 15 right-only, 31 left-only. No software gain compensation. */
   setMix(slot,patch) {
-    slot=this.#slot(slot);keys(patch,['totalLevel','directLevel','pan'],'SCSP mix');
-    const next={...this.#voices[slot],...patch};
+    slot=this.#slot(slot);keys(patch,['totalLevel','directLevel','pan','dspSend','dspInput'],'SCSP mix');
+    const next={dspSend:0,...this.#voices[slot],...patch};
     int(next.totalLevel,0,255,'totalLevel');int(next.directLevel,0,7,'directLevel');int(next.pan,0,31,'pan');
+    int(next.dspSend,0,7,'dspSend');
+    if(Object.hasOwn(next,'dspInput'))int(next.dspInput,0,1,'dspInput');
+    const sendEdited=Object.hasOwn(patch,'dspSend'),inputEdited=Object.hasOwn(patch,'dspInput');
+    if(sendEdited||inputEdited) {
+      if(sendEdited&&next.dspSend)this.#dspCall('ensureStarted');
+      const mask=(sendEdited?0x7:0)|(inputEdited?0x78:0);
+      this.#core.write(slot*32+20,((next.dspInput??0)<<3)|next.dspSend,mask);
+    }
     this.#core.write(slot*32+12,next.totalLevel,255);
-    this.#core.write(slot*32+22,(next.directLevel<<13)|(next.pan<<8));this.#voices[slot]=next;
+    this.#core.write(slot*32+22,(next.directLevel<<13)|(next.pan<<8),0xff00);this.#voices[slot]=next;
+  }
+  /** Apply a validated RAM-free DSP image. PCM, voices and TEMP history remain. */
+  applyDspProgram(words,options) {return this.#dspCall('applyProgram',words,options);}
+  /** Detached authored program / coefficient / EFREG0-return snapshot. */
+  getDspProgram() {return this.#dspCall('readProgram');}
+  getDspCoefficients() {return this.#dspCall('readCoefficients');}
+  /** Signed Q12 hardware codes; live edits retain held notes and DSP history. */
+  setDspCoefficients(patch) {return this.#dspCall('setCoefficients',patch);}
+  /** Hardware effect return: legacy (patch) selects EFREG0; (output, patch)
+   * selects EFREG0 / EFREG1. Level 0..7 (0 mute), pan 0..31. */
+  setDspReturn(...args) {return this.#dspCall('setReturn',...args);}
+  /** Configure the managed fixed Delay. Its 64 KiB ring is appended once at an
+   * 8 KiB hardware boundary, without moving PCM. Reservation lasts until a RAM
+   * clearing reset. Time / Enable clear the ring; Feedback retains its tail.
+   * Per-slot sends and shared return use setMix / setDspReturn explicitly. */
+  setDspDelay(patch) {
+    this.#open();
+    const settings=resolveScspDspDelay(patch,this.#dsp?.readProgram().delay);
+    const ram=this.#dspRam??{
+      address:Math.ceil(this.#used/SCSP_DSP_DELAY_ALIGNMENT)*SCSP_DSP_DELAY_ALIGNMENT,
+      byteLength:SCSP_DSP_DELAY_RAM_BYTES,
+    };
+    if(ram.address+ram.byteLength>SCSP_RAM_BYTES)throw new RangeError('SCSP Delay needs a free aligned 64 KiB ring. Existing PCM and DSP setup were kept.');
+    const result=this.#dspCall('setDelay',settings,ram);
+    if(!this.#dspRam){this.#dspRam=Object.freeze({...ram});this.#used=ram.address+ram.byteLength;}
+    return result;
   }
   keyOn(slot) {
     slot=this.#slot(slot);const v=this.#voices[slot],s=this.#sample(v.sample),pitch=this.#pitch(v),b=slot*32,e=v.envelope;
+    if(v.dspSend)this.#dspCall('ensureStarted');
     // Explicit off/on also retriggers an already sounding slot. KEYONEX scans
     // all 32 slots; mask only our KEYONB so other held voices keep their gates.
     this.#core.write(b,0x1000,0x1800);
     const control=(s.address>>>16)|(s.bits===8?16:0)|(s.loopStartSamples===null?0:32);
     for(const [r,value]of [[2,s.address&65535],[4,s.loopStartSamples??0],[6,s.length],
       [8,(e.decay2Rate<<11)|(e.decay1Rate<<6)|e.attackRate],
-      [10,(e.keyRateScaling<<10)|(e.decayLevel<<5)|e.releaseRate],[12,v.totalLevel|(v.modulation.writeInhibit?0x200:0)],[14,modulationWord(v.modulation)],[16,pitch.word],[18,lfoWord(v.lfo)],[20,0],[22,(v.directLevel<<13)|(v.pan<<8)]])this.#core.write(b+r,value);
+      [10,(e.loopLink?0x4000:0)|(e.keyRateScaling<<10)|(e.decayLevel<<5)|e.releaseRate],[12,v.totalLevel|(v.modulation.writeInhibit?0x200:0)],[14,modulationWord(v.modulation)],[16,pitch.word],[18,lfoWord(v.lfo)],[20,((v.dspInput??0)<<3)|(v.dspSend??0)],[22,(v.directLevel<<13)|(v.pan<<8)]])this.#core.write(b+r,value,r===22?0xff00:r===20?0x7f:0xffff);
     this.#core.write(b,control|0x1800);this.#gates[slot]=true;this.#playing[slot]=s;this.#playingLfos[slot]=v.lfo;this.#playingModulations[slot]=v.modulation;this.#playingFrequencies[slot]=v.frequencyHz;
   }
   keyOff(slot) {slot=this.#slot(slot);this.#core.write(slot*32,0x1000,0x1800);this.#gates[slot]=false;}
@@ -222,12 +270,13 @@ export class ScspSynth {
   }
   /** Immediate silence, including infinite releases. Retains bank/presets;
    * resets the native frame clock. Reset the downstream resampler as well. */
-  stopVoices() {this.#open();this.#core.reset();this.#core.write(0x400,0x020f);this.#gates.fill(false);this.#playing.fill(null);this.#playingLfos.fill(null);this.#playingModulations.fill(null);this.#playingFrequencies.fill(null);}
+  stopVoices() {this.#open();this.#core.reset();this.#core.write(0x400,0x020f);if(this.#dsp)this.#dspCall('restore');this.#gates.fill(false);this.#playing.fill(null);this.#playingLfos.fill(null);this.#playingModulations.fill(null);this.#playingFrequencies.fill(null);}
   reset(options={}) {
     this.#open();keys(options,['clearRam'],'SCSP reset options');
     if(options.clearRam!==undefined&&typeof options.clearRam!=='boolean')throw new TypeError('clearRam must be boolean');
     this.#core.reset(options);this.#core.write(0x400,0x020f);this.#gates.fill(false);this.#playing.fill(null);this.#playingLfos.fill(null);this.#playingModulations.fill(null);this.#playingFrequencies.fill(null);this.#voices=Array.from({length:32},voiceDefaults);
-    if(options.clearRam){this.#samples.clear();this.#editorPages=[];this.#used=0;}
+    this.#dsp=null;
+    if(options.clearRam){this.#samples.clear();this.#editorPages=[];this.#used=0;this.#dspRam=null;}
   }
   /** Internal structured-clone transport bridge. Public PCM handles stay owned. */
   _resolveSample(value) {
@@ -238,6 +287,11 @@ export class ScspSynth {
   /** Internal trusted Worklet resource snapshot; never uploads or writes RAM. */
   _adoptResources(state) {
     this.#open();
+    const dspRam=state.dspRam?validateScspDspDelayRam(state.dspRam):null;
+    if(dspRam&&dspRam.address+dspRam.byteLength>state.ramUsedBytes)throw new TypeError('SCSP Delay reservation exceeds the allocated bank');
+    if(state.dsp?.profile==='delay-ring'&&(!dspRam||state.dsp.ram?.address!==dspRam.address||state.dsp.ram?.byteLength!==dspRam.byteLength))throw new TypeError('SCSP Delay program does not match its RAM reservation');
+    if(state.dsp){const owner=this.#dsp??new ScspDspProgram(this.#core);owner.adoptState(state.dsp);this.#dsp=owner;}else this.#dsp=null;
+    this.#dspRam=dspRam?Object.freeze(dspRam):null;
     const previous=this.#samples,next=new Map(state.samples.map(s=>[s.id,previous.get(s.id)?.bankId===s.bankId?previous.get(s.id):Object.freeze({...s})]));
     this.#samples=next;this.#used=state.ramUsedBytes;this.#nextId=state.nextSampleId;
     this.#bankId=state.bankId;
@@ -245,7 +299,7 @@ export class ScspSynth {
       const s=this.#voices[i].sample;
       if(s&&next.get(s.id)!==s){
         const actual=state.slots?.[i],replacement=actual?.sample?next.get(actual.sample.id):null;
-        this.#voices[i]=actual?{...actual,envelope:{...actual.envelope},lfo:{...lfoDefaults(),...actual.lfo},modulation:{...modulationDefaults(),...actual.modulation},sample:replacement}:{...this.#voices[i],sample:null};
+        this.#voices[i]=actual?{...actual,envelope:{...envelopeDefaults(),...actual.envelope},lfo:{...lfoDefaults(),...actual.lfo},modulation:{...modulationDefaults(),...actual.modulation},sample:replacement}:{...this.#voices[i],sample:null};
         this.#gates[i]=actual?.gate??false;
         if(next.get(this.#playing[i]?.id)!==this.#playing[i])this.#playing[i]=null;
       }
@@ -254,19 +308,21 @@ export class ScspSynth {
   /** Internal editor metadata delta; the caller has excluded scheduled commands. */
   _adoptEditorState(slot,state) {
     slot=this.#slot(slot);this._adoptResources(state);const v=state.slots[slot];
-    this.#voices[slot]={...v,envelope:{...v.envelope},lfo:{...lfoDefaults(),...v.lfo},modulation:{...modulationDefaults(),...v.modulation},sample:v.sample?this._resolveSample(v.sample):null};
+    this.#voices[slot]={...v,envelope:{...envelopeDefaults(),...v.envelope},lfo:{...lfoDefaults(),...v.lfo},modulation:{...modulationDefaults(),...v.modulation},sample:v.sample?this._resolveSample(v.sample):null};
     this.#gates[slot]=!!v.gate;
-    this.#playingFrequencies[slot]=state.playingFrequencies?.[slot]??v.frequencyHz;
-    this.#playingLfos[slot]=state.playingLfos?.[slot]??{...lfoDefaults(),...v.lfo};
-    this.#playingModulations[slot]={...modulationDefaults(),...(state.playingModulations?.[slot]??v.modulation)};
+    const frequency=state.playingFrequencies?.[slot],playingLfo=state.playingLfos?.[slot],playingModulation=state.playingModulations?.[slot];
+    // null means stopped; only an omitted field in an older snapshot falls back.
+    this.#playingFrequencies[slot]=frequency===undefined?v.frequencyHz:frequency;
+    this.#playingLfos[slot]=playingLfo===null?null:{...lfoDefaults(),...(playingLfo??v.lfo)};
+    this.#playingModulations[slot]=playingModulation===null?null:{...modulationDefaults(),...(playingModulation??v.modulation)};
     const id=state.playingSampleIds?.[slot];this.#playing[slot]=id==null?null:this.#samples.get(id)??null;
   }
   _adoptState(state) {
     this._adoptResources(state);
-    this.#voices=state.slots.map(v=>({...v,sample:v.sample?this._resolveSample(v.sample):null,envelope:{...v.envelope},lfo:{...lfoDefaults(),...v.lfo},modulation:{...modulationDefaults(),...v.modulation}}));
-    this.#playingFrequencies=state.slots.map((v,i)=>state.playingFrequencies?.[i]??v.frequencyHz);
-    this.#playingLfos=state.slots.map((v,i)=>state.playingLfos?.[i]?{...state.playingLfos[i]}:{...lfoDefaults(),...v.lfo});
-    this.#playingModulations=state.slots.map((v,i)=>({...modulationDefaults(),...(state.playingModulations?.[i]??v.modulation)}));
+    this.#voices=state.slots.map(v=>({...v,sample:v.sample?this._resolveSample(v.sample):null,envelope:{...envelopeDefaults(),...v.envelope},lfo:{...lfoDefaults(),...v.lfo},modulation:{...modulationDefaults(),...v.modulation}}));
+    this.#playingFrequencies=state.slots.map((v,i)=>state.playingFrequencies?.[i]===undefined?v.frequencyHz:state.playingFrequencies[i]);
+    this.#playingLfos=state.slots.map((v,i)=>state.playingLfos?.[i]===null?null:state.playingLfos?.[i]?{...state.playingLfos[i]}:{...lfoDefaults(),...v.lfo});
+    this.#playingModulations=state.slots.map((v,i)=>state.playingModulations?.[i]===null?null:({...modulationDefaults(),...(state.playingModulations?.[i]??v.modulation)}));
     this.#gates=state.slots.map(v=>!!v.gate);this.#playing=state.playingSampleIds?state.playingSampleIds.map(id=>id==null?null:this.#samples.get(id)??null):this.#voices.map(v=>v.sample);
   }
   /** Trusted transport staging: copy pool reservations without sharing pages. */
@@ -275,7 +331,7 @@ export class ScspSynth {
     this.#editorPages=source.#editorPages.map(p=>({...p,sample:p.sample?this.#samples.get(p.sample.id):null}));
   }
   getState() {
-    this.#open();return {sampleRate:44100,bankId:this.#bankId,nextSampleId:this.#nextId,ramUsedBytes:this.#used,ramFreeBytes:SCSP_RAM_BYTES-this.#used,playingFrequencies:[...this.#playingFrequencies],playingLfos:this.#playingLfos.map(l=>l?{...l}:null),playingModulations:this.#playingModulations.map(m=>m?{...m}:null),playingSampleIds:this.#playing.map(s=>s?.id??null),samples:[...this.#samples.values()],
+    this.#open();return {sampleRate:44100,bankId:this.#bankId,nextSampleId:this.#nextId,ramUsedBytes:this.#used,ramFreeBytes:SCSP_RAM_BYTES-this.#used,...(this.#dsp?{dsp:this.#dsp.readProgram()}:{}),...(this.#dspRam?{dspRam:{...this.#dspRam}}:{}),playingFrequencies:[...this.#playingFrequencies],playingLfos:this.#playingLfos.map(l=>l?{...l}:null),playingModulations:this.#playingModulations.map(m=>m?{...m}:null),playingSampleIds:this.#playing.map(s=>s?.id??null),samples:[...this.#samples.values()],
       slots:this.#voices.map((v,i)=>({...v,envelope:{...v.envelope},lfo:{...v.lfo},modulation:{...v.modulation},gate:this.#gates[i]}))};
   }
   prepare(frames) {this.#open();this.#core.prepare(frames);}

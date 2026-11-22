@@ -1,4 +1,5 @@
 import {createPokeyClient} from './playground_pokey.js?v=pokey-prepare-1';
+import {createSidClient} from './playground_sid.js?v=sid-timed-1';
 import {createAy8910Client} from './playground_ay8910.js?v=pokey-prepare-1';
 import {createPWM32XClient} from './pwm32x_playback.js?v=pokey-prepare-1';
 import {createNesClient} from './playground_nes.js?v=pokey-prepare-1';
@@ -13,7 +14,7 @@ import {createOki6258Client} from './playground_okim6258.js?v=pokey-prepare-1';
 import {createYm2413Client} from './playground_ym2413.js?v=pokey-prepare-1';
 import {createOplClient, OPL_CHIPS} from './playground_opl.js?v=pokey-prepare-1';
 import {createDx7Client} from './playground_dx7.js?v=y8950-adpcm-ui-1';
-import {createGameboyClient} from './playground_gameboy.js?v=pokey-prepare-1';
+import {createGameboyClient} from './playground_gameboy.js?v=gameboy-timed-1';
 
 /** Primary controls borrow devices owned by the runtime. */
 export function borrowNativeApi(raw, id, changed = () => {}, before = () => true, settle = result => result) {
@@ -60,7 +61,8 @@ export function borrowNativeApi(raw, id, changed = () => {}, before = () => true
 }
 
 export function createNativePrimaryClient(name, port, options = {}, lifecycle = {}) {
-  const client = name==='pokey'?createPokeyClient(port,options,lifecycle):name==='pwm'?createPWM32XClient(port,{native:true},lifecycle):name==='ay8910'?createAy8910Client(port,options,lifecycle):name==='ym2413'?createYm2413Client(port,options,lifecycle):OPL_CHIPS.includes(name) ? createOplClient(port, {...options,chip:name},lifecycle)
+  if(name==='sid'&&options.native)throw new Error('SID requires Web Audio; Native output is not supported yet.');
+  const client = name==='sid'?createSidClient(port,options,lifecycle):name==='pokey'?createPokeyClient(port,options,lifecycle):name==='pwm'?createPWM32XClient(port,{native:true},lifecycle):name==='ay8910'?createAy8910Client(port,options,lifecycle):name==='ym2413'?createYm2413Client(port,options,lifecycle):OPL_CHIPS.includes(name) ? createOplClient(port, {...options,chip:name},lifecycle)
     : name === 'nes' ? createNesClient(port, options,lifecycle)
     : name === 'gameboy' ? createGameboyClient(port,options,lifecycle)
     : name === 'scsp' ? createScspClient(port,options,lifecycle)
@@ -76,7 +78,7 @@ export function createNativePrimaryClient(name, port, options = {}, lifecycle = 
   if(name==='pwm'){client._stopVoices=()=>client.stopVoices();if(options.clock!==undefined)client._adoptClock(options.clock);}
   if (!client) throw new Error(`Unsupported native primary: ${name}`);
   if (options.state && name!=='nes') client._adoptState?.(options.state);
-  else if (name === 'wonderswan' || name === 'huc6280' || name==='pokey' || name==='ay8910' || name==='ym2413' || OPL_CHIPS.includes(name)) client.initialize();
+  else if (name === 'wonderswan' || name === 'huc6280' || name==='pokey' || name==='sid' || name==='ay8910' || name==='ym2413' || OPL_CHIPS.includes(name)) client.initialize();
   return client;
 }
 
@@ -85,7 +87,7 @@ export function createNativeWorkerApis(connections, performance, observe, lifecy
   const raw = new Map(), apis = {};
   for (const connection of connections) {
     const port = performance.port(connection.port, 'independent');
-    const client = createNativePrimaryClient(connection.name, port, connection, ['wonderswan','pokey','y8950','ps1','scsp'].includes(connection.name)?lifecycle:{});
+    const client = createNativePrimaryClient(connection.name, port, connection, ['wonderswan','pokey','sid','y8950','ps1','scsp'].includes(connection.name)?lifecycle:{});
     raw.set(connection.globalName, client);
     let queued = false;
     const changed = () => {

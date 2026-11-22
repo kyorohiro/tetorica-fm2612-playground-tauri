@@ -28,8 +28,8 @@ export function apiOperatorToDisplayOperator(
 export function createParamControl(config) {
   const {
     label,
-    min,
-    max,
+    min: initialMin,
+    max: initialMax,
     step,
     value,
     onChange,
@@ -38,6 +38,7 @@ export function createParamControl(config) {
     category = "",
     wheelAdjust = true,
   } = config;
+  let min=initialMin,max=initialMax;
 
   const wrapper =
     document.createElement("div");
@@ -87,23 +88,36 @@ export function createParamControl(config) {
       // Preset / channel / synth updates also change the basis for edits.
       currentValue = nextValue;
       if (booleanMode) {
-        valueElement.textContent =
-          nextValue ? "ON" : "OFF";
+        const text=nextValue ? "ON" : "OFF";
+        if(valueElement.textContent!==text)valueElement.textContent=text;
         valueElement.classList.toggle(
           "is-on",
           Boolean(nextValue)
         );
         return;
       }
-      valueElement.textContent =
-        String(nextValue);
+      const text=String(nextValue);
+      if(valueElement.textContent!==text)valueElement.textContent=text;
     };
 
   let dragStartX = 0;
   let dragStartValue = value;
-  const valueRange =
-    Math.max(step, max - min);
+  let dragPointer=null;
   const dragPixelsForFullRange = 160;
+
+  function cancelDrag() {
+    const pointer=dragPointer;dragPointer=null;
+    if(pointer!==null&&valueElement.hasPointerCapture(pointer))valueElement.releasePointerCapture(pointer);
+    valueElement.classList.remove('is-dragging');
+  }
+  // Sample-backed controls can change their legal interval after loading a
+  // preset or moving its other endpoint. Updating bounds is not a user edit.
+  function updateRange(nextMin,nextMax) {
+    if(!Number.isFinite(nextMin)||!Number.isFinite(nextMax)||nextMin>nextMax)throw new RangeError('Invalid parameter range');
+    if(nextMin===min&&nextMax===max)return;
+    cancelDrag();min=nextMin;max=nextMax;
+    if(typeof currentValue==='number'&&Number.isFinite(currentValue))updateVisual(clampValue(currentValue,min,max));
+  }
 
   const applyValue =
     (nextValue) => {
@@ -143,6 +157,7 @@ export function createParamControl(config) {
       }
       dragStartX = event.clientX;
       dragStartValue = currentValue;
+      dragPointer=event.pointerId;
       valueElement.classList.add(
         "is-dragging"
       );
@@ -171,7 +186,7 @@ export function createParamControl(config) {
       const deltaSteps =
         Math.round(
           (deltaX / dragPixelsForFullRange) *
-          (valueRange / step)
+          (Math.max(step,max-min) / step)
         );
 
       applyValue(
@@ -183,6 +198,7 @@ export function createParamControl(config) {
 
   const endDrag =
     (event) => {
+      if(dragPointer===event.pointerId)dragPointer=null;
       if (
         valueElement.hasPointerCapture(
           event.pointerId
@@ -205,6 +221,10 @@ export function createParamControl(config) {
     "pointercancel",
     endDrag
   );
+  valueElement.addEventListener('lostpointercapture',event=>{
+    if(dragPointer===event.pointerId)dragPointer=null;
+    valueElement.classList.remove('is-dragging');
+  });
 
   if (wheelAdjust) {
     wrapper.addEventListener(
@@ -241,6 +261,8 @@ export function createParamControl(config) {
   return {
     element: wrapper,
     updateVisual,
+    updateRange,
+    cancelDrag,
   };
 }
 
@@ -426,6 +448,9 @@ export function buildOperatorControls({
   operatorStates,
   controlsMap,
   onChange,
+  gateControls = new Map(),
+  getOperatorEnabled = () => true,
+  onOperatorGateChange = null,
   wheelAdjust = true,
 }) {
   root.innerHTML = "";
@@ -436,12 +461,30 @@ export function buildOperatorControls({
     row.className =
       "operator-row";
 
-    const name =
-      document.createElement("div");
+    const editableGate = typeof onOperatorGateChange === 'function';
+    const name = document.createElement(editableGate ? 'button' : 'div');
     name.className =
-      `operator-name op-color-${operator}`;
+      `operator-name${editableGate ? ' operator-gate' : ''} op-color-${operator}`;
     name.textContent =
       String(operator);
+    if (editableGate) {
+      name.type = 'button';
+      name.dataset.operatorGate = String(operator);
+      name.setAttribute('aria-label', `OP${operator} Key On`);
+      name.setAttribute('aria-pressed', String(getOperatorEnabled(operator)));
+      name.title = `OP${operator} Key On / Off. Off releases this operator at its RR; it does not change TL or the algorithm.`;
+      // Pointer edits must leave letter keys available for playing. Keyboard
+      // activation still works without reaching the global record shortcut.
+      name.addEventListener('pointerdown', event => event.preventDefault());
+      name.addEventListener('keydown', event => {
+        if (event.key === ' ' || event.key === 'Enter') event.stopPropagation();
+      });
+      name.addEventListener('click', () => {
+        onOperatorGateChange(operator, !getOperatorEnabled(operator));
+        name.blur();
+      });
+      gateControls.set(operator, name);
+    }
 
     const strip =
       document.createElement("div");

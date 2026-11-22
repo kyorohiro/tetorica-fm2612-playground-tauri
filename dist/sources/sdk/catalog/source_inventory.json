@@ -280,17 +280,17 @@
         {
           "path": "vendor/mame-ay8910/README.md",
           "originPath": "third_party/mame-ay8910/README.md",
-          "sha256": "d41552a7edc4156988dfee0395d501431507f5c8429217786d6a4be5078ae99f"
+          "sha256": "431783f35c52689eb9cc0d39d8073e62f6d0ccf2fbf2eed5c108522c5646eb4b"
         },
         {
           "path": "vendor/mame-ay8910/ay8910.cpp",
           "originPath": "third_party/mame-ay8910/ay8910.cpp",
-          "sha256": "3ea3efe1b29a554c39a2b1995e9ed3d2588c16d24b085ca1565c3a24f4414646"
+          "sha256": "e6f3cf07bd25e1f5f18455db302758993910154a82e401ee1566103e184f432b"
         },
         {
           "path": "vendor/mame-ay8910/ay8910.h",
           "originPath": "third_party/mame-ay8910/ay8910.h",
-          "sha256": "e93d1904d2c232f820c23a6df59dfebf309550a6f8b0032e20c51295e7d31e7a"
+          "sha256": "1663b65a64715f23826eece168489ca2a15e001f01fee93779bf4cf307ae7156"
         },
         {
           "path": "vendor/mame-ay8910/upstream/ay8910.cpp",
@@ -388,17 +388,23 @@
         {
           "path": "vendor/mame-huc6280/README.md",
           "originPath": "third_party/mame-huc6280/README.md",
-          "sha256": "1b792f719db680de5b5121ed2293256ac00fe6e51725e2aadc38dfaaa768b8dd"
+          "sha256": "8b5397ae03fe697a2bec11ba3d95f98eb16bb616d8da80c5ab1ac2fc1677f570",
+          "originalSha256": "1b792f719db680de5b5121ed2293256ac00fe6e51725e2aadc38dfaaa768b8dd",
+          "modification": "Local 0.1.8-huc-state candidate: HuC6280 checkpoint ABI only, based on pinned SDK0.1.7."
         },
         {
           "path": "vendor/mame-huc6280/huc6280.cpp",
           "originPath": "third_party/mame-huc6280/huc6280.cpp",
-          "sha256": "5693c83943957e2ee0ee1bd5045503034363fed282764f99acb907293222f26f"
+          "sha256": "0249412639b309f13dbd285d729ff3141364fc2c9b499b8d7608a1f9a994e779",
+          "originalSha256": "5693c83943957e2ee0ee1bd5045503034363fed282764f99acb907293222f26f",
+          "modification": "Local 0.1.8-huc-state candidate: HuC6280 checkpoint ABI only, based on pinned SDK0.1.7."
         },
         {
           "path": "vendor/mame-huc6280/huc6280.h",
           "originPath": "third_party/mame-huc6280/huc6280.h",
-          "sha256": "6b1464fc6d56390e56f99bf072d7300126cc91cd317bacc78b43be4d552af2b6"
+          "sha256": "d41035e4f0e62b331d9bc8998947bb78f5e17fc44bd9e6704ccc8dbf9c5b89cb",
+          "originalSha256": "6b1464fc6d56390e56f99bf072d7300126cc91cd317bacc78b43be4d552af2b6",
+          "modification": "Local 0.1.8-huc-state candidate: HuC6280 checkpoint ABI only, based on pinned SDK0.1.7."
         },
         {
           "path": "vendor/mame-huc6280/upstream/c6280.cpp",
@@ -765,7 +771,7 @@
         {
           "path": "vendor/snes-spc/README.md",
           "originPath": "third_party/snes-spc/README.md",
-          "sha256": "0a4ef415f103b996772d321ba2ff28614a27a9c83cfe4afd437a779e58ab0775"
+          "sha256": "904c8a52ba8ee7b1bd3da4db68fcd9ee34c4aff7414e6ca449ef4fdbdf58b004"
         },
         {
           "path": "vendor/snes-spc/README.upstream.md",
@@ -795,7 +801,7 @@
         {
           "path": "vendor/snes-spc/snes_spc/SNES_SPC.h",
           "originPath": "third_party/snes-spc/snes_spc/SNES_SPC.h",
-          "sha256": "3ebf24542de1405b054fc7f044516aa25eabdd530a66daf1f91468a1e52a00ae"
+          "sha256": "63e8b9a88c31530190a55786a15b4d02a103892f9b6e128de4fb4e50baa3f96f"
         },
         {
           "path": "vendor/snes-spc/snes_spc/SNES_SPC_misc.cpp",
@@ -1199,7 +1205,7 @@
         {
           "path": "wasm/ay8910_wasm.cpp",
           "originPath": "wasm/ay8910_wasm.cpp",
-          "sha256": "15107f52744c9e67db2daf0bfa052ebb04a63dc92779576e46c4c10b64009ebb"
+          "sha256": "d5a03082806adc7d1aac6ce8f4fae0aa96b669707b22d837749a19eefe55846b"
         },
         {
           "path": "wasm/gameboy_apu_wasm.cpp",
@@ -1209,7 +1215,9 @@
         {
           "path": "wasm/huc6280_wasm.cpp",
           "originPath": "wasm/huc6280_wasm.cpp",
-          "sha256": "89d1de8929f13e520a33f6993ebc56d46684d67e8ab6a6314346895574ff7765"
+          "sha256": "d4c68187010c833804b0c40799b0901f037bc75de0f15c45cf37e938505c3075",
+          "originalSha256": "89d1de8929f13e520a33f6993ebc56d46684d67e8ab6a6314346895574ff7765",
+          "modification": "Local 0.1.8-huc-state candidate: HuC6280 checkpoint ABI only, based on pinned SDK0.1.7."
         },
         {
           "path": "wasm/k051649_wasm.cpp",
@@ -1269,7 +1277,7 @@
         {
           "path": "wasm/spc_wasm.cpp",
           "originPath": "wasm/spc_wasm.cpp",
-          "sha256": "2c88efc7f10d0b4cd1124163f0a99caf0e1d8cac3ba1767de1134c30d62e8d77"
+          "sha256": "1575ff7e23d6486385612d2d22b026fa5cca7e7a39e7dbb9db37f5fa9c35fb19"
         },
         {
           "path": "wasm/y8950_wasm.cpp",
@@ -1289,12 +1297,16 @@
         {
           "path": "wasm/ym2413_wasm.cpp",
           "originPath": "wasm/ym2413_wasm.cpp",
-          "sha256": "e76d64214d86d7f57fded2e513f3fcfc807717ed0b9a7bd7591a4ef82b0af79e"
+          "sha256": "b51991f39ef90ccda9c0808014162da563e7f772d491cf138050b11e433c52a4",
+          "originalSha256": "e76d64214d86d7f57fded2e513f3fcfc807717ed0b9a7bd7591a4ef82b0af79e",
+          "modification": "Local SDK extension: opaque YM2413 save/restore via ymfm field serialization, interface timer/IRQ state and mute mask; existing PCM ABI unchanged."
         },
         {
           "path": "wasm/ym2608_wasm.cpp",
           "originPath": "wasm/ym2608_wasm.cpp",
-          "sha256": "d62fd4958a90359a766b443738a84caf9aa18023ba008ab6743d10113965cd0c"
+          "sha256": "88dcd408391a090284492054506afbe30cfdbbee6adb5f02fe6103b60b0c4946",
+          "originalSha256": "d62fd4958a90359a766b443738a84caf9aa18023ba008ab6743d10113965cd0c",
+          "modification": "Local SDK extension: independent host output gains for the FM/Rhythm/ADPCM stereo bus and SSG mono bus; default PCM preserved, validated gain checkpoints retained."
         },
         {
           "path": "wasm/ym2610b_wasm.cpp",
@@ -2105,6 +2117,27 @@
           "sha256": "db522ecaa04665063e46f7f6c699eb7781c672fd7624ac58a60b0b180652d3cc"
         }
       ]
+    },
+    {
+      "id": "tetorica-huc6280-checkpoint",
+      "sourceFiles": [
+        "native/include/tetorica/huc6280_state.h"
+      ],
+      "licenseFiles": [
+        "LICENSE"
+      ],
+      "upstream": [
+        "https://github.com/kyorohiro/tetorica-soundchip-native"
+      ],
+      "sourceVersion": [
+        "Local SDK 0.1.8 formal checkpoint ABI v1; not published"
+      ],
+      "files": [
+        {
+          "path": "native/include/tetorica/huc6280_state.h",
+          "sha256": "70c6ccc363e2f9dd52ecd47129ad7381f3afea87cc3d230a8d03a848af05a5df"
+        }
+      ]
     }
   ],
   "artifacts": [
@@ -2194,7 +2227,8 @@
         "vendor/mame-huc6280/huc6280.cpp",
         "vendor/mame-huc6280/huc6280.h",
         "vendor/mame-huc6280/upstream/c6280.cpp",
-        "vendor/mame-huc6280/upstream/c6280.h"
+        "vendor/mame-huc6280/upstream/c6280.h",
+        "native/include/tetorica/huc6280_state.h"
       ],
       "licenseFiles": [
         "LICENSE",

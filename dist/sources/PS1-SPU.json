@@ -5,13 +5,52 @@
   "sdk": {
     "schemaVersion": 1,
     "name": "tetorica-soundchip-native",
-    "version": "0.1.7",
+    "version": "0.1.8-fm2608-source-mixer",
     "sourceCommit": "95cf71a857b15d0ea932ebf97d5fde80b5e80a95",
-    "archiveName": "tetorica-soundchip-native-0.1.7-sources.zip",
-    "archiveSha256": "5f7cdf35bc85a7453eef42576259f615411d4fdcdd47b8778242eb2a2d7f2b9c",
-    "manifestSha256": "b5e4c75230c32c66aa2ba4248830af7e7587a5977529973c346063afd2d2f365",
-    "fileCount": 476,
-    "unpublished": true
+    "archiveName": "tetorica-soundchip-native-0.1.8-fm2608-source-mixer-sources.zip",
+    "archiveSha256": "2664067b9c4e652ecc58bf9fdf5db2ee40d9ef4038403fcefb53a6964e7df34f",
+    "manifestSha256": "83c0adec744e8ddd04cbf733c6e83460bc5ff69eff39d7d772f4df454ca5f1cf",
+    "fileCount": 486,
+    "localCandidate": {
+      "baseCommit": "95cf71a857b15d0ea932ebf97d5fde80b5e80a95",
+      "changedPaths": [
+        "CHANGELOG.md",
+        "CMakeLists.txt",
+        "catalog/chips.json",
+        "catalog/native_inventory.json",
+        "catalog/source_inventory.json",
+        "docs/huc6280-local-candidate.json",
+        "docs/huc6280-state.md",
+        "docs/ym2413-state.md",
+        "docs/ym2608-source-mixer.md",
+        "native/CMakeLists.txt",
+        "native/include/tetorica/huc6280.hpp",
+        "native/include/tetorica/huc6280_state.h",
+        "native/tests/huc6280_state_fixture.cpp",
+        "scripts/build_huc6280_wasm.sh",
+        "scripts/build_spc_wasm.sh",
+        "scripts/build_ym2413_wasm.sh",
+        "scripts/build_ym2608_wasm.sh",
+        "sdk.json",
+        "tests/huc6280_state_wasm_smoke.mjs",
+        "tests/ym2413_state_wasm_smoke.mjs",
+        "tests/ym2608_output_gains_wasm_smoke.mjs",
+        "tests/ym2608_source_gains_wasm_smoke.mjs",
+        "vendor/mame-ay8910/README.md",
+        "vendor/mame-ay8910/ay8910.cpp",
+        "vendor/mame-ay8910/ay8910.h",
+        "vendor/mame-huc6280/README.md",
+        "vendor/mame-huc6280/huc6280.cpp",
+        "vendor/mame-huc6280/huc6280.h",
+        "vendor/snes-spc/README.md",
+        "vendor/snes-spc/snes_spc/SNES_SPC.h",
+        "wasm/ay8910_wasm.cpp",
+        "wasm/huc6280_wasm.cpp",
+        "wasm/spc_wasm.cpp",
+        "wasm/ym2413_wasm.cpp",
+        "wasm/ym2608_wasm.cpp"
+      ]
+    }
   },
   "build": {
     "schemaVersion": 1,
@@ -27,8 +66,8 @@
         "sha256": "d49c2f05a09d2d648c05a5af92240a5dc4059830bc29afbb8919c6d1ba76bf91"
       },
       "catalog/source_inventory.json": {
-        "bytes": 155228,
-        "sha256": "5de37b140b25beed09c793e51fda4e3de49990fc94e4fc4100b4ecd58db8de68"
+        "bytes": 157268,
+        "sha256": "fc055c2b3445afd9c102f9a6e750a480dc86eab3d19ebba60edb7a862f79b2c3"
       },
       "native/include/tetorica/ps1_spu.h": {
         "bytes": 260,
@@ -47,8 +86,8 @@
         "sha256": "8728a4b3f31e78db4410ab38d36bff72bfd5cd7bbd9c6f6fdb7dad1d53fe0dbf"
       },
       "sdk.json": {
-        "bytes": 285,
-        "sha256": "236605758aca8e6dd7753094e64666c29b2bb112d2b5370588b54e69518112a7"
+        "bytes": 305,
+        "sha256": "48b53d9cfee9ee7f8f9c6501fce6edfd5c530bd1e9878c8523285d4a7aaac2cf"
       },
       "vendor/mame-ps1-spu/LICENSE": {
         "bytes": 1592,
@@ -120,15 +159,54 @@
       }
     },
     "sdk": {
-      "archiveName": "tetorica-soundchip-native-0.1.7-sources.zip",
-      "archiveSha256": "5f7cdf35bc85a7453eef42576259f615411d4fdcdd47b8778242eb2a2d7f2b9c",
-      "fileCount": 476,
-      "manifestSha256": "b5e4c75230c32c66aa2ba4248830af7e7587a5977529973c346063afd2d2f365",
+      "archiveName": "tetorica-soundchip-native-0.1.8-fm2608-source-mixer-sources.zip",
+      "archiveSha256": "2664067b9c4e652ecc58bf9fdf5db2ee40d9ef4038403fcefb53a6964e7df34f",
+      "fileCount": 486,
+      "localCandidate": {
+        "baseCommit": "95cf71a857b15d0ea932ebf97d5fde80b5e80a95",
+        "changedPaths": [
+          "CHANGELOG.md",
+          "CMakeLists.txt",
+          "catalog/chips.json",
+          "catalog/native_inventory.json",
+          "catalog/source_inventory.json",
+          "docs/huc6280-local-candidate.json",
+          "docs/huc6280-state.md",
+          "docs/ym2413-state.md",
+          "docs/ym2608-source-mixer.md",
+          "native/CMakeLists.txt",
+          "native/include/tetorica/huc6280.hpp",
+          "native/include/tetorica/huc6280_state.h",
+          "native/tests/huc6280_state_fixture.cpp",
+          "scripts/build_huc6280_wasm.sh",
+          "scripts/build_spc_wasm.sh",
+          "scripts/build_ym2413_wasm.sh",
+          "scripts/build_ym2608_wasm.sh",
+          "sdk.json",
+          "tests/huc6280_state_wasm_smoke.mjs",
+          "tests/ym2413_state_wasm_smoke.mjs",
+          "tests/ym2608_output_gains_wasm_smoke.mjs",
+          "tests/ym2608_source_gains_wasm_smoke.mjs",
+          "vendor/mame-ay8910/README.md",
+          "vendor/mame-ay8910/ay8910.cpp",
+          "vendor/mame-ay8910/ay8910.h",
+          "vendor/mame-huc6280/README.md",
+          "vendor/mame-huc6280/huc6280.cpp",
+          "vendor/mame-huc6280/huc6280.h",
+          "vendor/snes-spc/README.md",
+          "vendor/snes-spc/snes_spc/SNES_SPC.h",
+          "wasm/ay8910_wasm.cpp",
+          "wasm/huc6280_wasm.cpp",
+          "wasm/spc_wasm.cpp",
+          "wasm/ym2413_wasm.cpp",
+          "wasm/ym2608_wasm.cpp"
+        ]
+      },
+      "manifestSha256": "83c0adec744e8ddd04cbf733c6e83460bc5ff69eff39d7d772f4df454ca5f1cf",
       "name": "tetorica-soundchip-native",
       "schemaVersion": 1,
       "sourceCommit": "95cf71a857b15d0ea932ebf97d5fde80b5e80a95",
-      "unpublished": true,
-      "version": "0.1.7"
+      "version": "0.1.8-fm2608-source-mixer"
     },
     "outputs": {
       "ps1_spu_wasm.js": {
@@ -151,8 +229,8 @@
     {
       "path": "catalog/source_inventory.json",
       "bundlePath": "sdk/catalog/source_inventory.json",
-      "bytes": 155228,
-      "sha256": "5de37b140b25beed09c793e51fda4e3de49990fc94e4fc4100b4ecd58db8de68"
+      "bytes": 157268,
+      "sha256": "fc055c2b3445afd9c102f9a6e750a480dc86eab3d19ebba60edb7a862f79b2c3"
     },
     {
       "path": "native/include/tetorica/ps1_spu.h",
@@ -181,8 +259,8 @@
     {
       "path": "sdk.json",
       "bundlePath": "sdk/sdk.json",
-      "bytes": 285,
-      "sha256": "236605758aca8e6dd7753094e64666c29b2bb112d2b5370588b54e69518112a7"
+      "bytes": 305,
+      "sha256": "48b53d9cfee9ee7f8f9c6501fce6edfd5c530bd1e9878c8523285d4a7aaac2cf"
     },
     {
       "path": "vendor/mame-ps1-spu/LICENSE",
@@ -295,8 +373,8 @@
     },
     {
       "path": "sdk/catalog/source_inventory.json",
-      "bytes": 155228,
-      "sha256": "5de37b140b25beed09c793e51fda4e3de49990fc94e4fc4100b4ecd58db8de68"
+      "bytes": 157268,
+      "sha256": "fc055c2b3445afd9c102f9a6e750a480dc86eab3d19ebba60edb7a862f79b2c3"
     },
     {
       "path": "sdk/native/include/tetorica/ps1_spu.h",
@@ -320,8 +398,8 @@
     },
     {
       "path": "sdk/sdk.json",
-      "bytes": 285,
-      "sha256": "236605758aca8e6dd7753094e64666c29b2bb112d2b5370588b54e69518112a7"
+      "bytes": 305,
+      "sha256": "48b53d9cfee9ee7f8f9c6501fce6edfd5c530bd1e9878c8523285d4a7aaac2cf"
     },
     {
       "path": "native/ps1/LICENSE",
@@ -415,18 +493,18 @@
     },
     {
       "path": "sdk/RELEASE-MANIFEST.json",
-      "bytes": 72110,
-      "sha256": "b5e4c75230c32c66aa2ba4248830af7e7587a5977529973c346063afd2d2f365"
+      "bytes": 73659,
+      "sha256": "83c0adec744e8ddd04cbf733c6e83460bc5ff69eff39d7d772f4df454ca5f1cf"
     },
     {
       "path": "sdk/soundchip-sdk.json",
-      "bytes": 430,
-      "sha256": "a722b24ec5e01316605821f2f2c96eada8695c7b6dd5e82836c48a8a34ddc5a4"
+      "bytes": 1845,
+      "sha256": "b2c97fa6b743d2b3e55493bb2ae6a2f189db2df566194b94b5802f6bdf05f1bc"
     },
     {
       "path": "PS1-SPU.md",
-      "bytes": 2161,
-      "sha256": "3102c8b61b8a7ddf4e803a7ebfbf6173807933745d53600ad17677a47b7bff29"
+      "bytes": 2181,
+      "sha256": "15d3d4eb8ca299c7738df45d1d5602e93c312e70892704e7076f18c9eb8c1b89"
     }
   ],
   "modifications": [

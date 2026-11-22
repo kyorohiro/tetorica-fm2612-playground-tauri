@@ -1,20 +1,36 @@
-import {OpnKeyboardInspector} from './playground_opn_inspector.js?v=ps1-mode-1';
-import {createOpnAuditionGuard} from './playground_audition_guard.js?v=audio-numeric-bindings-1';
-import {receiveChipInspector} from './playground_chip_inspector_state.js?v=pokey-prepare-1';
-import {validateChipClock} from './playground_chip_clock.js?v=pokey-prepare-1';
+import {createYm2608TimedProcessor,observeYm2608TimedChip} from './ym2608_timed_processor.js';
+import {OpnKeyboardInspector} from './playground_opn_inspector.js';
+import {createOpnAuditionGuard} from './playground_audition_guard.js';
+import {receiveChipInspector} from './playground_chip_inspector_state.js';
+import {validateChipClock} from './playground_chip_clock.js';
 import {Ym2608Timeline} from './playground_ym2608_timeline.js';
-import {Ym2608AudioEngine} from './ym2608audioengine.js?v=audio-stability-2';
+import {Ym2608AudioEngine} from './ym2608audioengine.js';
 import factory from '../generated/ym2608_wasm.js';
-import {createProcessorPerformance} from './playground_performance_processor.js?v=scsp-fm-1';
+import {createProcessorPerformance} from './playground_performance_processor.js';
 
 class Processor extends AudioWorkletProcessor {
   constructor(options) {
     super(); this.engine = null; this.dead = false;
-    this.performance=createProcessorPerformance({chip:'ym2608',apply:(data,port)=>this.apply(data,port),prepare:(data,port)=>{
+    this.performance=createProcessorPerformance({chip:'ym2608',patternCommandCost:c=>c.method==='applyTimedOperation'?c.writeCost:1,apply:(data,port,frame,metadata)=>{if(data.method==='applyTimedOperation'){this.timed.apply(data.operation,port,frame,metadata);return;}this.apply(data,port,metadata);},prepare:(data,port)=>{
+      if(data.method==='ym2608Timed'){this.apply(data,port);return null;}
       if(['rom','memory','prepareTimeline'].includes(data.method)){this.apply(data,port);return null;}
       if(data.id===undefined||data.method==='playTimeline')return data;
       const {id,...command}=data;port.postMessage({id});return command;
     }});
+    this.instanceId='ym2608:'+Math.random().toString(36).slice(2);
+    this.timed=createYm2608TimedProcessor({performance:this.performance,
+      getState:()=>{if(!this.timedChip)throw new Error('YM2608 timed API not ready');return this.timedChip.getState();},
+      getConfig:()=>({instanceId:this.instanceId,clock:this.clock??8000000,engine:'ymfm'}),
+      dispatch:(data,port,frame,metadata)=>{
+        if(data.port===1&&data.register===0&&(data.value&0xc1)!==0x80&&this.opnInspector?.held.has('adpcm-b:0'))return;
+        if(data.port===0&&data.register===0x10&&(data.value&128)){
+          let mask=data.value&63;
+          for(const id of this.opnInspector?.held.keys()??[])if(id.startsWith('rhythm:'))mask&=~(1<<Number(id.slice(7)));
+          if((data.value&63)&&!mask)return;
+          data={...data,value:(data.value&0xc0)|mask};
+        }
+        return this.performance.applyImmediate({method:'write',args:[data.port,data.register,data.value]},port,metadata);
+      },nowFrame:()=>currentFrame,sampleRate});
     this.renderSegment=this.renderSegment.bind(this);
     this.port.onmessage = ({data}) => {
       if (data.port) {
@@ -29,6 +45,7 @@ class Processor extends AudioWorkletProcessor {
       .then(engine => {
         if (this.dead) { engine.dispose(); return; }
         this.engine = engine;
+        this.timedChip=observeYm2608TimedChip(engine.ym2608);
         this.auditions=createOpnAuditionGuard(engine.ym2608,6);
         this.opnInspector=new OpnKeyboardInspector(engine.ym2608,{kind:'ym2608',guard:this.auditions,clock:()=>this.clock??8000000,sampleRate});
         engine.writeYm2608=(port,register,value)=>engine.ym2608.writeRegister(register,value,port);
@@ -39,19 +56,24 @@ class Processor extends AudioWorkletProcessor {
         this.port.postMessage({ready: true});
       }).catch(error => { this.dispose(); this.port.postMessage({error: error.message}); });
   }
-  dispose() { this.performance.clear();this.timeline?.dispose(); this.dead = true; this.engine?.dispose(); this.engine = null; this.remote?.close(); }
+  dispose() { this.timed?.clear(); this.performance.clear();this.timeline?.dispose(); this.dead = true; this.engine?.dispose(); this.engine = null; this.remote?.close(); }
   receive(data, port) {
+    if(data?.method==='ym2608Timed'){this.timed.receive(data,port);return;}
     if(data?.type==='chip-inspector'&&receiveChipInspector(data,port,this.opnInspector?(action,method,args)=>action==='read'?this.opnInspector.read():this.opnInspector.invoke(method,args):null))return;
     if(this.performance.receive(data,port))return;
     this.apply(data,port);
   }
-  apply(data,port) {
+  apply(data,port,metadata) {
     try {
       if (data.method === 'dispose') { this.dispose(); return; }
       if (!this.engine) throw new Error('YM2608 not ready');
       const args = data.args ?? [];
+      if(data.method==='ym2608Timed'){this.timed.receive(data,port);return;}
+      if(data.method==='ym2608Retained'){const [ch,level]=args;if(Number.isInteger(ch)&&ch>=0&&ch<3&&Number.isInteger(level)&&level>=0&&level<=31)this.timedChip.getState().ssgLevels[ch]=level;return;}
       switch (data.method) {
-        case 'write': this.engine.writeYm2608(...args); break;
+        case 'write':
+          if(metadata?.timedOperation&&(args[0]===0&&args[1]===0x10||args[0]===1&&args[1]<16))this.opnInspector.writeTimedRegister(args[1],args[2],args[0]);
+          else this.engine.writeYm2608(...args); break;
         case 'clear-auditions': this.opnInspector?.clear(); break;
         // Synth reset preserves uploaded ADPCM-B memory, like DirectTransport.
         case 'reset': this.timeline.cancel(); this.engine.ym2608.reset(); break;

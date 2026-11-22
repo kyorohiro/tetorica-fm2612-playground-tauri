@@ -3,7 +3,10 @@ import {createSnesClient} from './playground_snes.js?v=y8950-adpcm-ui-1';
 import {encodeBrr} from './snes_brr_encoder.js?v=snes-brr-encoder-1';
 import {encodeAdpcmA} from './adpcm_a_sample.js?v=adpcm-a-encoder-1';
 import {encodePs1Adpcm} from './ps1_adpcm_encoder.js?v=ps1-adpcm-encoder-1';
-import {createPerformanceSender} from './playground_performance_sender.js?v=scsp-fm-1';
+import {readVab,prepareVabTone,exportVab,MAX_VAB_FILE_BYTES} from './ps1_vab.js';
+import {assembleScspDsp, disassembleScspDsp} from './scsp_dsp_assembler.js';
+import {createPerformanceSender} from './playground_performance_sender.js?v=gameboy-public-timed-1';
+import {createAyTimedLifecycle} from './playground_ay_timed_lifecycle.js';
 import {midiToOpnPitch, opnPitchFromHz} from './soundchip_pitch.js';
 import {CHIP_CLOCKS} from './playground_chip_clock.js?v=pokey-prepare-1';
 import {createNesClient} from './playground_nes.js?v=pokey-prepare-1';
@@ -18,18 +21,18 @@ import {createSegaPsgClient} from './playground_segapsg.js?v=pokey-prepare-1';
 import {resolvePlaySeconds,resolvePlayDuration} from './playground_duration.js?v=shared-beat-clock-1';
 import {createLoopAsyncTasks} from './playground_async_tasks.js';
 import {createCycle} from './playground_music.js?v=audio-stability-2';
-import {createOpnClient} from './playground_opn.js?v=ps1-mode-1';
+import {createOpnClient} from './playground_opn.js?v=rf5c164-notes-1';
 import {createSoundChipRegistry} from './playground_soundchips.js?v=scsp-fm-1';
 import {validateSoundChipOptions} from './playground_soundchip_options.js?v=pokey-mode-1';
 import {createMusicalKeyboard, createKeyboardApiGuard, keyboardBinding, registerKeyboardScope} from './playground_keyboard.js?v=audio-numeric-bindings-1';
 import {createSampleInstrument as createSampleInstrumentFactory} from './playground_sample_instrument.js?v=ps1-pcm-waveform-1';
-import {createGameboyClient} from './playground_gameboy.js?v=pokey-prepare-1';
-import {createYm2608Client} from './playground_ym2608.js?v=ps1-mode-1';
-import {createRf5c164Client} from './playground_rf5c164.js?v=pokey-prepare-1';
+import {createGameboyClient} from './playground_gameboy.js?v=gameboy-timed-1';
+import {createYm2608Client} from './playground_ym2608.js?v=rf5c164-notes-1';
+import {createRf5c164Client} from './playground_rf5c164.js?v=rf5c164-notes-1';
 import {createNativeSampleController} from './native_sample.js?v=audio-stability-2';
 import {createNativeGenesisFX} from './native_genesis_fx.js';
 import {createNativeNoiseOwnership} from './native_genesis_noise.js';
-import {serializeLogError} from './playground_log.js';
+import {serializeLogError,formatLogTable} from './playground_log.js?v=console-table-1';
 /**
  * @file playground_logic_worker.js
  * 実行環境: Browser（Web Worker）
@@ -38,7 +41,7 @@ import {serializeLogError} from './playground_log.js';
  */
 import {createNativeNoiseController, controlNativeNoise} from './native_noise.js';
 import {createWorkerDac} from './playground_worker_dac.js';
-import {createWorkerChip} from './playground_worker_chip.js?v=ps1-mode-1';
+import {createWorkerChip} from './playground_worker_chip.js?v=gameboy-public-timed-1';
 import {createMidiApi, createMidiRack} from './playground_midi.js?v=audio-numeric-bindings-1';
 import { hzToBlockFnum } from "./pitch.js";
 import {createDeadlineScheduler,createBeatClock,createSecondsTimeline,runTween} from './playground_clock.js?v=spc-song-timing-1';
@@ -277,6 +280,7 @@ function createClock(run) {
       for (const [key, loop] of run.runningLoops) {
         if (name === undefined || key === name) {
           run.releaseNoiseOwner?.(loop);
+          run.ayTimedLifecycle?.cancelLoop(loop);
           run.performance.cancelOwner(loop.performanceOwner); loop.stopped = true;
         }
       }
@@ -347,7 +351,8 @@ function createClock(run) {
 }
 
 function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timing = {}) {
-  const supportsNativeExtra=name=>capabilities.backend==='native-genesis'&&capabilities.dynamicSoundChipKinds?.includes(name)===true;
+  if(capabilities.chip==='sid'&&capabilities.backend==='native-genesis')throw new Error('SID requires Web Audio; Native output is not supported yet.');
+  const supportsNativeExtra=name=>name!=='sid'&&capabilities.backend==='native-genesis'&&capabilities.dynamicSoundChipKinds?.includes(name)===true;
   const run = {
     token: 1,
     generation: 1,
@@ -367,6 +372,10 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
   };
   const performanceTransport = createPerformanceSender({leaseUntimed:capabilities.backend==='native-genesis',getLoop: () => run.currentLoop, restoreLoop: loop => { run.currentLoop = loop; }, onCancelOwner: metadata => {if(capabilities.backend==='native-genesis')for(const client of pcmClients)client._cancelPerformanceOwner?.(metadata.owner);postMessage({type:'performance-cancel-owner',...metadata});}});
   run.performance = performanceTransport;
+  const ayTimedLifecycle=createAyTimedLifecycle({getLoop:()=>run.currentLoop,setLoop:loop=>{run.currentLoop=loop;},
+    entryOwner:'script',loopOwner:loop=>loop.performanceOwner,cancelOwner:(_controller,owner)=>performanceTransport.cancelOwner(owner),
+    trackAsync:pending=>loopTasks.track(pending),onError:error=>postMessage({type:'log',level:'error',message:`[AY schedules] ${error?.message??serializeLogError(error)}`})});
+  run.ayTimedLifecycle=ayTimedLifecycle;
   const keyboardApi = createKeyboardApiGuard(() => run.currentLoop,value => {run.currentLoop=value;});
   const musicalKeyboard = createMusicalKeyboard({getContext:()=>run.currentLoop,setContext:value=>{run.currentLoop=value;},
     invoke:callback=>executeWithWorkerGuards(callback),onChange:target=>postMessage({type:'musical-keyboard-binding',binding:target?{name:target.name,session:musicalKeyboard.session}:null}),
@@ -383,7 +392,7 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
   run.resetSampleClock = () => clock.resetSampleClock();
   const commandProxy = (command) => (...args) => postCommand(command, args);
   const requestProxy = (command) => (...args) => request(command, args, run.currentLoop);
-  const nativePrimary = ['nes','snes','ps1','scsp','x68000','huc6280','pokey','wonderswan','segapsg','dx7','ym3526','ym3812','y8950','ymf262','ym2413','ay8910','msx','msx-audio'].includes(capabilities.chip)
+  const nativePrimary = ['nes','snes','ps1','scsp','x68000','huc6280','pokey','sid','wonderswan','segapsg','dx7','ym3526','ym3812','y8950','ymf262','ym2413','ay8910','msx','msx-audio'].includes(capabilities.chip)
     || capabilities.chip === 'gameboy' && capabilities.backend === 'native-genesis';
   const hasOpn = !nativePrimary && capabilities.chip !== 'gameboy';
   const nativeBase = createNativeWorkerApis(nativeConnections,performanceTransport,(name,state)=>postMessage({type:'native-observer',name,state}),{
@@ -392,7 +401,10 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
     isStopped:scope=>run.stopped||(scope?scope.token!==run.token||scope.loop?.stopped:run.currentLoop?.stopped),
     decodeAudio:source=>request('pcm.decode',[source],run.currentLoop),
   });
-  const native = {...nativeBase,apis:Object.fromEntries(Object.entries(nativeBase.apis).map(([name,api])=>[name,keyboardApi(api)]))};
+  const native = {...nativeBase,apis:Object.fromEntries(Object.entries(nativeBase.apis).map(([name,api])=>{
+    const raw=nativeBase.raw.get(name);
+    return [name,keyboardApi(raw?._timedOperations?ayTimedLifecycle.wrap(api,raw._timedOperations):api)];
+  }))};
   const primaryPcmClient = primaryPcmConnection ? createRf5c164Client(
     performanceTransport.port(primaryPcmConnection.port, 'independent'), source => request('pcm.decode',[source],run.currentLoop)) : null;
   if (primaryPcmClient) primaryPcmClient._adoptClock(primaryPcmConnection.clock ?? CHIP_CLOCKS.rf5c164);
@@ -408,8 +420,9 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
   const workerDac = chip && capabilities.dac ? createWorkerDac(chip.send, timing) : null;
   run.resetSampleClock = () => { clock.resetSampleClock(); workerDac?.reset(); };
   let fallbackClock = timing.chipClock ?? CHIP_CLOCKS[capabilities.chip ?? 'ym2612'];
-  const fm = keyboardApi(new Proxy({}, {
+  const fm = keyboardApi(ayTimedLifecycle.wrap(new Proxy({}, {
     get(_target, property) {
+      if(property==='_timedOperations')return chip?.fm?._timedOperations;
       if (Object.hasOwn(sections, property)) return sections[property];
       if (property === 'clock') return chip?.fm.clock ?? fallbackClock;
       if (property === 'setClock' && !chip) return async hz => { await request('fm.setClock', [hz], run.currentLoop); fallbackClock = hz; };
@@ -436,9 +449,9 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
       }
       return chip && !mainMethods.includes(property) ? chip.fm[property] : commandProxy(`fm.${String(property)}`);
     },
-  }));
+  }),chip?.fm?._timedOperations));
   const isGameboy = capabilities.chip === 'gameboy';
-  const gameboy = isGameboy ? native.apis.gameboy ?? keyboardApi(chip?.gameboy ?? new Proxy({}, {
+  const gameboy = isGameboy ? native.apis.gameboy ?? keyboardApi(chip?.gameboy ? ayTimedLifecycle.wrap(chip.gameboy) : new Proxy({}, {
     get(_target, method) {
       if (method === 'then') return undefined;
       if (method === 'id') return 'gameboy';
@@ -627,6 +640,7 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
   run.stop = async () => {
     if (run.stopped) return;
     const keyboardCleanup = musicalKeyboard.clear();
+    ayTimedLifecycle.stop();
     run.stopped = true;
     performanceTransport.stop();
     for (const loop of run.runningLoops.values()) loop.stopped = true;
@@ -746,6 +760,8 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
     encodeBrr,
     encodeAdpcmA,
     encodePs1Adpcm,
+    readVab,prepareVabTone,exportVab,MAX_VAB_FILE_BYTES,
+    assembleScspDsp, disassembleScspDsp,
     trackAsync: promise => loopTasks.track(promise),
     createSampleInstrument: (audio,options={}) => createSampleInstrumentFactory({pg:globals,audio,chip:capabilities.chip,...options}),
     keyboard: {bind(name,handlers) {
@@ -761,7 +777,7 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
       return result;
     },
     async useSoundChip(name, options) {
-      const token = run.token,scoped=(supportsNativeExtra(name)||name==='scsp')&&capabilities.chip!==name&&!nativeConnections.some(endpoint=>endpoint.name===name),caller=run.currentLoop;
+      const token = run.token,scoped=(supportsNativeExtra(name)||['scsp','sid'].includes(name))&&capabilities.chip!==name&&!nativeConnections.some(endpoint=>endpoint.name===name),caller=run.currentLoop;
       const check = () => { if (run.stopped || token !== run.token) throw new Error('Run stopped'); };
       check();
       const chip = await soundChips.use(name, options, chipName => {
@@ -777,11 +793,12 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
       }, {evictOnDispose: !(name === 'rf5c164' && primaryPcm) && !(name === 'segapsg' && capabilities.psg && capabilities.backend === 'native-genesis') && !nativeConnections.some(endpoint => endpoint.name === name) && !((['ym2612', 'ym2203', 'ym2610', 'ym2610b'].includes(name) || name === 'ym2608' && capabilities.backend === 'native-genesis' || name === 'gameboy') && (capabilities.chip ?? 'ym2612') === name)});
       check();
       if(scoped)await resumeScopedNativeExtra(caller,token,()=>{});
+      if(name==='ay8910'){run.currentLoop=caller;if(caller?.stopped)throw new DOMException('Run stopped','AbortError');}
       return chip;
     },
     async createSoundChip(name, options = {}){
       if(run.stopped)throw new Error('Run stopped');
-      const token=run.token,scoped=(supportsNativeExtra(name)||name==='scsp'),caller=run.currentLoop;
+      const token=run.token,scoped=(supportsNativeExtra(name)||['scsp','sid'].includes(name)),caller=run.currentLoop;
       validateSoundChipOptions(name, options);
       options = {...options};
       const response=await request('pcm.create',[name, options],run.currentLoop,scoped?performanceTransport.timestamp():undefined,scoped);
@@ -796,18 +813,21 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
       const pcm=name === 'spc' ? createSpcClient(port, response, {
         captureContext:()=>run.currentLoop,restoreContext:loop=>{run.currentLoop=loop;},
         invokeEvent:(callback,event)=>executeWithWorkerGuards(()=>callback(event)),isStopped:loop=>run.stopped||token!==run.token||loop?.stopped,
-      }) : ['pwm','snes'].includes(name)&&response.native || ['scsp','ps1','pokey','wonderswan','huc6280','okim6258','gameboy','nes','dx7','ym3526','ym3812','y8950','ymf262','ym2413','ay8910'].includes(name) ? createNativePrimaryClient(name,port,response,{captureContext:()=>run.currentLoop,restoreContext:loop=>{run.currentLoop=loop;},isStopped:loop=>run.stopped||token!==run.token||loop?.stopped,decodeAudio:source=>request('pcm.decode',[source],run.currentLoop)}) : name === 'snes' ? createSnesClient(port, response) : name === 'dx7' ? createDx7Client(port, response) : name === 'nes' ? createNesClient(port, response) : name === 'pwm' ? createPWM32XClient(port) : ['ym2612', 'ym2203', 'ym2610', 'ym2610b'].includes(name) ? createOpnClient(name, port,response,{captureContext:()=>run.currentLoop,restoreContext:loop=>{run.currentLoop=loop;},isStopped:loop=>run.stopped||token!==run.token||loop?.stopped}) : name === 'ym2151' ? createYm2151Client(port,response,{captureContext:()=>run.currentLoop,restoreContext:loop=>{run.currentLoop=loop;},isStopped:loop=>run.stopped||token!==run.token||loop?.stopped}) : name === 'segapsg' ? createSegaPsgClient(port,response) : name === 'gameboy' ? createGameboyClient(port) : name === 'ym2608' ? createYm2608Client(port,response,{captureContext:()=>run.currentLoop,restoreContext:loop=>{run.currentLoop=loop;},isStopped:loop=>run.stopped||token!==run.token||loop?.stopped,decodeAudio:source=>request('pcm.decode',[source],run.currentLoop)}) : createRf5c164Client(port,source=>request('pcm.decode',[source],run.currentLoop),{...response,captureContext:()=>run.currentLoop,restoreContext:loop=>{run.currentLoop=loop;},isStopped:loop=>run.stopped||token!==run.token||loop?.stopped});
+      }) : ['pwm','snes'].includes(name)&&response.native || ['scsp','ps1','pokey','sid','wonderswan','huc6280','okim6258','gameboy','nes','dx7','ym3526','ym3812','y8950','ymf262','ym2413','ay8910'].includes(name) ? createNativePrimaryClient(name,port,response,{captureContext:()=>run.currentLoop,restoreContext:loop=>{run.currentLoop=loop;},isStopped:loop=>run.stopped||token!==run.token||loop?.stopped,decodeAudio:source=>request('pcm.decode',[source],run.currentLoop)}) : name === 'snes' ? createSnesClient(port, response) : name === 'dx7' ? createDx7Client(port, response) : name === 'nes' ? createNesClient(port, response) : name === 'pwm' ? createPWM32XClient(port) : ['ym2612', 'ym2203', 'ym2610', 'ym2610b'].includes(name) ? createOpnClient(name, port,response,{captureContext:()=>run.currentLoop,restoreContext:loop=>{run.currentLoop=loop;},isStopped:loop=>run.stopped||token!==run.token||loop?.stopped}) : name === 'ym2151' ? createYm2151Client(port,response,{captureContext:()=>run.currentLoop,restoreContext:loop=>{run.currentLoop=loop;},isStopped:loop=>run.stopped||token!==run.token||loop?.stopped}) : name === 'segapsg' ? createSegaPsgClient(port,response) : name === 'gameboy' ? createGameboyClient(port) : name === 'ym2608' ? createYm2608Client(port,response,{captureContext:()=>run.currentLoop,restoreContext:loop=>{run.currentLoop=loop;},isStopped:loop=>run.stopped||token!==run.token||loop?.stopped,decodeAudio:source=>request('pcm.decode',[source],run.currentLoop)}) : createRf5c164Client(port,source=>request('pcm.decode',[source],run.currentLoop),{...response,captureContext:()=>run.currentLoop,restoreContext:loop=>{run.currentLoop=loop;},isStopped:loop=>run.stopped||token!==run.token||loop?.stopped});
       if(run.stopped || token!==run.token){pcm.dispose();throw new Error('Run stopped');}
       Object.defineProperty(pcm, 'id', {value: mixerId, enumerable: true});
       if(Number.isSafeInteger(response.instance)&&response.instance>0)pcmInstances.set(pcm,response.instance);
       const dispose=pcm.dispose.bind(pcm); let disposed=false;
       const release=immediate=>{if(disposed)return;disposed=true;try{dispose();}finally{pcmClients.delete(pcm);postMessage({type:'command',command:'pcm.dispose',args:[mixerId,response.instance],...(immediate?{}:{performance:performanceTransport.timestamp()})});}};
       pcm.dispose=()=>release(false);
-      pcmClients.add(pcm);const api=keyboardApi(pcm);if(scoped)return resumeScopedNativeExtra(caller,token,()=>api).catch(error=>{release(true);throw error;});return api;
+      pcmClients.add(pcm);const api=keyboardApi(ayTimedLifecycle.wrap(pcm));
+      if(name==='ay8910'){run.currentLoop=caller;if(run.stopped||caller?.stopped){release(true);throw new DOMException('Run stopped','AbortError');}}
+      if(scoped)return resumeScopedNativeExtra(caller,token,()=>api).catch(error=>{release(true);throw error;});return api;
     },
     mixer: Object.fromEntries(['set', 'get', 'reset', 'list'].map(method => [method, (...args) => request('mixer.' + method, args, run.currentLoop)])),
     midi,
     console: {
+      table: (data,columns) => postCommand('log',[formatLogTable(data,columns)]),
       log: (...args) => postCommand("log", args),
       warn: (...args) => postCommand("warn", args),
       error: (...args) => postCommand("error", args),
@@ -929,12 +949,16 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
     run.collectingKeyboard = new Map();
     run.collectingMusicalBinding = true;
     run.pendingMusicalBinding = null;
+    const timedTransaction=ayTimedLifecycle.begin(()=>!run.stopped&&generation===run.generation);
+    try {
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
     const userFunction = new AsyncFunction(...Object.keys(globals), `"use strict";\n{\n${nextSourceCode}\n}`);
-    try {await executeWithWorkerGuards(() => userFunction(...Object.values(globals)));}
-    finally {run.collectingMusicalBinding=false;}
+    await executeWithWorkerGuards(() => userFunction(...Object.values(globals)));
+    run.collectingMusicalBinding=false;
     if (run.stopped || generation !== run.generation) throw new Error("Run stopped");
     await musicalKeyboard.commit(run.pendingMusicalBinding,()=>!run.stopped&&generation===run.generation);
+    if (run.stopped || generation !== run.generation) throw new Error('Run stopped');
+    await ayTimedLifecycle.commit(timedTransaction);
     if (run.stopped || generation !== run.generation) throw new Error('Run stopped');
     const definitions = run.collectingLoops;
     const cleanupDefinitions = run.collectingCleanups;
@@ -990,9 +1014,15 @@ function createRun(sourceCode, presets, scaleIntervals, capabilities = {}, timin
             if (run.currentLoop === loopContext) run.currentLoop = null;
           }
         }
-        loopTasks.release(loopContext);
+        loopTasks.release(loopContext);ayTimedLifecycle.cancelLoop(loopContext);
         if (run.runningLoops.get(name) === loopContext) run.runningLoops.delete(name);
       })();
+    }
+    } catch(error) {
+      ayTimedLifecycle.abort(timedTransaction);throw error;
+    } finally {
+      run.collectingMusicalBinding=false;
+      run.collectingLoops=run.collectingCleanups=run.collectingKeyboard=run.collectingLiveFx=null;
     }
   };
   return run;
@@ -1022,9 +1052,9 @@ async function handleLifecycleMessage(message, generation = lifecycleGeneration)
     }
     try {
       await currentRun.execute(message.sourceCode);
-      postMessage({ type: "complete", loopCount: currentRun.loops.size, keyboardHandlerCount: currentRun.keyboard.size + (currentRun.keyboardTarget()?1:0) });
+      postMessage({ type: "complete", loopCount: currentRun.loops.size, keyboardHandlerCount: currentRun.keyboard.size + (currentRun.keyboardTarget()?1:0),scheduledReservationCount:currentRun.ayTimedLifecycle.entryReservationCount });
     } catch (error) {
-      postMessage({ type: "execution-error", message: error?.message ?? String(error), stack: error?.stack });
+      postMessage({ type: "execution-error", message: error?.message ?? String(error), stack: error?.stack,scheduledReservationCount:currentRun.ayTimedLifecycle.entryReservationCount });
     }
     return;
   }

@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "component": "sid-lab",
+  "model": "6581",
+  "fixedSdkArtifact": false,
+  "upstream": {
+    "revision": "9e88298ce56319953ac7a43213a1120359f7a3a6",
+    "headerSha256": "a793225ee69b91e0ea8c91b221d06ee024e45e6c8179176980abfa95d5a54cdf",
+    "licenseSha256": "0c692ece632a8ec6d2a566c9234fdabda655644e6abc70027da9ff7c35e48634"
+  },
+  "inputs": {
+    "LICENSE": {
+      "bytes": 1519,
+      "sha256": "2d2e9213c170a9866c616fa85b6da993a6724e10befc61f468ed9bfb84c4691c"
+    },
+    "third_party/chips-m6581/LICENSE": {
+      "bytes": 893,
+      "sha256": "0c692ece632a8ec6d2a566c9234fdabda655644e6abc70027da9ff7c35e48634"
+    },
+    "third_party/chips-m6581/README.md": {
+      "bytes": 3222,
+      "sha256": "509acf62b8f6393f1625f5d5efc3e3f0937bd223cc782e0968f9dbb1cc99af57"
+    },
+    "third_party/chips-m6581/PATCHES.md": {
+      "bytes": 4144,
+      "sha256": "f1984c366a00284a909cc3a774dd2bebbaee9deb7bbe11a06ff964bebbb0ed31"
+    },
+    "third_party/chips-m6581/upstream/m6581.h": {
+      "bytes": 26332,
+      "sha256": "a793225ee69b91e0ea8c91b221d06ee024e45e6c8179176980abfa95d5a54cdf"
+    },
+    "third_party/chips-m6581/m6581.h": {
+      "bytes": 27353,
+      "sha256": "a13132ce5083e707611ac65e6e37c799a19ce18a8df4dcbb9e60292cb9520aa8"
+    },
+    "tetorica_src/wasm/sid_core.h": {
+      "bytes": 2770,
+      "sha256": "e25105c0966a3decf0b78e50f45680d501f8e3f961bf1539a346605b293beecc"
+    },
+    "tetorica_src/wasm/sid_wasm.cpp": {
+      "bytes": 1631,
+      "sha256": "b810e6d1bfb70fa76107d7a620bc840baddc5dc547f7e84727114fddd5cc2066"
+    },
+    "scripts/build_sid_wasm.sh": {
+      "bytes": 653,
+      "sha256": "ee1040e32f9021efe31a013dcf10ae388b0b0129d6eb6d4921853c2eadf37c71"
+    },
+    "scripts/prepare_sid_core.py": {
+      "bytes": 4121,
+      "sha256": "d488927cdf6bb9b3a0c75513b0bd2ac2a51b7d588a868a53800575144b01bfa8"
+    },
+    "scripts/sid_artifacts.mjs": {
+      "bytes": 5710,
+      "sha256": "aed183c1a49413490a30308ac15fd4dc607f0e19c3de94ceeea7492437c4f897"
+    },
+    "test/helpers/sid_reference.cpp": {
+      "bytes": 10666,
+      "sha256": "cbe941dc9956cfec50a2e074e1054516b055c741e17f28e4f94baabc0372a643"
+    },
+    "scripts/check_sid_native.mjs": {
+      "bytes": 11503,
+      "sha256": "4d251c48d8515e86a129e647e525df8e7dd73342cb4e37fbe1e1242c50443bbc"
+    }
+  },
+  "output": {
+    "bytes": 14488,
+    "sha256": "02634459953013378028171978d855e1841a55bb4493efe59f2ac07541949c7e"
+  }
+}

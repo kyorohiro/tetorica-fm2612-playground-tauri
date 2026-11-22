@@ -10,7 +10,7 @@ import {createPlaygroundChipTabs,createPlaygroundAdditionalChipTabAvailability} 
 import {installPlaygroundShell} from './playground_shell.js?v=compact-shell-1';
 import {installPlaygroundGit} from './playground_git.js';
 import {resolvePlaygroundAudioEngine, createPlaygroundAudioEngineUrl,
-  installPlaygroundAudioEngineSettings, supportsPlaygroundAudioEngineMode} from './playground_audio_engine.js?v=scsp-fm-1';
+  installPlaygroundAudioEngineSettings, supportsPlaygroundAudioEngineMode} from './playground_audio_engine.js?v=rf5c164-notes-1';
 import {openDraftStore, createProjectAutosave} from './playground_autosave.js?v=mode-handoff-1';
 import {PLAYGROUND_MODES, resolvePlaygroundMode, createModeSynthOptions,
   createPlaygroundModeUrl, isSimplePlaygroundLayout} from './playground_mode.js?v=scsp-fm-1';
@@ -48,10 +48,10 @@ import {installSpcImport} from './playground_spc_import.js?v=spc-reference-tunin
 import {
   FM_PRESET_ORDER,
   FM_PRESETS,
-} from "./js/megasynth.js?v=ps1-deferred-release-1";
+} from "./js/megasynth.js?v=rf5c164-notes-1";
 import {
   createTetoricaSynth,
-} from "./js/tetorica_synth.js?v=scsp-fm-1";
+} from "./js/tetorica_synth.js?v=sid-timed-1";
 import {
   createTfiOperatorObjectText,
   createTfiPresetObjectText,
@@ -65,8 +65,8 @@ import {
 import {createPlaygroundExtraFmEditor} from './playground_extra_fm_editor.js?v=y8950-adpcm-ui-1';
 import { createPlaygroundOperatorKeyboard } from "./playground_operator_keyboard.js?v=ps1-mode-1";
 import { CHIP_CLOCKS } from "./js/playground_chip_clock.js?v=pokey-prepare-1";
-import { DEFAULT_CODE, EXAMPLES, EXAMPLE_FILES, MODE_DEFAULT_CODES, MODE_DEFAULT_HISTORY, MODE_EXAMPLE_FILES } from "./playground_examples.js?v=scsp-fm-1";
-import { initializePlaygroundMonaco } from "./playground_monaco.js?v=ps1-adpcm-encoder-1";
+import { DEFAULT_CODE, EXAMPLES, EXAMPLE_FILES, MODE_DEFAULT_CODES, MODE_DEFAULT_HISTORY, MODE_EXAMPLE_FILES } from "./playground_examples.js?v=ps1-vab-api-1";
+import { initializePlaygroundMonaco } from "./playground_monaco.js?v=ps1-vab-api-1";
 import {
   decodeBase64Bytes,
   loadTfiPresetsFromQuery,
@@ -97,8 +97,8 @@ import { exportYm2608VgmToPlaygroundJavaScript } from "./js/ym2608vgm.js?v=vgm-f
 import { exportYm2610BVgmToPlaygroundJavaScript } from "./js/ym2610bvgm.js?v=vgm-frequency-order-2";
 import {
   createPlaygroundRuntime,
-} from "./js/playground_runtime.js?v=scsp-fm-1";
-import {DEFAULT_WORKER_LOOKAHEAD_SECONDS} from './js/playground_performance_sender.js?v=scsp-fm-1';
+} from "./js/playground_runtime.js?v=gameboy-public-timed-1";
+import {DEFAULT_WORKER_LOOKAHEAD_SECONDS} from './js/playground_performance_sender.js?v=gameboy-public-timed-1';
 import { createVgmPresetFiles } from "./playground_vgm_presets.js?v=vgm-frequency-order-2";
 import { createTfiFileEditor, instrumentToEditorPreset } from "./playground_tfi_editor.js?v=operator-tab-keyboard-1";
 import { renderFileTree } from "./playground_file_tree.js?v=opnb-primary-1";
@@ -290,7 +290,7 @@ if (audioEngineSelection.requested === 'native' && !audioEngineSelection.availab
 const useNativeGenesis = audioEngineSelection.engine === 'native';
 const soundChipMixer = createPlaygroundSoundChipMixer(selectedMode.id);
 const megaDrive = useNativeGenesis
-  ? new (await import('./js/native_genesis_synth.js?v=scsp-fm-1')).NativeGenesisSynth({
+  ? new (await import('./js/native_genesis_synth.js?v=rf5c164-notes-1')).NativeGenesisSynth({
     invoke:window.__TAURI_INTERNALS__.invoke.bind(window.__TAURI_INTERNALS__),
     mode:selectedMode.id,
     mixer:soundChipMixer,
@@ -1805,7 +1805,7 @@ const ui =
     helpersPanel,
     operatorPanel,
     keyboardPanel,
-    ...Object.fromEntries(['segapsg', 'rf5c164', 'pwm', 'gameboy', 'nes', 'snes', 'ps1', 'scsp', 'ym2151', 'okim6258', 'huc6280', 'msm5205', 'cdda', 'wonderswan', 'pokey', 'dx7', 'ym3812', 'ym3526', 'y8950', 'ymf262', 'ym2413', 'ay8910', 'mixer'].flatMap(name => [
+    ...Object.fromEntries(['sid', 'segapsg', 'rf5c164', 'pwm', 'gameboy', 'nes', 'snes', 'ps1', 'scsp', 'ym2151', 'okim6258', 'huc6280', 'msm5205', 'cdda', 'wonderswan', 'pokey', 'dx7', 'ym3812', 'ym3526', 'y8950', 'ymf262', 'ym2413', 'ay8910', 'mixer'].flatMap(name => [
       [`${name}Tab`, document.getElementById(`${name}Tab`)],
       [`${name}Panel`, document.getElementById(`${name}Panel`)],
     ])),
@@ -1825,7 +1825,7 @@ const ui =
       audioMonitor.setVisible(showAudio);
       if (extraFmEditor) extraFmEditor.setVisible(primary === 'operator');
       else operatorTab?.setVisible(primary === "operator");
-      chipTabs?.setVisible(['segapsg', 'rf5c164', 'pwm', 'gameboy', 'nes', 'snes', 'ps1', 'scsp', 'ym2151', 'okim6258', 'huc6280', 'wonderswan', 'pokey', 'dx7', 'ym3812', 'ym3526', 'y8950', 'ymf262', 'ym2413', 'ay8910'].includes(primary) ? primary : null);
+      chipTabs?.setVisible(['sid', 'segapsg', 'rf5c164', 'pwm', 'gameboy', 'nes', 'snes', 'ps1', 'scsp', 'ym2151', 'okim6258', 'huc6280', 'wonderswan', 'pokey', 'dx7', 'ym3812', 'ym3526', 'y8950', 'ymf262', 'ym2413', 'ay8910'].includes(primary) ? primary : null);
       cdrom2AudioPanels?.setVisible(['msm5205','cdda'].includes(primary)?primary:null);
       mixerPanel?.setVisible(tool === 'mixer');
       operatorKeyboard?.setView(tool === "keyboard" ? "keyboard" : primary === 'operator' && extraFmEditor?.isExtraSelected() ? 'extra-fm' : primary);
@@ -2027,11 +2027,11 @@ mixerPanel = createPlaygroundMixer({
   },
   onError: error => setStatus(`Mixer: ${error.message}`),
 });
-additionalChipTabAvailability=createPlaygroundAdditionalChipTabAvailability({getInspector:()=>runtime.chipInspector,kinds:useNativeGenesis?['ym2151','ym2413','ay8910','ym3526','ym3812','y8950','ymf262','rf5c164','okim6258','gameboy','nes','snes','huc6280','wonderswan','pokey','dx7','pwm']:['pokey'],primaryKinds:selectedMode.chipTabs,onAvailability:(kind,available)=>ui.setChipTabAvailable(kind,available)});
+additionalChipTabAvailability=createPlaygroundAdditionalChipTabAvailability({getInspector:()=>runtime.chipInspector,kinds:useNativeGenesis?['ym2151','ym2413','ay8910','ym3526','ym3812','y8950','ymf262','rf5c164','okim6258','gameboy','nes','snes','huc6280','wonderswan','pokey','dx7','pwm','sid']:['pokey','sid'],primaryKinds:selectedMode.chipTabs,onAvailability:(kind,available)=>ui.setChipTabAvailable(kind,available)});
 chipTabs = createPlaygroundChipTabs({
-  eventDrivenAdditionalKinds:useNativeGenesis?['ym2151','ym2413','ay8910','ym3526','ym3812','y8950','ymf262','rf5c164','okim6258','gameboy','nes','snes','huc6280','wonderswan','pokey','dx7','pwm']:[],
+  eventDrivenAdditionalKinds:useNativeGenesis?['ym2151','ym2413','ay8910','ym3526','ym3812','y8950','ymf262','rf5c164','okim6258','gameboy','nes','snes','huc6280','wonderswan','pokey','dx7','pwm','sid']:[],
   voiceApiNames:selectedMode.chip==='pokey'?{pokey:'pokey','pokey:2':'pokey2'}:{},
-  roots: Object.fromEntries(['segapsg', 'rf5c164', 'pwm', 'gameboy', 'nes', 'snes', 'ps1', 'scsp', 'ym2151', 'okim6258', 'huc6280', 'wonderswan', 'pokey', 'dx7', 'ym3812', 'ym3526', 'y8950', 'ymf262', 'ym2413', 'ay8910'].map(name => [name, document.getElementById(`${name}Panel`)])),
+  roots: Object.fromEntries(['sid', 'segapsg', 'rf5c164', 'pwm', 'gameboy', 'nes', 'snes', 'ps1', 'scsp', 'ym2151', 'okim6258', 'huc6280', 'wonderswan', 'pokey', 'dx7', 'ym3812', 'ym3526', 'y8950', 'ymf262', 'ym2413', 'ay8910'].map(name => [name, document.getElementById(`${name}Panel`)])),
   getInspector: () => runtime.chipInspector,
   listFiles: () => virtualFiles.list().filter(file => !isCheckpointVirtualPath(file.path)),
   readFile: path => virtualFiles.get(path),

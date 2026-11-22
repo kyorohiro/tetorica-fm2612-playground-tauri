@@ -22,7 +22,9 @@ export const PLAYGROUND_MIXER_CALIBRATION = freeze({
   "measuredExtraRoutes": 22,
   "measuredEngineRoutes": 1,
   "measuredPrimaryRoutes": 28,
-  "unmeasuredKinds": [],
+  "unmeasuredKinds": [
+    "sid"
+  ],
   "extensions": {
     "ps1": {
       "version": 1,
@@ -62,7 +64,7 @@ export const PLAYGROUND_MIXER_CALIBRATION = freeze({
       "referenceFrequencyHz": 440,
       "measurementMetric": "acRms",
       "waveform": "square",
-      "targetAcRms": 0.06993726161540616,
+      "targetAcRms": 0.06993434306195019,
       "targetAmplitude": 0.12881777435541153,
       "referenceAmplitude": 0.1494140625,
       "codecHeadroom": 1,
@@ -74,7 +76,7 @@ export const PLAYGROUND_MIXER_CALIBRATION = freeze({
       "listeningReference": {
         "kind": "segapsg",
         "gain": 0.35,
-        "rawAcRms": 0.19982074747258902
+        "rawAcRms": 0.19981240874842915
       },
       "canonical": {
         "engine": "chromium",
@@ -205,7 +207,7 @@ const factoryDefaults = freeze({
     },
     {
       "name": "pokey",
-      "volume": 0.413052
+      "volume": 0.413034
     },
     {
       "name": "ps1",
@@ -213,7 +215,11 @@ const factoryDefaults = freeze({
     },
     {
       "name": "scsp",
-      "volume": 0.128826
+      "volume": 0.128825
+    },
+    {
+      "name": "sid",
+      "volume": 1
     }
   ]
 });
@@ -640,7 +646,7 @@ const factoryModes = freeze({
         "id": "pokey",
         "name": "pokey",
         "settings": {
-          "volume": 0.413052
+          "volume": 0.413033
         }
       }
     ]
@@ -652,14 +658,14 @@ const factoryModes = freeze({
         "id": "pokey",
         "name": "pokey",
         "settings": {
-          "volume": 0.413051
+          "volume": 0.413034
         }
       },
       {
         "id": "pokey:2",
         "name": "pokey",
         "settings": {
-          "volume": 0.413051
+          "volume": 0.413034
         }
       }
     ]
@@ -684,6 +690,18 @@ const factoryModes = freeze({
         "name": "scsp",
         "settings": {
           "volume": 0.128825
+        }
+      }
+    ]
+  },
+  "c64": {
+    "version": 1,
+    "entries": [
+      {
+        "id": "sid",
+        "name": "sid",
+        "settings": {
+          "volume": 1
         }
       }
     ]

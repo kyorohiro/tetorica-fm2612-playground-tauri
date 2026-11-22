@@ -1,10 +1,11 @@
-import {attachChipClock, CHIP_CLOCKS} from './playground_chip_clock.js?v=pokey-prepare-1';
-import {NesApuSynth} from './nesapusynth.js?v=pokey-mode-1';
-import {NES_APU_CLOCK} from './nesapu.js?v=nes-wasm-1';
+import {attachNesTimedClient} from './nes_timed_client.js';
+import {attachChipClock, CHIP_CLOCKS} from './playground_chip_clock.js';
+import {NesApuSynth} from './nesapusynth.js';
+import {NES_APU_CLOCK} from './nesapu.js';
 /** Same register generator as the public NES API; uploads await Worklet acknowledgement. */
 /** @param {MessagePort} port Ordered Worklet command/acknowledgement port, owned by the client.
  * @param {{clock?: number, fdsEnabled?: boolean, state?:object,native?:boolean}} [options={}] Clock in Hz, FDS availability and an optional existing device snapshot.
- * @returns {NesApuSynth & {_stopVoices:()=>Promise<void>}} Synth whose dispose closes the port and rejects pending uploads. */
+ * @returns {NesApuSynth & import('./nes_timed_client.js').NESTimedApi & {_stopVoices:()=>Promise<void>}} Synth whose dispose closes the port and rejects pending uploads. */
 export function createNesClient(port, {clock = NES_APU_CLOCK, fdsEnabled = false, state,native=false} = {}, lifecycle={}) {
   let disposed = false, sequence = 0;
   const pending = new Map();
@@ -37,6 +38,21 @@ export function createNesClient(port, {clock = NES_APU_CLOCK, fdsEnabled = false
   };
   const synth = new NesApuSynth({transport,initialize:!state});
   if(state)synth._adoptState(state);
+  if(!native){
+    let selectionEpoch=0;
+    const loadSample=synth.dmc.loadSample;
+    const load=transport.loadMemory;transport.loadMemory=(...args)=>{selectionEpoch++;return load(...args);};
+    // loadSample itself uses this transport. Advance the selection epoch only
+    // for raw uploads, not for the synchronous upload it starts internally.
+    synth.dmc.loadSample=async(...args)=>{
+      const promise=loadSample(...args),epoch=selectionEpoch,result=await promise;
+      if(disposed||epoch!==selectionEpoch)throw new Error('DMC load was superseded or reset');
+      await request('nesSelectSample',[result]);
+      if(disposed||epoch!==selectionEpoch)throw new Error('DMC load was superseded or reset');
+      return result;
+    };
+    const reset=transport.reset;transport.reset=()=>{selectionEpoch++;return reset();};
+  }
   const client=Object.assign(synth, {_stopVoices() {
     // The admin editor can change FDS pitch on the Worklet independently of
     // this thread's shadow. Stop must use applied registers at the processor.
@@ -50,7 +66,8 @@ export function createNesClient(port, {clock = NES_APU_CLOCK, fdsEnabled = false
     for (const request of pending.values()) request.reject(new Error('NES disposed'));
     pending.clear(); port.close();
   }});
-  const controlled=attachChipClock(client, port, clock);
+  Object.defineProperties(client,{_timedClientStateComplete:{get:()=>true},_getTimedState:{value:()=>client._getState()}});
+  const controlled=attachNesTimedClient(attachChipClock(client, port, clock),{native},port);
   if(native){
     const setClock=controlled.setClock.bind(controlled);
     controlled.setClock=hz=>{const context=lifecycle.captureContext?.();check(context);return scoped(setClock(hz),context);};
