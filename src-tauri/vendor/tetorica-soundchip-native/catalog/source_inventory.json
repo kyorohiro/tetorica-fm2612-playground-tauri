@@ -280,17 +280,17 @@
         {
           "path": "vendor/mame-ay8910/README.md",
           "originPath": "third_party/mame-ay8910/README.md",
-          "sha256": "d41552a7edc4156988dfee0395d501431507f5c8429217786d6a4be5078ae99f"
+          "sha256": "431783f35c52689eb9cc0d39d8073e62f6d0ccf2fbf2eed5c108522c5646eb4b"
         },
         {
           "path": "vendor/mame-ay8910/ay8910.cpp",
           "originPath": "third_party/mame-ay8910/ay8910.cpp",
-          "sha256": "3ea3efe1b29a554c39a2b1995e9ed3d2588c16d24b085ca1565c3a24f4414646"
+          "sha256": "e6f3cf07bd25e1f5f18455db302758993910154a82e401ee1566103e184f432b"
         },
         {
           "path": "vendor/mame-ay8910/ay8910.h",
           "originPath": "third_party/mame-ay8910/ay8910.h",
-          "sha256": "e93d1904d2c232f820c23a6df59dfebf309550a6f8b0032e20c51295e7d31e7a"
+          "sha256": "1663b65a64715f23826eece168489ca2a15e001f01fee93779bf4cf307ae7156"
         },
         {
           "path": "vendor/mame-ay8910/upstream/ay8910.cpp",
@@ -388,17 +388,23 @@
         {
           "path": "vendor/mame-huc6280/README.md",
           "originPath": "third_party/mame-huc6280/README.md",
-          "sha256": "1b792f719db680de5b5121ed2293256ac00fe6e51725e2aadc38dfaaa768b8dd"
+          "sha256": "8b5397ae03fe697a2bec11ba3d95f98eb16bb616d8da80c5ab1ac2fc1677f570",
+          "originalSha256": "1b792f719db680de5b5121ed2293256ac00fe6e51725e2aadc38dfaaa768b8dd",
+          "modification": "Local 0.1.8-huc-state candidate: HuC6280 checkpoint ABI only, based on pinned SDK0.1.7."
         },
         {
           "path": "vendor/mame-huc6280/huc6280.cpp",
           "originPath": "third_party/mame-huc6280/huc6280.cpp",
-          "sha256": "5693c83943957e2ee0ee1bd5045503034363fed282764f99acb907293222f26f"
+          "sha256": "0249412639b309f13dbd285d729ff3141364fc2c9b499b8d7608a1f9a994e779",
+          "originalSha256": "5693c83943957e2ee0ee1bd5045503034363fed282764f99acb907293222f26f",
+          "modification": "Local 0.1.8-huc-state candidate: HuC6280 checkpoint ABI only, based on pinned SDK0.1.7."
         },
         {
           "path": "vendor/mame-huc6280/huc6280.h",
           "originPath": "third_party/mame-huc6280/huc6280.h",
-          "sha256": "6b1464fc6d56390e56f99bf072d7300126cc91cd317bacc78b43be4d552af2b6"
+          "sha256": "d41035e4f0e62b331d9bc8998947bb78f5e17fc44bd9e6704ccc8dbf9c5b89cb",
+          "originalSha256": "6b1464fc6d56390e56f99bf072d7300126cc91cd317bacc78b43be4d552af2b6",
+          "modification": "Local 0.1.8-huc-state candidate: HuC6280 checkpoint ABI only, based on pinned SDK0.1.7."
         },
         {
           "path": "vendor/mame-huc6280/upstream/c6280.cpp",
@@ -765,7 +771,7 @@
         {
           "path": "vendor/snes-spc/README.md",
           "originPath": "third_party/snes-spc/README.md",
-          "sha256": "0a4ef415f103b996772d321ba2ff28614a27a9c83cfe4afd437a779e58ab0775"
+          "sha256": "904c8a52ba8ee7b1bd3da4db68fcd9ee34c4aff7414e6ca449ef4fdbdf58b004"
         },
         {
           "path": "vendor/snes-spc/README.upstream.md",
@@ -795,7 +801,7 @@
         {
           "path": "vendor/snes-spc/snes_spc/SNES_SPC.h",
           "originPath": "third_party/snes-spc/snes_spc/SNES_SPC.h",
-          "sha256": "3ebf24542de1405b054fc7f044516aa25eabdd530a66daf1f91468a1e52a00ae"
+          "sha256": "63e8b9a88c31530190a55786a15b4d02a103892f9b6e128de4fb4e50baa3f96f"
         },
         {
           "path": "vendor/snes-spc/snes_spc/SNES_SPC_misc.cpp",
@@ -1013,7 +1019,7 @@
         {
           "path": "vendor/msfa/dx7note.cc",
           "originPath": "w/tetorica-msfa-dx7-wasm/vendor/msfa/dx7note.cc",
-          "sha256": "551e1553962021625768b0f14741af59e6e3901ec3675c5128c8945cb174595d"
+          "sha256": "6d0f1cd41671ba17dd67623ded3ababef8f5dbc31269155a14ba281d3147ae11"
         },
         {
           "path": "vendor/msfa/dx7note.h",
@@ -1023,7 +1029,7 @@
         {
           "path": "vendor/msfa/env.cc",
           "originPath": "w/tetorica-msfa-dx7-wasm/vendor/msfa/env.cc",
-          "sha256": "ef739bf4aacc5b6a8076ac3bf3142c172dda54022f2209bd627271be113367cd"
+          "sha256": "b9e8e0c787aff8878bb5cb4cffe210f92c73a7bcd7944f3bc8577c3ec11cf322"
         },
         {
           "path": "vendor/msfa/env.h",
@@ -1199,7 +1205,7 @@
         {
           "path": "wasm/ay8910_wasm.cpp",
           "originPath": "wasm/ay8910_wasm.cpp",
-          "sha256": "15107f52744c9e67db2daf0bfa052ebb04a63dc92779576e46c4c10b64009ebb"
+          "sha256": "d5a03082806adc7d1aac6ce8f4fae0aa96b669707b22d837749a19eefe55846b"
         },
         {
           "path": "wasm/gameboy_apu_wasm.cpp",
@@ -1209,7 +1215,9 @@
         {
           "path": "wasm/huc6280_wasm.cpp",
           "originPath": "wasm/huc6280_wasm.cpp",
-          "sha256": "89d1de8929f13e520a33f6993ebc56d46684d67e8ab6a6314346895574ff7765"
+          "sha256": "d4c68187010c833804b0c40799b0901f037bc75de0f15c45cf37e938505c3075",
+          "originalSha256": "89d1de8929f13e520a33f6993ebc56d46684d67e8ab6a6314346895574ff7765",
+          "modification": "Local 0.1.8-huc-state candidate: HuC6280 checkpoint ABI only, based on pinned SDK0.1.7."
         },
         {
           "path": "wasm/k051649_wasm.cpp",
@@ -1269,7 +1277,7 @@
         {
           "path": "wasm/spc_wasm.cpp",
           "originPath": "wasm/spc_wasm.cpp",
-          "sha256": "2c88efc7f10d0b4cd1124163f0a99caf0e1d8cac3ba1767de1134c30d62e8d77"
+          "sha256": "1575ff7e23d6486385612d2d22b026fa5cca7e7a39e7dbb9db37f5fa9c35fb19"
         },
         {
           "path": "wasm/y8950_wasm.cpp",
@@ -1289,17 +1297,23 @@
         {
           "path": "wasm/ym2413_wasm.cpp",
           "originPath": "wasm/ym2413_wasm.cpp",
-          "sha256": "e76d64214d86d7f57fded2e513f3fcfc807717ed0b9a7bd7591a4ef82b0af79e"
+          "sha256": "b51991f39ef90ccda9c0808014162da563e7f772d491cf138050b11e433c52a4",
+          "originalSha256": "e76d64214d86d7f57fded2e513f3fcfc807717ed0b9a7bd7591a4ef82b0af79e",
+          "modification": "Local SDK extension: opaque YM2413 save/restore via ymfm field serialization, interface timer/IRQ state and mute mask; existing PCM ABI unchanged."
         },
         {
           "path": "wasm/ym2608_wasm.cpp",
           "originPath": "wasm/ym2608_wasm.cpp",
-          "sha256": "d62fd4958a90359a766b443738a84caf9aa18023ba008ab6743d10113965cd0c"
+          "sha256": "88dcd408391a090284492054506afbe30cfdbbee6adb5f02fe6103b60b0c4946",
+          "originalSha256": "d62fd4958a90359a766b443738a84caf9aa18023ba008ab6743d10113965cd0c",
+          "modification": "Local SDK extension: independent host output gains for the FM/Rhythm/ADPCM stereo bus and SSG mono bus; default PCM preserved, validated gain checkpoints retained."
         },
         {
           "path": "wasm/ym2610b_wasm.cpp",
           "originPath": "wasm/ym2610b_wasm.cpp",
-          "sha256": "aeda15e37d3336028f46a8daf9ae48d092d7188f079d74a3492db25d21f6f849"
+          "sha256": "58b9e9a5a47cac5e5d0ddf0fa341927891e808410140a63bd156ba3d744d3b0b",
+          "originalSha256": "aeda15e37d3336028f46a8daf9ae48d092d7188f079d74a3492db25d21f6f849",
+          "modification": "Local SDK extension: independent FM, SSG, ADPCM-A and ADPCM-B output gains; original unity PCM and clock cadence preserved."
         },
         {
           "path": "wasm/ym2612_wasm.cpp",
@@ -1905,42 +1919,42 @@
         {
           "path": "vendor/mame-ps1-spu/README.md",
           "originPath": "native/ps1/README.md",
-          "sha256": "59a588c0da4a83b17944713283f1ee3d2d8ff23058c90ca08997c50f3031f6c5",
+          "sha256": "94d7c78a36a4f99b612614a0b63d213ef045e0893cc913e95d1febe51ff1b49a",
           "originalSha256": "646237d10d0bc047bb005f65fdc2306ed14b09d93505df520012db1127ca0ac6",
-          "previousSdkSha256": "646237d10d0bc047bb005f65fdc2306ed14b09d93505df520012db1127ca0ac6",
-          "amendmentNote": "SDK 0.1.7: explicit live-envelope and smoothed-audition controls; preserve deferred ADSR rates across manual/raw key-off by separating the latched release slope from its manual floor. Original raw register playback and pristine upstream files are unchanged. Four-point Gaussian voice interpolation replaces linear interpolation, with documented PS1 hardware coefficients and persistent history. Pristine upstream copies and C ABI remain unchanged."
+          "previousSdkSha256": "ea2ab54d5b886962238e30cfa2fe3f094e9639eb2d09da342b1e8948e15a6dc9",
+          "amendmentNote": "SDK 0.1.7: explicit live-envelope and smoothed-audition controls; preserve deferred ADSR rates across manual/raw key-off by separating the latched release slope from its manual floor. Original raw register playback and pristine upstream files are unchanged. Four-point Gaussian voice interpolation replaces linear interpolation, with documented PS1 hardware coefficients and persistent history. Pristine upstream copies and C ABI remain unchanged. Add allocation-free ps1_spu_clear_reverb instrument control, clearing private delay/filter history without changing voices, registers, RAM or sample caches. Pristine upstream files are unchanged. Saturate 64-bit sample/IRQ event distances before 32-bit scheduling to prevent premature END and invalid loop overshoot for long software PCM at low pitch. ABI, bank count and pristine upstream copies remain unchanged. Honor independent ADPCM Loop Start and terminal Repeat bits, accepting flag-4 markers and flag-0 repeat targets without rewriting input data. Preserve END+Mute and refreshed END behavior, marker address zero, decoder/Gaussian history, full RAM capacity and existing two host banks; pristine upstream copies and C ABI are unchanged."
         },
         {
           "path": "vendor/mame-ps1-spu/ps1_spu.cpp",
           "originPath": "native/ps1/ps1_spu.cpp",
-          "sha256": "6dd978dd9335c7b647cac4bdd8a97b1c08ed58711519ef9e82a1cfe01cb51ae5",
+          "sha256": "df353230097d65130714d455fd76016f994b69d8fb019540f850b1b25eab3607",
           "originalSha256": "ac876ed7ef0131f0e596932e1b5c0777bf604f886f9234376e981a4f826b1b2a",
-          "previousSdkSha256": "ac876ed7ef0131f0e596932e1b5c0777bf604f886f9234376e981a4f826b1b2a",
-          "amendmentNote": "SDK 0.1.7: explicit opt-in live-envelope and per-voice smoothed-audition instrument extensions; raw register playback preserved. Updated source, exports and component documentation."
+          "previousSdkSha256": "cb7184c8ccf51dbabf50e54e00fe5c2965e62ef1caba7de4b9fdf4da56a7b58d",
+          "amendmentNote": "SDK 0.1.7: explicit opt-in live-envelope and per-voice smoothed-audition instrument extensions; raw register playback preserved. Updated source, exports and component documentation. Add allocation-free ps1_spu_clear_reverb instrument control, clearing private delay/filter history without changing voices, registers, RAM or sample caches. Pristine upstream files are unchanged. Add allocation-free same-length ps1_spu_update_host_pcm live editing with preserved voice cursors/envelopes and bounded loop-cache guards. Pristine upstream files are unchanged. Add two independent software host PCM banks and validated disjoint key-on routing while retaining bank0 legacy ABI; both banks support allocation-free same-length live editing. Pristine upstream files are unchanged."
         },
         {
           "path": "vendor/mame-ps1-spu/ps1_spu.h",
           "originPath": "native/ps1/ps1_spu.h",
-          "sha256": "3d4f4611058332ba85aa979c2b62a112efb79036396644f0734cbb9a183b7c4f",
+          "sha256": "1a85ca13c37a2ec540dd2f45fec4210605ccc779f1b4cb34a30665c22c633537",
           "originalSha256": "f1ae8b35b8aa81833b6a7b836b003cbdbb2c15346bf27a05488f398660ce868e",
-          "previousSdkSha256": "f1ae8b35b8aa81833b6a7b836b003cbdbb2c15346bf27a05488f398660ce868e",
-          "amendmentNote": "SDK 0.1.7: explicit live-envelope and smoothed-audition controls; preserve deferred ADSR rates across manual/raw key-off by separating the latched release slope from its manual floor. Original raw register playback and pristine upstream files are unchanged."
+          "previousSdkSha256": "4e8cdeff0393dffaa458151c2a8966e05ad0a53825ae43c93add0ccb2e76787e",
+          "amendmentNote": "SDK 0.1.7: explicit live-envelope and smoothed-audition controls; preserve deferred ADSR rates across manual/raw key-off by separating the latched release slope from its manual floor. Original raw register playback and pristine upstream files are unchanged. Add allocation-free ps1_spu_clear_reverb instrument control, clearing private delay/filter history without changing voices, registers, RAM or sample caches. Pristine upstream files are unchanged. Add allocation-free same-length ps1_spu_update_host_pcm live editing with preserved voice cursors/envelopes and bounded loop-cache guards. Pristine upstream files are unchanged. Add two independent software host PCM banks and validated disjoint key-on routing while retaining bank0 legacy ABI; both banks support allocation-free same-length live editing. Pristine upstream files are unchanged."
         },
         {
           "path": "vendor/mame-ps1-spu/spu.cpp",
           "originPath": "native/ps1/spu.cpp",
-          "sha256": "1523753541342954d612620ff27b40212244ac594cc5b62c4a974d928baae63e",
+          "sha256": "057ae5d52a2509d1c0efa6b1435802897ae7cb10eb75148d27fa975330970661",
           "originalSha256": "e2bf1098e1a7c4809b32006f0ed4669788bd84e0755745013fcbe66cdd73bf7b",
-          "previousSdkSha256": "e2bf1098e1a7c4809b32006f0ed4669788bd84e0755745013fcbe66cdd73bf7b",
-          "amendmentNote": "SDK 0.1.7: explicit live-envelope and smoothed-audition controls; preserve deferred ADSR rates across manual/raw key-off by separating the latched release slope from its manual floor. Original raw register playback and pristine upstream files are unchanged. Four-point Gaussian voice interpolation replaces linear interpolation, with documented PS1 hardware coefficients and persistent history. Pristine upstream copies and C ABI remain unchanged. Explicitly include <stdexcept> for std::out_of_range so the adapted source compiles with MSVC without relying on transitive standard-library includes."
+          "previousSdkSha256": "314a8e21c632bb184d49d51af792307b37e9f6a0c8fb8f7730516207c1ab3935",
+          "amendmentNote": "SDK 0.1.7: explicit live-envelope and smoothed-audition controls; preserve deferred ADSR rates across manual/raw key-off by separating the latched release slope from its manual floor. Original raw register playback and pristine upstream files are unchanged. Four-point Gaussian voice interpolation replaces linear interpolation, with documented PS1 hardware coefficients and persistent history. Pristine upstream copies and C ABI remain unchanged. Explicitly include <stdexcept> for std::out_of_range so the adapted source compiles with MSVC without relying on transitive standard-library includes. Add allocation-free ps1_spu_clear_reverb instrument control, clearing private delay/filter history without changing voices, registers, RAM or sample caches. Pristine upstream files are unchanged. Add allocation-free same-length ps1_spu_update_host_pcm live editing with preserved voice cursors/envelopes and bounded loop-cache guards. Pristine upstream files are unchanged. Add two independent software host PCM banks and validated disjoint key-on routing while retaining bank0 legacy ABI; both banks support allocation-free same-length live editing. Pristine upstream files are unchanged. Saturate 64-bit sample/IRQ event distances before 32-bit scheduling to prevent premature END and invalid loop overshoot for long software PCM at low pitch. ABI, bank count and pristine upstream copies remain unchanged. Honor independent ADPCM Loop Start and terminal Repeat bits, accepting flag-4 markers and flag-0 repeat targets without rewriting input data. Preserve END+Mute and refreshed END behavior, marker address zero, decoder/Gaussian history, full RAM capacity and existing two host banks; pristine upstream copies and C ABI are unchanged."
         },
         {
           "path": "vendor/mame-ps1-spu/spu.h",
           "originPath": "native/ps1/spu.h",
-          "sha256": "3f7f0264e0d1cc093d3f2006d07c601654845071625e78d2372fbf3b2d62026c",
+          "sha256": "fccf488f97010ebe7e70aeadef635f6d73d29f88dd0c80efcf245e34b1ca407e",
           "originalSha256": "79be48c1382f6db13ea3c87f0cc0942d2c3f52cdec5c5bd6b00af5dfc907c828",
-          "previousSdkSha256": "79be48c1382f6db13ea3c87f0cc0942d2c3f52cdec5c5bd6b00af5dfc907c828",
-          "amendmentNote": "SDK 0.1.7: explicit live-envelope and smoothed-audition controls; preserve deferred ADSR rates across manual/raw key-off by separating the latched release slope from its manual floor. Original raw register playback and pristine upstream files are unchanged."
+          "previousSdkSha256": "f3f432904c66a5913f568efce3fb5d496dbb4c415248dc28f78c8ba136cb51b2",
+          "amendmentNote": "SDK 0.1.7: explicit live-envelope and smoothed-audition controls; preserve deferred ADSR rates across manual/raw key-off by separating the latched release slope from its manual floor. Original raw register playback and pristine upstream files are unchanged. Add allocation-free ps1_spu_clear_reverb instrument control, clearing private delay/filter history without changing voices, registers, RAM or sample caches. Pristine upstream files are unchanged. Add allocation-free same-length ps1_spu_update_host_pcm live editing with preserved voice cursors/envelopes and bounded loop-cache guards. Pristine upstream files are unchanged. Add two independent software host PCM banks and validated disjoint key-on routing while retaining bank0 legacy ABI; both banks support allocation-free same-length live editing. Pristine upstream files are unchanged."
         },
         {
           "path": "vendor/mame-ps1-spu/spu_tables.cpp",
@@ -1950,12 +1964,18 @@
         {
           "path": "vendor/mame-ps1-spu/spureverb.cpp",
           "originPath": "native/ps1/spureverb.cpp",
-          "sha256": "2b713d2fef9ba4bb206dac34888dd54714533f29ccdbe0e2ce58058631e34eb4"
+          "sha256": "2359959f969cb2f330bb6d0ded5da2b0e60548de4665c1fad8d3637f7ba2b993",
+          "originalSha256": "2b713d2fef9ba4bb206dac34888dd54714533f29ccdbe0e2ce58058631e34eb4",
+          "previousSdkSha256": "2b713d2fef9ba4bb206dac34888dd54714533f29ccdbe0e2ce58058631e34eb4",
+          "amendmentNote": "Add allocation-free ps1_spu_clear_reverb instrument control, clearing private delay/filter history without changing voices, registers, RAM or sample caches. Pristine upstream files are unchanged."
         },
         {
           "path": "vendor/mame-ps1-spu/spureverb.h",
           "originPath": "native/ps1/spureverb.h",
-          "sha256": "b2bc469037ed9b03d8f166b84c0c9a810a3ca4169ca0e0b39a0bf0f1ab6a5f67"
+          "sha256": "74a942548b93aabb7042a1f154187c177094c8ed7773a225af77654fe675a767",
+          "originalSha256": "b2bc469037ed9b03d8f166b84c0c9a810a3ca4169ca0e0b39a0bf0f1ab6a5f67",
+          "previousSdkSha256": "b2bc469037ed9b03d8f166b84c0c9a810a3ca4169ca0e0b39a0bf0f1ab6a5f67",
+          "amendmentNote": "Add allocation-free ps1_spu_clear_reverb instrument control, clearing private delay/filter history without changing voices, registers, RAM or sample caches. Pristine upstream files are unchanged."
         },
         {
           "path": "vendor/mame-ps1-spu/standalone_support.h",
@@ -2099,6 +2119,27 @@
           "sha256": "db522ecaa04665063e46f7f6c699eb7781c672fd7624ac58a60b0b180652d3cc"
         }
       ]
+    },
+    {
+      "id": "tetorica-huc6280-checkpoint",
+      "sourceFiles": [
+        "native/include/tetorica/huc6280_state.h"
+      ],
+      "licenseFiles": [
+        "LICENSE"
+      ],
+      "upstream": [
+        "https://github.com/kyorohiro/tetorica-soundchip-native"
+      ],
+      "sourceVersion": [
+        "Local SDK 0.1.8 formal checkpoint ABI v1; not published"
+      ],
+      "files": [
+        {
+          "path": "native/include/tetorica/huc6280_state.h",
+          "sha256": "70c6ccc363e2f9dd52ecd47129ad7381f3afea87cc3d230a8d03a848af05a5df"
+        }
+      ]
     }
   ],
   "artifacts": [
@@ -2188,7 +2229,8 @@
         "vendor/mame-huc6280/huc6280.cpp",
         "vendor/mame-huc6280/huc6280.h",
         "vendor/mame-huc6280/upstream/c6280.cpp",
-        "vendor/mame-huc6280/upstream/c6280.h"
+        "vendor/mame-huc6280/upstream/c6280.h",
+        "native/include/tetorica/huc6280_state.h"
       ],
       "licenseFiles": [
         "LICENSE",

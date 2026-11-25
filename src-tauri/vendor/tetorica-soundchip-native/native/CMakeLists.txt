@@ -303,6 +303,7 @@ endif()
 # for observation. Compile it once; a separate huc6280.cpp would duplicate symbols.
 add_library(tetorica_native_huc6280 STATIC
   reference/tauri/native_genesis_huc6280.cpp
+  "${TETORICA_SDK_ROOT}/wasm/huc6280_wasm.cpp"
 )
 add_library(tetorica::huc6280 ALIAS tetorica_native_huc6280)
 target_compile_features(tetorica_native_huc6280 PUBLIC cxx_std_14)
@@ -394,6 +395,11 @@ foreach(msfa_file IN LISTS TETORICA_DX7_MSFA_SOURCES TETORICA_DX7_MSFA_HEADERS)
     list(APPEND TETORICA_DX7_ASSEMBLED_SOURCES "${TETORICA_DX7_MSFA_DIR}/${msfa_file}")
   endif()
 endforeach()
+add_library(tetorica_native_fm21290 STATIC src/fm21290.cpp)
+add_library(tetorica::fm21290 ALIAS tetorica_native_fm21290)
+target_compile_features(tetorica_native_fm21290 PUBLIC cxx_std_17)
+target_include_directories(tetorica_native_fm21290 PUBLIC "${CMAKE_CURRENT_LIST_DIR}/include")
+
 add_library(tetorica_native_dx7 STATIC
   reference/tauri/native_genesis_dx7.cpp
   ${TETORICA_DX7_ASSEMBLED_SOURCES}
@@ -769,6 +775,10 @@ if(TETORICA_NATIVE_BUILD_TESTS)
   add_test(NAME tetorica.snes.extra_self_test
     COMMAND tetorica_snes_fixture --self-test-extra)
 
+  add_executable(tetorica_fm21290_fixture tests/fm21290_fixture.cpp)
+  target_link_libraries(tetorica_fm21290_fixture PRIVATE tetorica::fm21290)
+  add_test(NAME tetorica.fm21290.self_test COMMAND tetorica_fm21290_fixture --self-test)
+
   add_executable(tetorica_dx7_fixture tests/dx7_fixture.cpp)
   target_link_libraries(tetorica_dx7_fixture PRIVATE tetorica::dx7)
   if(MSVC)
@@ -920,6 +930,14 @@ if(TETORICA_NATIVE_BUILD_TESTS)
   endif()
   add_test(NAME tetorica.huc6280.self_test
     COMMAND tetorica_huc6280_fixture --self-test)
+  add_executable(tetorica_huc6280_state_fixture tests/huc6280_state_fixture.cpp)
+  target_link_libraries(tetorica_huc6280_state_fixture PRIVATE tetorica::huc6280)
+  if(MSVC)
+    target_compile_options(tetorica_huc6280_state_fixture PRIVATE /UNDEBUG /EHsc)
+  else()
+    target_compile_options(tetorica_huc6280_state_fixture PRIVATE -UNDEBUG)
+  endif()
+  add_test(NAME tetorica.huc6280.state_test COMMAND tetorica_huc6280_state_fixture)
   add_executable(tetorica_pwm_fixture tests/pwm_fixture.cpp)
   target_link_libraries(tetorica_pwm_fixture PRIVATE tetorica::pwm)
   if(MSVC)

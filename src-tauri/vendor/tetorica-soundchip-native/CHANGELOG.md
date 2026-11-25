@@ -1,4 +1,26 @@
+## Unreleased — DX7 and FM21290
+
+- MSFA edits now retarget the four operator envelope rates and levels on held notes and release tails.
+- Added the YM21290/OPS register renderer, Native target `tetorica::fm21290` and header `tetorica/fm21290.h`.
+
+# Unpublished YM2608 four-source mixer candidate
+
+- Add the optional WASM host ABI `ym2608_set_source_gains(handle, fm, ssg, rhythm, adpcm)`. Four floating-point gains leave registers, envelopes, clocks and decoder state unchanged; zero-gain sources continue advancing. The existing two-bus `ym2608_set_output_gains` keeps its FM-side-plus-SSG meaning.
+- Retain pinned ymfm sources unchanged. Bridge-local source taps share its exact FM/ADPCM clock and SSG resampler cadence; all-source unity preserves the historical aggregate integer/clipping path bit-for-bit. A versioned same-build checkpoint trailer saves source gains and cached stems and rejects incompatible raw snapshots before mutation.
+- Add standalone, device-free WASM checks for source isolation, gain composition, continued state evolution, validation/restore and default PCM parity. Existing local SPC/HuC/AY/output-bus overlays remain included. This candidate does not add four-source mixing to the separate Native Playground C ABI and is not a published SDK release.
+
+# Unpublished SPC voice editing candidate
+
+Adds spc_write_voice for bounded full-SPC host voice edits while preserving CPU, DSP phase, RAM and decoder/envelope history. Offline trace and RAM read-tracking sessions reject host writes. Existing DSP-only API behavior is unchanged. Includes the existing HuC state local candidate.
+
 # Changelog
+
+## 0.1.8-huc-state — HuC6280 core checkpoints (local, unpublished)
+
+- Add explicit, versioned 512-byte little-endian HuC6280 core state with a synthesis-compatibility ID, matching clock/rate, eight voice records, Wave RAM, LFO, Noise/DDA state, resampler phase/output and host output mutes.
+- Export state size/save/validate/load in the existing raw C/WASM ABI and provide a public C header through the HuC6280 Native library. Full validation precedes mutation; checkpoints transfer between matching instances without copying object layouts or WASM heaps. The older `native_huc6280_*` observation/clock wrapper remains a separate handle contract.
+- Verify exact continuation, invalid-state nonmutation, zero-allocation validation, Native/WASM byte/PCM portability and unchanged legacy golden PCM. Source/WASM archives are local development artifacts; no package, tag or release is published by this change.
+
 
 ## Unreleased — experimental SCSP instrument
 
@@ -9,6 +31,7 @@
 
 ## 0.1.7 — PlayStation SPU live instrument controls (unreleased)
 
+- Add `ps1_spu_clear_reverb` in Native and WASM. It clears already allocated delay/filter history without changing voice/sample position, ADSR, RAM, decoded caches or authored registers. Repeated calls allocate and free no C++ memory; fixtures cover tail removal, foreign-voice continuity, retained settings/cache reuse and Native/WASM parity. This is an instrument control, not a PS1 register.
 - Add opt-in software mixing headroom with a wide accumulator and fractional dry output, preserving original voice-volume precision. Default divisor 1 keeps legacy PCM. Native fixtures cover exact compensated single-note output, partitioning, reverb and reset.
 
 - Replace linear voice interpolation with PS1 four-point Gaussian interpolation using the documented 512 hardware coefficients, 8-bit phase, separate signed product rounding, and persistent three-sample history across packets/loops and skipped source frames. Noise bypasses the filter. The C ABI is unchanged.

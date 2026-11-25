@@ -4,12 +4,13 @@
   "sdk": {
     "schemaVersion": 1,
     "name": "tetorica-soundchip-native",
-    "version": "0.1.8-fm2608-source-mixer",
+    "version": "0.1.8-fm2610-source-mixer",
     "sourceCommit": "95cf71a857b15d0ea932ebf97d5fde80b5e80a95",
-    "archiveName": "tetorica-soundchip-native-0.1.8-fm2608-source-mixer-sources.zip",
-    "archiveSha256": "2664067b9c4e652ecc58bf9fdf5db2ee40d9ef4038403fcefb53a6964e7df34f",
-    "manifestSha256": "83c0adec744e8ddd04cbf733c6e83460bc5ff69eff39d7d772f4df454ca5f1cf",
-    "fileCount": 486,
+    "archiveName": "tetorica-soundchip-native-0.1.8-fm2610-source-mixer-sources.zip",
+    "archiveSha256": "584e552d71fe94360a89731be2e39c730ec92029a8370fca2206d82dcddcefd7",
+    "manifestSha256": "efc71316454f97480a31d749a52f324d9c90d9c27f241780ad43d17764cd6bc0",
+    "fileCount": 490,
+    "unpublished": true,
     "localCandidate": {
       "baseCommit": "95cf71a857b15d0ea932ebf97d5fde80b5e80a95",
       "changedPaths": [
@@ -23,13 +24,24 @@
         "docs/ym2413-state.md",
         "docs/ym2608-source-mixer.md",
         "native/CMakeLists.txt",
+        "native/README.md",
+        "native/include/tetorica/dx7.hpp",
+        "native/include/tetorica/fm21290.h",
         "native/include/tetorica/huc6280.hpp",
         "native/include/tetorica/huc6280_state.h",
+        "native/reference/SOURCES.json",
+        "native/reference/overrides/msfa/dx7note.cc",
+        "native/reference/overrides/msfa/env.cc",
+        "native/src/fm21290.cpp",
+        "native/src/fm21290_algorithms.inc",
+        "native/tests/dx7_fixture.cpp",
+        "native/tests/fm21290_fixture.cpp",
         "native/tests/huc6280_state_fixture.cpp",
         "scripts/build_huc6280_wasm.sh",
         "scripts/build_spc_wasm.sh",
         "scripts/build_ym2413_wasm.sh",
         "scripts/build_ym2608_wasm.sh",
+        "scripts/build_ym2610b_wasm.sh",
         "sdk.json",
         "tests/huc6280_state_wasm_smoke.mjs",
         "tests/ym2413_state_wasm_smoke.mjs",
@@ -41,13 +53,16 @@
         "vendor/mame-huc6280/README.md",
         "vendor/mame-huc6280/huc6280.cpp",
         "vendor/mame-huc6280/huc6280.h",
+        "vendor/msfa/dx7note.cc",
+        "vendor/msfa/env.cc",
         "vendor/snes-spc/README.md",
         "vendor/snes-spc/snes_spc/SNES_SPC.h",
         "wasm/ay8910_wasm.cpp",
         "wasm/huc6280_wasm.cpp",
         "wasm/spc_wasm.cpp",
         "wasm/ym2413_wasm.cpp",
-        "wasm/ym2608_wasm.cpp"
+        "wasm/ym2608_wasm.cpp",
+        "wasm/ym2610b_wasm.cpp"
       ]
     }
   },
@@ -117,12 +132,12 @@
     {
       "path": "native/cdda/README.md",
       "bytes": 1584,
-      "sha256": "6c993cd33c1291406b41e797894ea2dd49ce646e109ab7671463c47b7a5933a2"
+      "sha256": "c354a37ebfc94d3e91696ac2956661975961839fa42f4985f0beafe777a76cb0"
     },
     {
       "path": "CDDA.md",
       "bytes": 1119,
-      "sha256": "006dcc4f4b5a436fa9846b3671f1e0e0e6beff6f4c0ffea294c60a63b15691c6"
+      "sha256": "39fadc3812712913392e57f78a6bb6a321bd8a4f8a50e6f0281c3bd60454768c"
     }
   ],
   "modifications": [

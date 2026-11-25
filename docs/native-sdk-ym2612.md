@@ -10,17 +10,17 @@ submodule、ビルド中のGitHub取得を必要としません。
 
 | 項目 | 値 |
 | --- | --- |
-| SDK版 | `0.1.7` |
-| ソース配布 | `tetorica-soundchip-native-0.1.7-sources.zip` |
-| 配布の由来 | 下記SDKコミットのclean checkoutから正規packagerでローカル生成（公開releaseの取得ではない） |
-| 配布ZIPのSHA-256 | `0ca4bbc5fcc76df36f1f0f634ac0f039e8ec94c76b914e36ebbb12d949963c2d` |
-| 配布manifestのSHA-256 | `3f83a47b633e75524efabc5d8e1686911ddacf92b23fc469e6696776905fde0b` |
-| SDKの元コミット | `cf1747387eb2b66323124959d7b356b936197784` |
+| SDK版 | `0.1.8-fm2610-source-mixer` |
+| ソース配布 | `tetorica-soundchip-native-0.1.8-fm2610-source-mixer-sources.zip` |
+| 配布の由来 | 下記のベースと取り込み記録の changedPaths から生成したローカル候補 |
+| 配布ZIPのSHA-256 | `584e552d71fe94360a89731be2e39c730ec92029a8370fca2206d82dcddcefd7` |
+| 配布manifestのSHA-256 | `efc71316454f97480a31d749a52f324d9c90d9c27f241780ad43d17764cd6bc0` |
+| SDKの元コミット | `95cf71a857b15d0ea932ebf97d5fde80b5e80a95` |
 | 同梱先 | `src-tauri/vendor/tetorica-soundchip-native/` |
 | Tauri側の取り込み記録 | `src-tauri/soundchip-sdk.json` |
 
 取り込み記録は`schemaVersion: 1`で、`name`、`version`、`sourceCommit`、`archiveName`、
-`archiveSha256`、`manifestSha256`、`fileCount`を保存します。現在の同梱数は476ファイルです。
+`archiveSha256`、`manifestSha256`、`fileCount`を保存します。現在の同梱数は490ファイルです。
 `sourceCommit`は取り込み時に指定する由来の記録で、コミット署名や配布物の署名を検証したものではありません。
 取り込み時に期待するZIPのSHA-256を検証し、SDKマニフェストと各ファイルのサイズ／SHA-256を照合します。
 `--check`は元ZIPやネットワークを使わず、同梱マニフェストのハッシュと全ファイルを記録に照合します。
@@ -87,7 +87,7 @@ SDKのOPN providerがymfmのOPN実装と明示的なテンプレート実体化�
 
 YM2203とYM2608は、それぞれ選択中のPC-98音源と追加生成の両方で、同じSDK側のNative接続を使います。
 Neo Geoも選択中／追加音源のYM2610（FM 4CH）とYM2610B（FM 6CH）が一つのSDK接続を共有し、生成時に変種を選択します。
-これらの先行移行は同梱済みのSDK `0.1.0`へ参照を切り替えました。Nuked単体ターゲットを追加した`0.1.1`、Sega PSGを独立フォルダーへ分離した`0.1.2`を経て、現在はPS1 SPU／SCSPを含む`0.1.7`ソースを冒頭のコミットで固定し、既存音源の音声計算を保持しています。
+これらの先行移行は同梱済みのSDK `0.1.0`へ参照を切り替えました。Nuked単体ターゲットを追加した`0.1.1`、Sega PSGを独立フォルダーへ分離した`0.1.2`を経て、その時点ではPS1 SPU／SCSPを含む`0.1.7`ソースを冒頭のコミットで固定し、既存音源の音声計算を保持しています。
 共有OPN／SSG／ADPCMはYM2612移行時からSDK側のものを一度だけ組み込んでおり、
 個別の移行用にもう一つ追加しません。既存のarchive順序を維持します。
 
