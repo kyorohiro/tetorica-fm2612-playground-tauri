@@ -2,6 +2,11 @@ name: Build Desktop
 
 on:
   workflow_dispatch:
+    inputs:
+      include_macos:
+        description: Include macOS DMGs alongside Windows and Linux installers
+        type: boolean
+        default: true
   push:
     tags:
       - 'v*'
@@ -14,26 +19,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  targets:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - id: select
+        env:
+          INCLUDE_MACOS: ${{ github.event_name != 'workflow_dispatch' || inputs.include_macos }}
+        run: |
+          matrix=$(jq -c --arg mac "$INCLUDE_MACOS" '{include: [.[] | select($mac == "true" or (.platform | startswith("macos") | not))]}' <<'JSON'
+          [
+            {"platform": "macos-arm64", "runner": "macos-14", "bundles": "dmg"},
+            {"platform": "macos-x86_64", "runner": "macos-15-intel", "bundles": "dmg"},
+            {"platform": "windows-x86_64", "runner": "windows-latest", "bundles": "nsis"},
+            {"platform": "linux-x86_64", "runner": "ubuntu-24.04", "bundles": "deb,appimage"},
+            {"platform": "linux-arm64", "runner": "ubuntu-24.04-arm", "bundles": "deb,appimage"}
+          ]
+          JSON
+          )
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
   build:
+    needs: targets
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - platform: macos-arm64
-            runner: macos-14
-            bundles: dmg
-          - platform: macos-x86_64
-            runner: macos-15-intel
-            bundles: dmg
-          - platform: windows-x86_64
-            runner: windows-latest
-            bundles: nsis
-          - platform: linux-x86_64
-            runner: ubuntu-24.04
-            bundles: deb,appimage
-          - platform: linux-arm64
-            runner: ubuntu-24.04-arm
-            bundles: deb,appimage
+      matrix: ${{ fromJSON(needs.targets.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
