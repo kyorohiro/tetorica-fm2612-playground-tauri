@@ -270,11 +270,11 @@ impl Message {
             Method::Clock { hz } => validate_op(&Op::Clock { hz: *hz })?,
             Method::Mix { volume, pan }
                 if !volume.is_finite()
-                    || !(0.0..=4.).contains(volume)
+                    || !(0.0..=4.8).contains(volume)
                     || !pan.is_finite()
                     || !(-1.0..=1.).contains(pan) =>
             {
-                return Err("Native YM2608 mixer volume must be 0–4, pan −1–1".into())
+                return Err("Native YM2608 mixer volume must be 0–4.8, pan −1–1".into())
             }
             Method::SourceMute { mask } if *mask > 7 => {
                 return Err("Native YM2608 source mute mask must be 0–7".into())

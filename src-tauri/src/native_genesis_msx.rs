@@ -256,11 +256,11 @@ impl Message {
             Method::Clock { hz } => validate_op(&Op::Clock { hz: *hz }, self.chip)?,
             Method::Mix { volume, pan }
                 if !volume.is_finite()
-                    || !(0.0..=4.0).contains(volume)
+                    || !(0.0..=4.8).contains(volume)
                     || !pan.is_finite()
                     || !(-1.0..=1.0).contains(pan) =>
             {
-                return Err("Native MSX mixer volume must be 0–4, pan −1–1".into())
+                return Err("Native MSX mixer volume must be 0–4.8, pan −1–1".into())
             }
             Method::SourceMute { mask }
                 if *mask > if self.chip == Chip::Ay8910 { 7 } else { 511 } =>

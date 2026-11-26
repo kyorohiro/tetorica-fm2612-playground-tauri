@@ -342,7 +342,7 @@ fn dx7_native_mixer_matches_stereo_balance_and_ramps_parameters() {
         1,
         &[command(
             0,
-            serde_json::json!({"method":"mix","volume":0.5,"pan":1}),
+            serde_json::json!({"method":"mix","volume":4.8,"pan":1}),
         )],
     )
     .unwrap();
@@ -350,7 +350,7 @@ fn dx7_native_mixer_matches_stereo_balance_and_ramps_parameters() {
     let original = render(&b, &mut rb, 500);
     for i in 240..500 {
         assert_eq!(changed[i][0], 0.0);
-        assert!((changed[i][1] - original[i][1] * 0.5).abs() < 0.000001);
+        assert!((changed[i][1] - original[i][1] * 4.8).abs() < 0.000001);
     }
 }
 #[test]

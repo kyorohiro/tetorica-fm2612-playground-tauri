@@ -513,7 +513,7 @@ fn extra_dx7_mixer_is_linear_stereo_balance_and_finite() {
         1,
         vec![
             on(60, 1, false),
-            json!({"method":"mix","volume":0.5,"pan":1}),
+            json!({"method":"mix","volume":4.8,"pan":1}),
         ],
     );
     let p = render(&s, &mut r, 4000);

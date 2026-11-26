@@ -234,11 +234,11 @@ impl Message {
             }
             Method::Mix { volume, pan } => {
                 if !volume.is_finite()
-                    || !(0.0..=4.0).contains(volume)
+                    || !(0.0..=4.8).contains(volume)
                     || !pan.is_finite()
                     || !(-1.0..=1.0).contains(pan)
                 {
-                    return Err("DX7 mixer volume must be 0–4, pan −1–1".into());
+                    return Err("DX7 mixer volume must be 0–4.8, pan −1–1".into());
                 }
                 Edit::Mix(*volume, *pan)
             }

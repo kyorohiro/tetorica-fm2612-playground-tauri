@@ -785,9 +785,9 @@ impl Command {
             CommandAction::Rf5c164Mix { left, right } => {
                 if [left, right]
                     .iter()
-                    .any(|v| !v.is_finite() || !(0.0..=2.0).contains(v))
+                    .any(|v| !v.is_finite() || !(0.0..=4.8).contains(v))
                 {
-                    return Err("RF5C164 source gains must be 0–2".into());
+                    return Err("RF5C164 source gains must be 0–4.8".into());
                 }
                 Action::RfMix([left, right])
             }
@@ -848,11 +848,11 @@ impl Command {
                 let gains = [fm_left, fm_right, psg_left, psg_right, master];
                 if gains[..4]
                     .iter()
-                    .any(|v| !v.is_finite() || !(0.0..=2.0).contains(v))
+                    .any(|v| !v.is_finite() || !(0.0..=4.8).contains(v))
                     || !master.is_finite()
-                    || !(0.0..=3.8).contains(&master)
+                    || !(0.0..=(3.8 * 4.8)).contains(&master)
                 {
-                    return Err("Native source gains must be 0–2 and master gain 0–3.8".into());
+                    return Err("Native source gains must be 0–4.8 and combined master gain 0–18.24".into());
                 }
                 match gain_units {
                     GainUnits::Legacy => Action::Mix(gains),
@@ -8831,10 +8831,10 @@ mod tests {
                 "fmLeft":value,"fmRight":0.5,"psgLeft":value,"psgRight":0.35,"master":3.8})
         };
         let parsed: Command =
-            serde_json::from_value(packet(serde_json::json!("source"), 2.0)).unwrap();
+            serde_json::from_value(packet(serde_json::json!("source"), 4.8)).unwrap();
         assert!(matches!(
             parsed.validate().unwrap(),
-            Action::SourceMix([2.0, 0.5, 2.0, 0.35, 3.8])
+            Action::SourceMix([4.8, 0.5, 4.8, 0.35, 3.8])
         ));
         let legacy: Command =
             serde_json::from_value(packet(serde_json::json!("legacy"), 2.0)).unwrap();
@@ -8842,7 +8842,7 @@ mod tests {
             legacy.validate().unwrap(),
             Action::Mix([2.0, 0.5, 2.0, 0.35, 3.8])
         ));
-        for value in [-0.01, 2.01] {
+        for value in [-0.01, 4.81] {
             let invalid: Command =
                 serde_json::from_value(packet(serde_json::json!("source"), value)).unwrap();
             assert!(invalid.validate().is_err());
@@ -8962,7 +8962,7 @@ mod tests {
             0,
             CommandAction::Mix {
                 gain_units: GainUnits::Legacy,
-                fm_left: 2.01,
+                fm_left: 4.81,
                 fm_right: 1.0,
                 psg_left: 1.0,
                 psg_right: 1.0,

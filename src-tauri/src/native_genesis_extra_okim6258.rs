@@ -221,7 +221,7 @@ impl Message {
             }
             Method::Mix { volume, pan }
                 if !volume.is_finite()
-                    || !(0.0..=4.0).contains(volume)
+                    || !(0.0..=4.8).contains(volume)
                     || !pan.is_finite()
                     || !(-1.0..=1.0).contains(pan) =>
             {
