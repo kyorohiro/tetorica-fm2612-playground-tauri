@@ -1,4 +1,4 @@
-//! MSFA DX7: one callback-owned, preallocated 16-voice core. All variable-sized
+//! FM21290: one callback-owned, preallocated 16-voice core. All variable-sized
 //! control data has a lifetime guard reclaimed on the IPC side, never in audio.
 use super::{Owner, CAPACITY, MAX_SAFE_INTEGER};
 use crossbeam_queue::ArrayQueue;
@@ -19,6 +19,7 @@ extern "C" {
     fn native_dx7_voice(ptr: *mut c_void, voice: *const u8, id: u32, live: bool);
     fn native_dx7_note_on(ptr: *mut c_void, note: u8, velocity: u8) -> i32;
     fn native_dx7_release_slot(ptr: *mut c_void, slot: u8);
+    fn native_dx7_write(ptr: *mut c_void, address: u16, value: u8);
     fn native_dx7_panic(ptr: *mut c_void);
     fn native_dx7_sample(ptr: *mut c_void) -> f32;
 }
@@ -34,6 +35,10 @@ pub struct Message {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "method", rename_all = "kebab-case")]
 pub enum Method {
+    WriteRegister {
+        address: u16,
+        value: u8,
+    },
     LoadBank {
         voices: Vec<Vec<u8>>,
     },
@@ -69,6 +74,7 @@ fn velocity() -> u8 {
 }
 #[derive(Debug)]
 pub enum Edit {
+    Register(u16, u8),
     Load(Vec<[u8; BYTES]>),
     Replace([u8; BYTES]),
     Patch([u8; BYTES], [bool; BYTES]),
@@ -90,6 +96,7 @@ pub struct Prepared {
 impl Prepared {
     pub fn starts(&self) -> bool {
         matches!(self.edit, Edit::On(_, 1..=127, _))
+            || matches!(self.edit, Edit::Register(0x30f1,value) if value&3==1)
     }
 }
 fn voice(bytes: &[u8]) -> Result<[u8; BYTES], String> {
@@ -175,6 +182,13 @@ impl Message {
             }
             Method::AllNotesOff => Edit::Release,
             Method::Panic => Edit::Panic,
+            Method::WriteRegister { address, value } => {
+                if !matches!(*address, 0x2804..=0x2805 | 0x3000..=0x302b | 0x3030..=0x3035 | 0x3040..=0x3057 | 0x3060..=0x3077 | 0x3080..=0x30e5 | 0x30f0..=0x30f3)
+                {
+                    return Err("Invalid FM21290 register".into());
+                }
+                Edit::Register(*address, *value)
+            }
             Method::Mix { volume, pan } => {
                 if !volume.is_finite()
                     || !(0.0..=4.0).contains(volume)
@@ -392,7 +406,10 @@ impl Shared {
                 .store(renderer.selected as u8, Ordering::Relaxed);
         }
         for (out, note) in self.notes.iter().zip(renderer.notes) {
-            out[0].store(note.map_or(0, |n| n.note + 1), Ordering::Relaxed);
+            out[0].store(
+                note.filter(|n| n.note < 128).map_or(0, |n| n.note + 1),
+                Ordering::Relaxed,
+            );
             out[1].store(note.map_or(0, |n| n.velocity), Ordering::Relaxed);
         }
     }
@@ -473,7 +490,11 @@ impl Renderer {
         let manual = self.notes.iter().flatten().any(|n| n.audition);
         let patch = matches!(
             command.edit,
-            Edit::Load(_) | Edit::Replace(_) | Edit::Patch(..) | Edit::Select(_)
+            Edit::Register(..)
+                | Edit::Load(_)
+                | Edit::Replace(_)
+                | Edit::Patch(..)
+                | Edit::Select(_)
         );
         let note = match command.edit {
             Edit::On(n, ..) | Edit::Off(n, _) => Some(n),
@@ -522,6 +543,29 @@ impl Renderer {
                         self.apply_voice(false);
                         bank_changed = true;
                     }
+                }
+                Edit::Register(address, value) => {
+                    if *address == 0x30f1 {
+                        let slot = ((value >> 2) & 15) as usize;
+                        match value & 3 {
+                            1 => {
+                                self.note_serial = self.note_serial.saturating_add(1);
+                                self.notes[slot] = Some(Note {
+                                    note: 128,
+                                    velocity: 0,
+                                    owner,
+                                    voice: None,
+                                    audition: false,
+                                    serial: self.note_serial,
+                                });
+                            }
+                            2 => {
+                                self.notes[slot] = None;
+                            }
+                            _ => {}
+                        }
+                    }
+                    unsafe { native_dx7_write(self.ptr, *address, *value) };
                 }
                 Edit::On(note, velocity, voice) => {
                     // Manual audition owns this pitch until its matching lease

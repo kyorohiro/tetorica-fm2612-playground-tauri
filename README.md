@@ -73,7 +73,7 @@ RF5C164の選択中接続とコア／低レベルC ABI、独立追加接続もSD
 PC Engineの選択中HuC6280と独立追加接続もSDKを使い、コアの直接includeと既存のRustの予約・PCM・Stop制御を維持します。
 Game Boyの選択中／独立追加接続と共通APUもSDKを使い、既存のarchive・Rustの予約・PCM・Stop制御を維持します。
 NES＋FDSの選択中／独立追加接続と、その中のAPU／FDS移植実装もSDKを使い、既存の1翻訳単位とRustのDMC転送payload所有・予約・予算管理を維持します。
-DX7の選択中／独立追加接続とMSFAもSDKを使います。24共有ファイルと6 Native overrideをCargoの出力先へコピーして組み立て、Panic時は事前確保済みのnote状態とfeedback履歴を割当てなしで初期化します。
+DX7 の選択音源と追加音源は固定 SDK の FM21290 レジスタコアを使います。
 SNESの選択中／独立追加S-DSP接続とSPC700ファイルプレーヤーもSDKを使います。2接続と4コアソースを既存の同一archiveへ組み込み、共有S-DSPを一度だけコンパイルします。RAM／timeline／SPCファイルの所有、準備・回収と予算管理はRust側に残ります。
 Nuked YM2612もSDKのNative接続・Browser共通C wrapperとコアを使います。SDK版は`src-tauri/soundchip-sdk.json`に固定し、共通providerは一度だけ組み込みます。
 CD-DAとMSM5205も同じ固定SDKのC11ソースから直接ビルドし、Rustの再生制御・音声クロック・Mixer値は維持します。
@@ -86,13 +86,13 @@ PS1も同じ固定SDKの`vendor/mame-ps1-spu/`を一度だけビルドし、選�
 
 ## DX7
 
-FILES → `examples/dx7/dx7-init-sine.js` を開いて Run すると、独立した MSFA DX7 音源で演奏できます。
+FILES → `examples/dx7/dx7-init-sine.js` を開いて Run すると、独立した FM21290 音源で演奏できます。
 `await useSoundChip('dx7')` は音源を再利用し、`await createSoundChip('dx7', {id:'pad'})` は独立した16音の音源を作ります。
 Main／Worker の両方に対応し、音量・mixer・FX・STOP は既存の音声経路を使います。
 初期音色は自作の INIT SINE です。音色バンクを FILES に読み込んだ場合は、
 `await dx7.loadSysex(await file('/presets/my-bank.syx', {type:'arrayBuffer'}))` の完了後に発音してください。
 `dx7.noteOn(60, 100)`／`dx7.noteOff(60)` はチャンネル引数を持たず、MIDI ノート番号を使います。
-内部44,100 Hz固定、AudioContext 出力44,100／48,000 Hz対応で、`setClock()` はありません。
+AudioContext の44,100／48,000 Hzでレンダリングで、`setClock()` はありません。
 実装・上流の制約とライセンスは `dist/js/msfa_dx7/README.md` と `README.vendor.md` に記録しています。
 
 ## 音声出力
@@ -221,13 +221,13 @@ Stopは音色・clock・LFO・出力設定・4op構成を保持して発音と�
 原典・ハッシュは`src-tauri/native-opl/`に保存し、既存ymfm providerを共有します。
 選択中音源と`createSoundChip()`のOPL系4種類の接続は固定SDKからビルドします。
 
-DX7 modeではMSFAのC++音源を直接使い、16音ポリフォニーで生成します。
+DX7 mode は C++ の FM21290 コアで16音を生成します。
 `dx7`／`useSoundChip('dx7')`、音色・SysEx、オペレーター・feedback編集、Keyboard／Operatorsに対応します。
 Main／Workerとも共通FX・liveFx・Audioモニター・最終出力録音を通ります。
 Stopは音色バンクと選択を保持して発音を止めます。YM2612／PSGは生成しません。
-内部44,100 Hz固定で出力機器のsample rateへ変換します。`createSoundChip('dx7')`による独立音源の追加にも対応します。
+出力機器のサンプルレートでレンダリングします。`createSoundChip('dx7')`による独立音源の追加にも対応します。
 由来とApache-2.0ライセンスは`src-tauri/native-dx7/`に保存し、ライセンスをアプリにも同梱します。
-実際の接続とMSFAは固定SDKからビルドします。通常発音・release・killの動作は保持し、Native Panic後の再発音ではSDKのfeedback履歴初期化を使います。旧スナップショットは由来・比較用として保持します。
+`useSoundChip('fm21290')` と `useSoundChip('dx7')` は同じ接続を返します。新しいインスタンスで最初に `noteOn(69,100)` を呼ぶと物理 CH1 が鳴り、押鍵中に `writeRegister(0x30d0,95)` で OP1 を減衰できます。
 
 NES＋FDS modeでは、現在のJSNES APUとFDSのJS実装をC++へ移植した音源を使います。
 Pulse 2声、Triangle、Noise、DMC、FDSの6CH、DMC用64 KiB RAM、FDS波形・変調、clock変更に対応します。

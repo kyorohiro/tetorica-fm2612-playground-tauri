@@ -64,7 +64,7 @@ export const PLAYGROUND_MIXER_CALIBRATION = freeze({
       "referenceFrequencyHz": 440,
       "measurementMetric": "acRms",
       "waveform": "square",
-      "targetAcRms": 0.06993434306195019,
+      "targetAcRms": 0.06993433789217028,
       "targetAmplitude": 0.12881777435541153,
       "referenceAmplitude": 0.1494140625,
       "codecHeadroom": 1,
@@ -76,7 +76,7 @@ export const PLAYGROUND_MIXER_CALIBRATION = freeze({
       "listeningReference": {
         "kind": "segapsg",
         "gain": 0.35,
-        "rawAcRms": 0.19981240874842915
+        "rawAcRms": 0.19981239397762937
       },
       "canonical": {
         "engine": "chromium",

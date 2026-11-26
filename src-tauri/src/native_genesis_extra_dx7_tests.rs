@@ -563,7 +563,7 @@ fn extra_dx7_scoped_cancel_kills_released_tail_but_note_off_keeps_normal_release
 }
 
 #[test]
-fn extra_dx7_masked_preset_starts_new_cohort_and_preserves_applied_future_edits() {
+fn extra_dx7_masked_preset_updates_shared_registers_and_preserves_other_edits() {
     let (s, mut r) = new();
     let primary = Shared::new_primary(48000, 1, false, true);
     let mut primary_renderer = Renderer::new_primary(48000, false, true).unwrap();
@@ -616,12 +616,55 @@ fn extra_dx7_masked_preset_starts_new_cohort_and_preserves_applied_future_edits(
     let actual = render(&s, &mut r, 4000);
     let expected = render(&primary, &mut primary_renderer, 4000);
     assert_eq!(actual, expected);
-    // The old note keeps its original cohort; the subsequent live edit changes
-    // the newly selected preset and new notes, leaving the held note audible.
-    assert!(energy(&actual[1000..3000]) > 1.);
+    // The carrier is muted at frame 200, including the previously held note.
+    assert!(energy(&actual[..200]) > 0.01);
+    assert_eq!(energy(&actual[200..]), 0.);
     let state = state(&s, 1);
     assert_eq!(state.voices[0][134], 0);
     assert_eq!(state.voices[0][144], 36);
     assert_eq!(state.voices[0][121], 0);
     assert_eq!(state.active_notes.len(), 2);
+}
+
+#[test]
+fn fm21290_registers_address_the_held_dx7_slot_at_the_scheduled_frame() {
+    let (s, mut r) = new();
+    let p = Shared::new_primary(48000, 1, false, true);
+    let mut renderer = Renderer::new_primary(48000, false, true).unwrap();
+    let writes = [
+        (0, on(69, 1, false)),
+        (
+            512,
+            json!({"method":"write-register","address":0x30d0,"value":255}),
+        ),
+        (
+            1024,
+            json!({"method":"write-register","address":0x30d0,"value":15}),
+        ),
+        (1536, json!({"method":"panic"})),
+    ];
+    for (frame, m) in writes {
+        s.enqueue(1, &[cmd(1, frame, m.clone())]).unwrap();
+        p.enqueue(
+            1,
+            &[serde_json::from_value(json!({"type":"dx7","frame":frame,"message":m})).unwrap()],
+        )
+        .unwrap();
+    }
+    let samples = render(&s, &mut r, 2048);
+    assert_eq!(samples, render(&p, &mut renderer, 2048));
+    assert!(energy(&samples[..512]) > 0.1);
+    assert_eq!(energy(&samples[512..1024]), 0.);
+    assert!(energy(&samples[1024..1536]) > 0.1);
+    assert_eq!(energy(&samples[1536..]), 0.);
+    assert!(s
+        .enqueue(
+            1,
+            &[cmd(
+                1,
+                0,
+                json!({"method":"write-register","address":0x3038,"value":0})
+            )]
+        )
+        .is_err());
 }

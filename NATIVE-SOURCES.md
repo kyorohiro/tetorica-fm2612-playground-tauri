@@ -70,22 +70,16 @@ ported APU/FDS implementation. It remains one translation unit in the existing
 retains its own 64 KiB DMC RAM; Rust retains upload-payload ownership,
 scheduling, lifetime, budgets and mixing. Legacy JS snapshots, source pins and
 license resources remain intact.
-Selected and independent DX7 instances use the SDK's
-`native/reference/tauri/native_genesis_dx7.cpp` and matching header. These two
-inputs are byte-identical to the old copies. Cargo assembles 30 MSFA files in
-`OUT_DIR/tetorica_sdk_dx7_msfa`: 24 shared files from `vendor/msfa/` and six
-Native overrides from `native/reference/overrides/msfa/`, copied without editing.
-The flat private tree ensures quoted includes resolve the Native headers in
-every translation unit. The existing `tetorica_native_dx7` archive retains
-14 translation units, C++17/O2, `MSFA_FORCE_SCALAR`, `_USE_MATH_DEFINES`, MSVC
-`/EHsc`, `-fwrapv`, `-fno-strict-aliasing` and `-ffp-contract=off`.
-The SDK's Native-only Panic amendment value-assigns fresh `Dx7Note` state into
-the 16 preallocated objects, clearing feedback history without allocation,
-deallocation or changing their addresses. Ordinary note-on/release/kill behavior
-is retained; post-Panic replay is an intentional correction, not blanket
-byte-equivalence with the old snapshot. Rust retains patch ownership, leases,
-slot admission, scheduling, mixing and FX. Legacy source pins, licenses and
-refresh scripts remain intact; updating them alone does not update the SDK.
+Selected and independent DX7 instances use the BSD-3-Clause FM21290 core in
+`vendor/tetorica-soundchip-native/native/src/fm21290.cpp`. The adapter in
+`src/native_fm21290.cpp` translates unpacked DX7 voices to register writes
+and runs the pitch envelope and LFO at the same timer cadence as Web Audio.
+Both the note API and raw register writes use the same sixteen physical slots.
+The legacy MSFA sources and license are included for reference.
+The parent repository's `node scripts/check_native_fm21290.mjs` compares all
+32 algorithms at 44.1, 48 and 96 kHz with two notes, pitch envelope, LFO and
+operator scaling. For algorithm 16 with feedback 7 the first 128 samples and
+RMS are checked separately. Sustained waveforms can diverge at that setting.
 Selected and independent SNES S-DSP instruments and the independent SPC700
 file player use the SDK's `native/reference/tauri/native_genesis_snes.cpp`,
 `native_genesis_spc.cpp` and matching headers, with
