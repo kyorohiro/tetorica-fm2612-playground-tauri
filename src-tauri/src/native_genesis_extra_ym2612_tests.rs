@@ -534,6 +534,8 @@ fn extra_ym2612_validation_and_failed_creation_leave_bounded_state_unchanged() {
     for engine in ["ymfm", "nuked"] {
         eprintln!("extra-chip-memory-layout: instance={} ym2612_shared={} session_shared={} prepared_arc={} queue_slot_estimate={} queue_heap={} bytes", std::mem::size_of::<extra_psg::Instance>(), std::mem::size_of::<ym2612::Shared>(), std::mem::size_of::<Shared>(), std::mem::size_of::<Arc<ym2612::Prepared>>(), std::mem::size_of::<usize>() + std::mem::size_of::<Arc<ym2612::Prepared>>(), CAPACITY * (std::mem::size_of::<usize>() + std::mem::size_of::<Arc<ym2612::Prepared>>()));
         let shared = Shared::new(48_000, 1);
+        assert!(serde_json::from_value::<ym2612::Message>(json!({"method":"mix","volume":4.8,"pan":0.}))
+            .unwrap().prepare().is_ok());
         for message in [
             json!({"method":"write","port":2,"register":0,"value":1}),
             json!({"method":"key-off","channel":6}),
@@ -541,7 +543,7 @@ fn extra_ym2612_validation_and_failed_creation_leave_bounded_state_unchanged() {
             json!({"method":"clock","hz":100000001}),
             json!({"method":"source-mute","mask":2}),
             json!({"method":"channel-mute","mask":64}),
-            json!({"method":"mix","volume":4.1,"pan":0.}),
+            json!({"method":"mix","volume":4.81,"pan":0.}),
             json!({"method":"mix","volume":1.,"pan":1.1}),
             json!({"method":"reset","id":0}),
             json!({"method":"batch","channel":0,"voice":1,"action":"on","audition":true,"commands":[{"method":"write","port":1,"register":0x40,"value":1}]}),
